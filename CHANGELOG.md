@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 0.1.0 — 2026-03-11
 
-First public alpha release of the Understudy runtime.
+First public release of the Understudy runtime.
 
 ### Added
 
@@ -34,4 +34,4 @@ First public alpha release of the Understudy runtime.
 - Native GUI execution and teach-by-demonstration require macOS today.
 - Core features (CLI, gateway, browser, channels) work cross-platform.
 - Route optimization (Layer 4) and proactive autonomy (Layer 5) are architecturally planned but not yet active.
-- This is an alpha release intended for early adopters and contributors.
+- This is the initial public release of Understudy.
