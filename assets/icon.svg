@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#100e20"/>
+      <stop offset="100%" stop-color="#0a0814"/>
+    </linearGradient>
+    <linearGradient id="spectrum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd54f"/>
+      <stop offset="30%" stop-color="#ff8a65"/>
+      <stop offset="60%" stop-color="#ce93d8"/>
+      <stop offset="100%" stop-color="#7c4dff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle background -->
+  <rect x="16" y="16" width="480" height="480" rx="112" ry="112" fill="url(#bg)"/>
+
+  <!-- Echo U (larger, behind, 25% opacity) -->
+  <path d="M112,80 L112,300 Q112,430 256,430 Q400,430 400,300 L400,80"
+        fill="none" stroke="#7c4dff" stroke-width="30" stroke-linecap="round" opacity="0.25"/>
+
+  <!-- Main U (spectrum gradient) -->
+  <path d="M168,120 L168,285 Q168,390 256,390 Q344,390 344,285 L344,120"
+        fill="none" stroke="url(#spectrum)" stroke-width="42" stroke-linecap="round"/>
+</svg>

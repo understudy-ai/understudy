@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+  - apps/*
+onlyBuiltDependencies:
+  - '@whiskeysockets/baileys'
+  - better-sqlite3
+  - esbuild
+  - koffi
+  - protobufjs
+  - sharp

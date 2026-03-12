@@ -1,0 +1,33 @@
+{
+	"name": "@understudy/types",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Shared types for Understudy",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"@sinclair/typebox": "^0.34.48"
+	},
+	"devDependencies": {
+		"@mariozechner/pi-agent-core": "^0.56.2",
+		"@mariozechner/pi-ai": "^0.56.2",
+		"typescript": "^5.7.3"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-agent-core": "^0.56.2",
+		"@mariozechner/pi-ai": "^0.56.2"
+	},
+	"license": "MIT"
+}

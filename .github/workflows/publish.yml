@@ -1,0 +1,60 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Validate tag matches package version
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED_TAG="v${PACKAGE_VERSION}"
+          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]; then
+            echo "Release tag ${GITHUB_REF_NAME} does not match package.json version ${PACKAGE_VERSION}."
+            exit 1
+          fi
+
+      - name: Ensure tagged commit is on main
+        run: |
+          git fetch origin main --depth=1
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
+            echo "Tagged commit ${GITHUB_SHA} is not contained in origin/main."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Release check
+        run: pnpm release:check
+
+      - name: Publish
+        run: npm publish --provenance --access public

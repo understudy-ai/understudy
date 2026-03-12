@@ -1,0 +1,31 @@
+{
+	"name": "@understudy/gui",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Understudy visual GUI runtime for screenshot-grounded desktop actions",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist",
+		"test": "vitest --run --config ../../vitest.package.config.ts",
+		"test:integration": "UNDERSTUDY_GUI_INTEGRATION=1 vitest --run --config ../../vitest.package.config.ts -- src/__tests__/runtime.integration.test.ts"
+	},
+	"dependencies": {
+		"@understudy/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"license": "MIT"
+}

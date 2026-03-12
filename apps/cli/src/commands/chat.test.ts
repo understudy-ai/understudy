@@ -1,0 +1,472 @@
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+	loadConfig: vi.fn(),
+	createUnderstudySession: vi.fn(),
+	resolveUnderstudyHomeDir: vi.fn(),
+	prepareCliPromptInput: vi.fn(),
+	mergeCliPromptText: vi.fn(),
+	resolveMemoryDbPath: vi.fn(),
+	applyUnderstudyBranding: vi.fn(),
+	resolveConfiguredBrowserOptions: vi.fn(),
+	createBrowserExtensionRelayController: vi.fn(),
+	installInteractiveBrowserExtensionSupport: vi.fn(),
+	installInteractiveChatMediaSupport: vi.fn(),
+	installInteractiveTeachSupport: vi.fn(),
+	createConfiguredRuntimeToolset: vi.fn(),
+	createMemoryProvider: vi.fn(),
+	scheduleServiceCtor: vi.fn(),
+	scheduleServiceStart: vi.fn(),
+	scheduleServiceStop: vi.fn(),
+	scheduleServiceInstances: [] as Array<{ config: { onJobTrigger: (job: any) => Promise<void> }; stop: () => void }>,
+	configReloaderStart: vi.fn(),
+	configReloaderStop: vi.fn(),
+	continueRecent: vi.fn(),
+	inMemorySessionManager: vi.fn(),
+	interactiveRun: vi.fn(),
+	interactiveCtor: vi.fn(),
+	processExit: vi.fn(),
+}));
+const modelSupportMocks = vi.hoisted(() => ({
+	resolveCliModel: vi.fn(),
+}));
+
+vi.mock("@understudy/core", () => ({
+	ConfigManager: {
+		load: mocks.loadConfig,
+	},
+	createUnderstudySession: mocks.createUnderstudySession,
+	normalizeAssistantDisplayText: (text: string) => ({ text: text.replace(/\[\[[^\]]+\]\]\s*/g, "").trim() }),
+	resolveUnderstudyHomeDir: mocks.resolveUnderstudyHomeDir,
+}));
+
+vi.mock("@understudy/gateway", () => ({
+	ConfigReloader: class {
+		start() {
+			mocks.configReloaderStart();
+		}
+		stop() {
+			mocks.configReloaderStop();
+		}
+	},
+	normalizeAssistantRenderableText: (text: string) => text,
+}));
+
+vi.mock("@understudy/tools", () => ({
+	createMemoryProvider: mocks.createMemoryProvider,
+	ScheduleService: class {
+		readonly config: { onJobTrigger: (job: any) => Promise<void> };
+		constructor(config: { onJobTrigger: (job: any) => Promise<void> }) {
+			this.config = config;
+			mocks.scheduleServiceCtor(config);
+			mocks.scheduleServiceInstances.push(this as unknown as { config: { onJobTrigger: (job: any) => Promise<void> }; stop: () => void });
+		}
+		async start() {
+			mocks.scheduleServiceStart(this.config);
+		}
+		stop() {
+			mocks.scheduleServiceStop(this.config);
+		}
+	},
+}));
+
+vi.mock("@mariozechner/pi-coding-agent", () => ({
+	InteractiveMode: class {
+		constructor(session: unknown, options: unknown) {
+			mocks.interactiveCtor(session, options);
+		}
+		async run() {
+			await mocks.interactiveRun();
+		}
+	},
+	SessionManager: {
+		continueRecent: mocks.continueRecent,
+		inMemory: mocks.inMemorySessionManager,
+	},
+}));
+
+vi.mock("./cli-prompt-input.js", () => ({
+	prepareCliPromptInput: mocks.prepareCliPromptInput,
+	mergeCliPromptText: mocks.mergeCliPromptText,
+}));
+
+vi.mock("./gateway-support.js", () => ({
+	resolveMemoryDbPath: mocks.resolveMemoryDbPath,
+}));
+
+vi.mock("./chat-branding.js", () => ({
+	applyUnderstudyBranding: mocks.applyUnderstudyBranding,
+}));
+
+vi.mock("./browser-extension.js", () => ({
+	resolveConfiguredBrowserOptions: mocks.resolveConfiguredBrowserOptions,
+}));
+
+vi.mock("./browser-extension-relay-controller.js", () => ({
+	createBrowserExtensionRelayController: mocks.createBrowserExtensionRelayController,
+}));
+
+vi.mock("./chat-interactive-browser-extension.js", () => ({
+	installInteractiveBrowserExtensionSupport: mocks.installInteractiveBrowserExtensionSupport,
+}));
+
+vi.mock("./chat-interactive-media.js", () => ({
+	installInteractiveChatMediaSupport: mocks.installInteractiveChatMediaSupport,
+}));
+
+vi.mock("./chat-interactive-teach.js", () => ({
+	installInteractiveTeachSupport: mocks.installInteractiveTeachSupport,
+}));
+
+vi.mock("./runtime-tooling.js", () => ({
+	createConfiguredRuntimeToolset: mocks.createConfiguredRuntimeToolset,
+}));
+
+vi.mock("./model-support.js", async () => {
+	const actual = await vi.importActual<typeof import("./model-support.js")>("./model-support.js");
+	return {
+		...actual,
+		resolveCliModel: modelSupportMocks.resolveCliModel,
+	};
+});
+
+import {
+	applyManagedTuiToolDownloadPolicy,
+	resolveCliVersion,
+	runChatCommand,
+	shouldDisableManagedTuiToolDownloads,
+} from "./chat.js";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+	await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+	vi.restoreAllMocks();
+	process.exitCode = 0;
+});
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	mocks.scheduleServiceInstances.length = 0;
+	process.exitCode = 0;
+	mocks.resolveUnderstudyHomeDir.mockReturnValue("/tmp/understudy-home");
+	mocks.resolveMemoryDbPath.mockReturnValue("/tmp/understudy-memory.db");
+	mocks.createConfiguredRuntimeToolset.mockResolvedValue([{ name: "mock-tool" }]);
+	mocks.createMemoryProvider.mockResolvedValue({
+		close: vi.fn(async () => {}),
+	});
+	modelSupportMocks.resolveCliModel.mockImplementation((modelSpec?: string) =>
+		modelSpec
+			? { provider: "resolved-provider", id: "resolved-model" }
+			: undefined
+	);
+	mocks.createBrowserExtensionRelayController.mockReturnValue({
+		ensureForConfig: vi.fn(async () => {}),
+		stop: vi.fn(async () => {}),
+	});
+		mocks.loadConfig.mockResolvedValue({
+			get: () => ({
+				defaultProvider: "anthropic",
+				defaultModel: "claude-sonnet-4-6",
+				browser: { connectionMode: "managed" },
+				memory: { enabled: true },
+			}),
+		getPath: () => "/tmp/understudy/config.json5",
+		update: vi.fn(),
+	});
+	mocks.prepareCliPromptInput.mockResolvedValue({
+		text: "Attached file context",
+		images: [{ type: "input_image", image_url: "file:///tmp/screenshot.png" }],
+	});
+	mocks.mergeCliPromptText.mockReturnValue("hello\n\nAttached file context");
+	mocks.createUnderstudySession.mockResolvedValue({
+		session: { id: "session-1" },
+	});
+	mocks.continueRecent.mockReturnValue({
+		getSessionId: () => "session-continued",
+	});
+	mocks.inMemorySessionManager.mockReturnValue({
+		type: "in-memory-session-manager",
+	});
+});
+
+describe("resolveCliVersion", () => {
+	it("finds the root Understudy package version by walking upward", async () => {
+		const rootDir = await mkdtemp(join(tmpdir(), "understudy-cli-version-"));
+		tempDirs.push(rootDir);
+		const nestedDir = join(rootDir, "apps", "cli", "dist", "commands");
+		await mkdir(nestedDir, { recursive: true });
+		await writeFile(
+			join(rootDir, "package.json"),
+			JSON.stringify({ name: "@understudy-ai/understudy", version: "1.2.3" }),
+			"utf8",
+		);
+
+		expect(resolveCliVersion(nestedDir)).toBe("1.2.3");
+	});
+
+	it("prefers the nearest CLI package when available", async () => {
+		const rootDir = await mkdtemp(join(tmpdir(), "understudy-cli-version-"));
+		tempDirs.push(rootDir);
+		const cliDir = join(rootDir, "apps", "cli");
+		const nestedDir = join(cliDir, "dist", "commands");
+		await mkdir(nestedDir, { recursive: true });
+		await writeFile(
+			join(rootDir, "package.json"),
+			JSON.stringify({ name: "@understudy-ai/understudy", version: "1.2.3" }),
+			"utf8",
+		);
+		await writeFile(
+			join(cliDir, "package.json"),
+			JSON.stringify({ name: "@understudy/cli", version: "1.2.4" }),
+			"utf8",
+		);
+
+		expect(resolveCliVersion(nestedDir)).toBe("1.2.4");
+	});
+});
+
+describe("runChatCommand", () => {
+	it("boots the interactive chat runtime and threads initial message/images through", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+		await runChatCommand({
+			cwd: "/tmp/project",
+			message: "hello",
+			file: ["notes.md"],
+			image: ["screenshot.png"],
+			config: "/tmp/understudy/config.json5",
+			continue: true,
+			thinking: "high",
+		});
+
+		expect(mocks.prepareCliPromptInput).toHaveBeenCalledWith({
+			cwd: "/tmp/project",
+			files: ["notes.md"],
+			images: ["screenshot.png"],
+		});
+		expect(mocks.mergeCliPromptText).toHaveBeenCalledWith("hello", {
+			text: "Attached file context",
+			images: [{ type: "input_image", image_url: "file:///tmp/screenshot.png" }],
+		});
+		expect(mocks.continueRecent).toHaveBeenCalledWith("/tmp/project");
+		expect(log.mock.calls.flat().join("\n")).toContain("Using session: session-continued");
+		expect(mocks.createUnderstudySession).toHaveBeenCalledWith(expect.objectContaining({
+			configPath: "/tmp/understudy/config.json5",
+			cwd: "/tmp/project",
+			channel: "tui",
+			thinkingLevel: "high",
+			extraTools: [{ name: "mock-tool" }],
+			sessionManager: expect.any(Object),
+		}));
+		expect(mocks.createConfiguredRuntimeToolset).toHaveBeenCalledWith(expect.objectContaining({
+			scheduleService: expect.any(Object),
+		}));
+		expect(mocks.interactiveCtor).toHaveBeenCalledWith(
+			{ id: "session-1" },
+			expect.objectContaining({
+				initialMessage: "hello\n\nAttached file context",
+				initialImages: [{ type: "input_image", image_url: "file:///tmp/screenshot.png" }],
+			}),
+		);
+		expect(mocks.applyUnderstudyBranding).toHaveBeenCalledOnce();
+		expect(mocks.installInteractiveChatMediaSupport).toHaveBeenCalledOnce();
+		expect(mocks.installInteractiveBrowserExtensionSupport).toHaveBeenCalledOnce();
+		expect(mocks.installInteractiveTeachSupport).toHaveBeenCalledOnce();
+		expect(mocks.interactiveRun).toHaveBeenCalledOnce();
+		expect(mocks.scheduleServiceStart).toHaveBeenCalledOnce();
+		expect(mocks.scheduleServiceStop).toHaveBeenCalledOnce();
+		expect(mocks.configReloaderStop).toHaveBeenCalledOnce();
+	});
+
+	it("routes TUI schedule triggers back through the active local session", async () => {
+		const sendCustomMessage = vi.fn(async () => {});
+		const backgroundPrompt = vi.fn(async (_text: string) => {
+			const scheduledCall = mocks.createUnderstudySession.mock.calls[1]?.[0] as {
+				lifecycleHooks?: {
+					onAssistantReply?: (event: { message: { content: Array<{ type: string; text: string }> } }) => Promise<void>;
+				};
+			};
+			await scheduledCall.lifecycleHooks?.onAssistantReply?.({
+				message: {
+					content: [{ type: "text", text: "[[reply_to_current]] 提醒你：已经过了 1 分钟。" }],
+				},
+			});
+		});
+		mocks.createUnderstudySession
+			.mockResolvedValueOnce({
+				session: {
+					id: "session-1",
+					sendCustomMessage,
+					messages: [],
+				},
+			})
+			.mockResolvedValueOnce({
+				session: {
+					id: "scheduled-turn",
+					prompt: backgroundPrompt,
+					agent: {
+						replaceMessages: vi.fn(),
+					},
+				},
+				runtimeSession: {
+					close: vi.fn(async () => {}),
+				},
+			});
+		mocks.interactiveRun.mockImplementation(async () => {
+			const instance = mocks.scheduleServiceInstances[0];
+			await instance?.config.onJobTrigger({
+				id: "job-1",
+				name: "reminder",
+				schedule: "0 9 * * *",
+				command: "[[reply_to_current]] 提醒你：已经过了 1 分钟。",
+				enabled: true,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				runCount: 0,
+				failCount: 0,
+			});
+		});
+
+		await runChatCommand({
+			cwd: "/tmp/project",
+			message: "hello",
+		});
+
+		expect(backgroundPrompt).toHaveBeenCalledWith(expect.stringContaining("Scheduled instruction:"));
+		expect(backgroundPrompt).toHaveBeenCalledWith(expect.stringContaining("[[reply_to_current]] 提醒你：已经过了 1 分钟。"));
+		expect(sendCustomMessage).toHaveBeenCalledWith({
+			customType: "understudy-schedule",
+			content: "提醒你：已经过了 1 分钟。",
+			display: true,
+			details: {
+				source: "schedule",
+				command: "[[reply_to_current]] 提醒你：已经过了 1 分钟。",
+			},
+		}, { triggerTurn: false });
+	});
+
+	it("prints input preparation failures and exits with code 1", async () => {
+		mocks.prepareCliPromptInput.mockRejectedValue(new Error("missing file"));
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+			throw new Error(`exit:${code}`);
+		}) as any);
+
+		await expect(runChatCommand({
+			file: ["missing.md"],
+		})).rejects.toThrow("exit:1");
+
+		expect(error).toHaveBeenCalledWith("Error:", "missing file");
+		expect(mocks.createUnderstudySession).not.toHaveBeenCalled();
+		expect(exit).toHaveBeenCalledWith(1);
+	});
+
+	it("skips memory provider setup when memory is disabled", async () => {
+		mocks.loadConfig.mockResolvedValue({
+			get: () => ({
+				defaultProvider: "anthropic",
+				defaultModel: "claude-sonnet-4-6",
+				browser: { connectionMode: "managed" },
+				memory: { enabled: false },
+			}),
+			getPath: () => "/tmp/understudy/config.json5",
+			update: vi.fn(),
+		});
+
+		await runChatCommand({
+			cwd: "/tmp/project",
+			message: "hello",
+		});
+
+		expect(mocks.createMemoryProvider).not.toHaveBeenCalled();
+		expect(mocks.createConfiguredRuntimeToolset).toHaveBeenCalledWith(expect.objectContaining({
+			memoryProvider: undefined,
+		}));
+	});
+
+	it("threads an explicit CLI model into runtime tool setup", async () => {
+		modelSupportMocks.resolveCliModel.mockReturnValue({
+			provider: "openai",
+			id: "gpt-4o",
+		});
+		await runChatCommand({
+			cwd: "/tmp/project",
+			message: "hello",
+			model: "openai/gpt-4o",
+		});
+
+		expect(mocks.createConfiguredRuntimeToolset).toHaveBeenCalledWith(expect.objectContaining({
+			explicitModel: expect.objectContaining({
+				provider: "openai",
+				id: "gpt-4o",
+			}),
+		}));
+	});
+
+	it("applies offline download policy before InteractiveMode construction", async () => {
+		const originalPath = process.env.PATH;
+		const originalOffline = process.env.PI_OFFLINE;
+		const ctorStates: Array<string | undefined> = [];
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		mocks.interactiveCtor.mockImplementation(() => {
+			ctorStates.push(process.env.PI_OFFLINE);
+		});
+
+		process.env.PATH = "";
+		delete process.env.PI_OFFLINE;
+
+		try {
+			await runChatCommand({
+				cwd: "/tmp/project",
+				message: "hello",
+			});
+		} finally {
+			process.env.PATH = originalPath;
+			if (originalOffline === undefined) {
+				delete process.env.PI_OFFLINE;
+			} else {
+				process.env.PI_OFFLINE = originalOffline;
+			}
+		}
+
+		expect(ctorStates).toEqual(["1"]);
+		expect(log.mock.calls.flat().join("\n")).toContain("fd is not installed locally");
+		expect(process.env.PI_OFFLINE).toBe(originalOffline);
+	});
+});
+
+describe("managed TUI tool download policy", () => {
+	it("disables managed downloads by default when fd is unavailable", () => {
+		const env = {
+			PATH: "",
+		} as NodeJS.ProcessEnv;
+
+		expect(shouldDisableManagedTuiToolDownloads(env)).toBe(true);
+	});
+
+	it("keeps downloads enabled when explicitly opted in", () => {
+		const env = {
+			UNDERSTUDY_TUI_ALLOW_TOOL_DOWNLOADS: "1",
+		} as NodeJS.ProcessEnv;
+
+		expect(shouldDisableManagedTuiToolDownloads(env)).toBe(false);
+	});
+
+	it("temporarily sets PI_OFFLINE while interactive mode is running", () => {
+		const env = {} as NodeJS.ProcessEnv;
+		const log = vi.fn();
+
+		const restore = applyManagedTuiToolDownloadPolicy(env, log);
+
+		expect(env.PI_OFFLINE).toBe("1");
+		expect(log).toHaveBeenCalledWith(expect.stringContaining("fd is not installed locally"));
+
+		restore();
+
+		expect(env.PI_OFFLINE).toBeUndefined();
+	});
+});

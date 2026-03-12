@@ -1,0 +1,42 @@
+# Dependencies & build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Test & coverage
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temp & output
+tmp/
+outputs/
+**/.tmp-smoke-dist/
+
+# Agent / dev artifacts
+AGENTS.md
+.agent/
+.agents/
+verify_branch.js
+understudy_suite_note.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# SQLite / local data
+*.sqlite
+*.sqlite3
+*.db

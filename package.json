@@ -1,0 +1,107 @@
+{
+  "name": "@understudy-ai/understudy",
+  "version": "0.1.0-alpha.1",
+  "description": "Local-first teachable GUI agent runtime with gateway, web UI, channels, and tools",
+  "keywords": [
+    "agent",
+    "gui-agent",
+    "computer-use",
+    "teach-by-demonstration",
+    "desktop-automation",
+    "browser-automation",
+    "workflow-automation",
+    "local-first",
+    "channels",
+    "understudy"
+  ],
+  "homepage": "https://github.com/understudy-ai/understudy#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/understudy-ai/understudy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/understudy-ai/understudy/issues"
+  },
+  "type": "module",
+  "bin": {
+    "understudy": "understudy.mjs"
+  },
+  "main": "./understudy.mjs",
+	"exports": {
+		".": "./understudy.mjs"
+	},
+	"files": [
+		"understudy.mjs",
+		"README.md",
+		"CHANGELOG.md",
+		"LICENSE",
+		"CONTRIBUTING.md",
+		"CLA.md",
+		".env.example",
+		"assets",
+		"dist",
+		"skills",
+		"!skills/**/scripts/test_*",
+		"!skills/**/__pycache__",
+		"!skills/**/*.pyc"
+	],
+	"scripts": {
+		"build": "pnpm -r --stream run build",
+		"test": "vitest --run",
+		"test:coverage": "vitest --run --coverage",
+		"lint": "oxlint .",
+		"check": "pnpm build && pnpm lint && pnpm typecheck && pnpm test",
+		"pack:check": "node scripts/check-pack.mjs",
+		"release:check": "pnpm check && pnpm pack:check && node scripts/npm-pack-dry-run.mjs",
+		"prepack": "pnpm build && node scripts/prepare-package.mjs",
+		"postpack": "node scripts/cleanup-package.mjs",
+		"typecheck": "pnpm -r --stream run typecheck",
+		"clean": "pnpm -r --stream run clean",
+		"start": "node scripts/run-node.mjs",
+		"understudy": "node scripts/run-node.mjs"
+	},
+	"engines": {
+		"node": ">=20.6.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"packageManager": "pnpm@10.6.5",
+	"license": "MIT",
+	"dependencies": {
+		"@mariozechner/pi-agent-core": "^0.56.2",
+		"@mariozechner/pi-ai": "^0.56.2",
+		"@mariozechner/pi-coding-agent": "^0.56.2",
+		"@mariozechner/pi-tui": "^0.56.2",
+		"commander": "^13.1.0",
+		"croner": "^9.1.0",
+		"dotenv": "^16.4.7",
+		"express": "^5.1.0",
+		"json5": "^2.2.3",
+		"linkedom": "^0.18.9",
+		"ws": "^8.18.0",
+		"yaml": "^2.8.1",
+		"zod": "^3.24.1"
+	},
+	"optionalDependencies": {
+		"@slack/bolt": "^4.3.0",
+		"@whiskeysockets/baileys": "7.0.0-rc.9",
+		"better-sqlite3": "^11.7.0",
+		"discord.js": "^14.18.0",
+		"grammy": "^1.35.0",
+		"playwright": "^1.52.0",
+		"qrcode-terminal": "^0.12.0"
+	},
+	"devDependencies": {
+		"esbuild": "^0.25.0",
+		"@types/node": "^24.3.0",
+		"@vitest/coverage-v8": "^3.2.4",
+		"oxlint": "^1.51.0",
+		"vitest": "^3.2.4"
+	},
+	"pnpm": {
+		"overrides": {
+			"zod": "^3.24.1"
+		}
+	}
+}

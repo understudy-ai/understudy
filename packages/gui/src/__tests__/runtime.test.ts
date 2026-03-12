@@ -1,0 +1,1103 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+	execFile: vi.fn(),
+	mkdtemp: vi.fn(),
+	readFile: vi.fn(),
+	rm: vi.fn(),
+	captureContextPayload: {
+		appName: "Mail",
+		display: {
+			index: 1,
+			bounds: { x: 0, y: 0, width: 800, height: 600 },
+		},
+		cursor: { x: 140, y: 220 },
+		windowId: 73,
+		windowTitle: "Composer",
+		windowBounds: { x: 100, y: 200, width: 400, height: 300 },
+		windowCount: 1,
+		windowCaptureStrategy: "main_window",
+	},
+	execCalls: [] as Array<{
+		file: string;
+		args: string[];
+		env: Record<string, string | undefined>;
+	}>,
+}));
+
+vi.mock("node:child_process", () => ({
+	execFile: mocks.execFile,
+}));
+
+vi.mock("node:fs/promises", async () => {
+	const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+	return {
+		...actual,
+		mkdtemp: mocks.mkdtemp,
+		readFile: mocks.readFile,
+		rm: mocks.rm,
+	};
+});
+
+import { ComputerUseGuiRuntime } from "../runtime.js";
+
+const MOCK_NATIVE_HELPER_PATH = "/tmp/mock-understudy-gui-native-helper";
+const ONE_BY_ONE_PNG = Buffer.from(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6W2y0AAAAASUVORK5CYII=",
+	"base64",
+);
+
+function createPngBuffer(width: number, height: number): Buffer {
+	const bytes = Buffer.from(ONE_BY_ONE_PNG);
+	bytes.writeUInt32BE(width, 16);
+	bytes.writeUInt32BE(height, 20);
+	return bytes;
+}
+
+function groundedTarget(target: string, point: { x: number; y: number }, confidence = 0.92) {
+	return {
+		method: "grounding" as const,
+		provider: "test-provider",
+		confidence,
+		reason: `Matched ${target}`,
+		coordinateSpace: "image_pixels" as const,
+		point,
+		box: {
+			x: point.x - 10,
+			y: point.y - 8,
+			width: 20,
+			height: 16,
+		},
+	};
+}
+
+function createRuntime(
+	ground: ReturnType<typeof vi.fn>,
+) {
+	return new ComputerUseGuiRuntime({
+		groundingProvider: { ground },
+	});
+}
+
+function actionKindForMode(mode: string | undefined): string {
+	switch (mode) {
+		case "click":
+			return "cg_click";
+		case "right_click":
+			return "cg_right_click";
+		case "double_click":
+			return "cg_double_click";
+		case "hover":
+			return "cg_hover";
+		case "click_and_hold":
+			return "cg_click_and_hold";
+		case "drag":
+			return "cg_drag";
+		case "scroll":
+			return "cg_scroll";
+		default:
+			return "cg_event";
+	}
+}
+
+describe("ComputerUseGuiRuntime", () => {
+	const originalPlatform = process.platform;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mocks.execCalls.length = 0;
+		Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+		process.env.UNDERSTUDY_GUI_NATIVE_HELPER_PATH = MOCK_NATIVE_HELPER_PATH;
+		process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS = "0";
+		mocks.mkdtemp.mockResolvedValue("/tmp/understudy-gui-test");
+		mocks.readFile.mockResolvedValue(createPngBuffer(800, 600));
+		mocks.rm.mockResolvedValue(undefined);
+		mocks.captureContextPayload = {
+			appName: "Mail",
+			display: {
+				index: 1,
+				bounds: { x: 0, y: 0, width: 800, height: 600 },
+			},
+			cursor: { x: 140, y: 220 },
+			windowId: 73,
+			windowTitle: "Composer",
+			windowBounds: { x: 100, y: 200, width: 400, height: 300 },
+			windowCount: 1,
+			windowCaptureStrategy: "main_window",
+		};
+		mocks.execFile.mockImplementation((file: string, args: unknown, options: unknown, callback?: (...cbArgs: unknown[]) => void) => {
+			const cb = (typeof options === "function" ? options : callback) as ((...cbArgs: unknown[]) => void) | undefined;
+			if (!cb) {
+				throw new Error("Missing execFile callback");
+			}
+			const resolvedArgs = Array.isArray(args) ? args.map((value) => String(value)) : [];
+			const resolvedOptions = typeof options === "function" ? {} : (options ?? {});
+			const env = typeof resolvedOptions === "object" && resolvedOptions !== null
+				? { ...((resolvedOptions as Record<string, unknown>).env as Record<string, string | undefined> | undefined) }
+				: {};
+			mocks.execCalls.push({
+				file,
+				args: resolvedArgs,
+				env,
+			});
+
+			if (file === "screencapture") {
+				cb(null, { stdout: "", stderr: "" });
+				return {} as any;
+			}
+			if (file === "sips") {
+				cb(null, { stdout: "", stderr: "" });
+				return {} as any;
+			}
+			if (file === MOCK_NATIVE_HELPER_PATH) {
+				if (resolvedArgs[0] === "capture-context") {
+					cb(null, {
+						stdout: JSON.stringify(mocks.captureContextPayload),
+						stderr: "",
+					});
+					return {} as any;
+				}
+				if (resolvedArgs[0] === "event") {
+					cb(null, {
+						stdout: `${actionKindForMode(env.UNDERSTUDY_GUI_EVENT_MODE)}\n`,
+						stderr: "",
+					});
+					return {} as any;
+				}
+				if (resolvedArgs[0] === "activate") {
+					cb(null, {
+						stdout: "activated\n",
+						stderr: "",
+					});
+					return {} as any;
+				}
+				return {} as any;
+			}
+			if (file === "osascript") {
+				const stdout = env.UNDERSTUDY_GUI_TEXT !== undefined
+					? "typed\n"
+					: env.UNDERSTUDY_GUI_KEY !== undefined || env.UNDERSTUDY_GUI_KEY_CODE !== undefined
+						? "key_event\n"
+						: "activated\n";
+				cb(null, { stdout, stderr: "" });
+				return {} as any;
+			}
+			cb(new Error(`Unexpected command: ${file}`));
+			return {} as any;
+		});
+	});
+
+	afterEach(() => {
+		Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+		delete process.env.UNDERSTUDY_GUI_NATIVE_HELPER_PATH;
+		delete process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS;
+	});
+
+	it("describes capabilities conservatively when Screen Recording is unavailable", () => {
+		const runtime = new ComputerUseGuiRuntime({
+			environmentReadiness: {
+				status: "blocked",
+				checkedAt: 1,
+				checks: [
+					{ id: "platform", label: "Platform", status: "ok", summary: "macOS GUI runtime is available on this host." },
+					{ id: "accessibility", label: "Accessibility", status: "ok", summary: "Accessibility permission is granted for native GUI input." },
+					{ id: "screen_recording", label: "Screen Recording", status: "error", summary: "Screen Recording permission is not granted for GUI screenshots." },
+					{ id: "native_helper", label: "Native GUI Helper", status: "ok", summary: "Native GUI helper is ready for capture and input execution." },
+				],
+			},
+		});
+
+		const capabilities = runtime.describeCapabilities("darwin");
+
+		expect(capabilities).toMatchObject({
+			platformSupported: true,
+			groundingAvailable: false,
+			nativeHelperAvailable: true,
+			screenCaptureAvailable: false,
+			inputAvailable: true,
+		});
+		expect(capabilities.toolAvailability.gui_read).toMatchObject({
+			enabled: false,
+		});
+		expect(capabilities.toolAvailability.gui_scroll).toMatchObject({
+			enabled: true,
+			targetlessOnly: true,
+		});
+		expect(capabilities.toolAvailability.gui_keypress).toMatchObject({
+			enabled: true,
+		});
+	});
+
+	it("describes capabilities conservatively when Accessibility is unavailable", () => {
+		const runtime = new ComputerUseGuiRuntime({
+			environmentReadiness: {
+				status: "blocked",
+				checkedAt: 1,
+				checks: [
+					{ id: "platform", label: "Platform", status: "ok", summary: "macOS GUI runtime is available on this host." },
+					{ id: "accessibility", label: "Accessibility", status: "error", summary: "Accessibility permission is not granted for native GUI input." },
+					{ id: "screen_recording", label: "Screen Recording", status: "ok", summary: "Screen Recording permission is granted for GUI screenshots." },
+					{ id: "native_helper", label: "Native GUI Helper", status: "ok", summary: "Native GUI helper is ready for capture and input execution." },
+				],
+			},
+		});
+
+		const capabilities = runtime.describeCapabilities("darwin");
+
+		expect(capabilities).toMatchObject({
+			platformSupported: true,
+			groundingAvailable: false,
+			nativeHelperAvailable: true,
+			screenCaptureAvailable: true,
+			inputAvailable: false,
+		});
+		expect(capabilities.toolAvailability.gui_read).toMatchObject({
+			enabled: true,
+			targetlessOnly: true,
+		});
+		expect(capabilities.toolAvailability.gui_keypress).toMatchObject({
+			enabled: false,
+		});
+		expect(capabilities.toolAvailability.gui_click).toMatchObject({
+			enabled: false,
+		});
+	});
+
+	it("captures screenshots with the cursor visible", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.screenshot();
+
+		expect(result.status).toEqual({
+			code: "observed",
+			summary: "GUI screenshot captured.",
+		});
+		expect(result.details).toMatchObject({
+			capture_method: "screencapture",
+			capture_cursor_visible: true,
+			grounding_method: "screenshot",
+			confidence: 1,
+		});
+		expect(result.image).toMatchObject({
+			mimeType: "image/png",
+			filename: "gui-screenshot.png",
+		});
+		expect(mocks.execCalls.find((call) => call.file === "screencapture")?.args).toEqual([
+			"-x",
+			"-C",
+			"-D1",
+			"-t",
+			"png",
+			"/tmp/understudy-gui-test/gui-screenshot.png",
+		]);
+	});
+
+	it("prefers a region capture for app-scoped screenshots", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.screenshot({
+			app: "Mail",
+		});
+
+		expect(result.details).toMatchObject({
+			capture_mode: "window",
+			window_title: "Composer",
+			window_count: 1,
+			window_capture_strategy: "main_window",
+		});
+		expect(mocks.execCalls.find((call) => call.file === "screencapture")?.args).toEqual([
+			"-x",
+			"-C",
+			"-R",
+			"100,200,400,300",
+			"-t",
+			"png",
+			"/tmp/understudy-gui-test/gui-screenshot.png",
+		]);
+		expect(mocks.execCalls.find((call) => call.file === "sips")).toBeUndefined();
+	});
+
+	it("captures the minimal union of visible app windows", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			windowBounds: { x: 60, y: 180, width: 560, height: 320 },
+			windowCount: 2,
+			windowCaptureStrategy: "app_union",
+		};
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.screenshot({
+			app: "Mail",
+		});
+
+		expect(result.details).toMatchObject({
+			capture_mode: "window",
+			capture_rect: { x: 60, y: 180, width: 560, height: 320 },
+			window_count: 2,
+			window_capture_strategy: "app_union",
+		});
+		expect(mocks.execCalls.find((call) => call.file === "screencapture")?.args).toEqual([
+			"-x",
+			"-C",
+			"-R",
+			"60,180,560,320",
+			"-t",
+			"png",
+			"/tmp/understudy-gui-test/gui-screenshot.png",
+		]);
+		expect(mocks.execCalls.find((call) => call.file === "sips")).toBeUndefined();
+	});
+
+	it("tracks retina-scaled app regions without extra canvas cropping", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			windowBounds: { x: 50, y: 120, width: 500, height: 320 },
+			windowCount: 2,
+			windowCaptureStrategy: "app_union",
+		};
+		mocks.readFile.mockResolvedValueOnce(createPngBuffer(1000, 640));
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.screenshot({
+			app: "Mail",
+		});
+
+		expect(result.details).toMatchObject({
+			capture_mode: "window",
+			capture_image_size: {
+				width: 1000,
+				height: 640,
+			},
+			capture_scale_x: 2,
+			capture_scale_y: 2,
+			window_capture_strategy: "app_union",
+		});
+		expect(mocks.execCalls.find((call) => call.file === "sips")).toBeUndefined();
+	});
+
+	it("uses explicit display capture when requested", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.screenshot({
+			app: "Mail",
+			captureMode: "display",
+		});
+
+		expect(result.details).toMatchObject({
+			capture_mode: "display",
+		});
+		expect(mocks.execCalls.find((call) => call.file === "screencapture")?.args).toEqual([
+			"-x",
+			"-C",
+			"-D1",
+			"-t",
+			"png",
+			"/tmp/understudy-gui-test/gui-screenshot.png",
+		]);
+	});
+
+	it("passes window selection through to the capture helper", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+
+		await runtime.screenshot({
+			app: "Mail",
+			windowTitle: "Inbox",
+			windowSelector: {
+				titleContains: "Inbox",
+				index: 2,
+			},
+		});
+
+		const captureCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "capture-context",
+		);
+		expect(captureCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_WINDOW_TITLE: "Inbox",
+			UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: "Inbox",
+			UNDERSTUDY_GUI_WINDOW_INDEX: "2",
+		});
+	});
+
+	it("resolves GUI read targets visually", async () => {
+		const ground = vi.fn().mockResolvedValue(
+			groundedTarget("Send button", { x: 48, y: 64 }),
+		);
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.read({
+			target: "Send button",
+			scope: "composer",
+		});
+
+		expect(result.status).toEqual({
+			code: "resolved",
+			summary: "Resolved a GUI target from the screenshot grounding route.",
+		});
+		expect(result.text).toContain('Resolved "Send button" visually.');
+		expect(result.details).toMatchObject({
+			grounding_provider: "test-provider",
+			confidence: 0.92,
+			capture_mode: "window",
+			capture_cursor_visible: false,
+			window_title: "Composer",
+		});
+		expect(ground).toHaveBeenCalledWith(expect.objectContaining({
+			target: "Send button",
+			scope: "composer",
+		}));
+		expect(mocks.execCalls.find((call) => call.file === "screencapture")?.args).not.toContain("-C");
+	});
+
+		it("re-grounds a same-target click after gui_read so action-specific context reaches the grounding model", async () => {
+		const ground = vi.fn().mockResolvedValue(
+			groundedTarget("Send button", { x: 48, y: 64 }, 0.96),
+		);
+		const runtime = createRuntime(ground);
+
+		const readResult = await runtime.read({
+			target: "Send button",
+			scope: "composer",
+		});
+		const clickResult = await runtime.click({
+			target: "Send button",
+			scope: "composer",
+		});
+
+		expect(readResult.status.code).toBe("resolved");
+		expect(clickResult.status.code).toBe("action_sent");
+		expect(ground).toHaveBeenCalledTimes(2);
+		expect(ground.mock.calls[0]?.[0]).toMatchObject({
+			action: "read",
+		});
+		expect(ground.mock.calls[1]?.[0]).toMatchObject({
+			action: "click",
+		});
+			const clickCall = mocks.execCalls.find((call) =>
+				call.file === MOCK_NATIVE_HELPER_PATH &&
+				call.args[0] === "event" &&
+				call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+			);
+			expect(clickCall?.env.UNDERSTUDY_GUI_X).toBe("124");
+				expect(clickCall?.env.UNDERSTUDY_GUI_Y).toBe("232");
+		});
+
+		it("passes location hints into grounding requests", async () => {
+			const ground = vi.fn().mockResolvedValue(
+				groundedTarget("Save button", { x: 72, y: 88 }, 0.95),
+			);
+			const runtime = createRuntime(ground);
+
+			await runtime.click({
+				target: "Save button",
+				locationHint: "bottom-right dialog footer",
+				scope: "Export dialog",
+			});
+
+			expect(ground).toHaveBeenCalledWith(expect.objectContaining({
+				target: "Save button",
+				locationHint: "bottom-right dialog footer",
+				scope: "Export dialog",
+			}));
+		});
+
+	it("converts image-space grounding points into display-space click coordinates", async () => {
+		const ground = vi.fn().mockResolvedValue({
+			method: "grounding" as const,
+			provider: "test-provider",
+			confidence: 0.97,
+			reason: "Matched Send button",
+			coordinateSpace: "image_pixels" as const,
+			point: { x: 200, y: 100 },
+			box: { x: 160, y: 60, width: 80, height: 40 },
+		});
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.click({
+			target: "Send button",
+		});
+
+		const clickCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+		);
+		expect(clickCall?.env.UNDERSTUDY_GUI_X).toBe("200");
+		expect(clickCall?.env.UNDERSTUDY_GUI_Y).toBe("250");
+		expect(result.details).toMatchObject({
+			grounding_coordinate_space: "image_pixels",
+			grounding_image_point: { x: 200, y: 100 },
+			grounding_display_point: { x: 200, y: 250 },
+			grounding_display_box: { x: 180, y: 230, width: 40, height: 20 },
+			executed_point: { x: 200, y: 250 },
+			capture_mode: "window",
+			pre_action_capture: {
+				capture_mode: "window",
+				window_title: "Composer",
+			},
+		});
+		expect(result.image?.mimeType).toBe("image/png");
+	});
+
+	it("converts image-space grounding points against a multi-window union capture", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			windowBounds: { x: 50, y: 120, width: 500, height: 320 },
+			windowCount: 2,
+			windowCaptureStrategy: "app_union",
+		};
+		mocks.readFile.mockResolvedValue(createPngBuffer(1000, 640));
+		const ground = vi.fn().mockResolvedValue({
+			method: "grounding" as const,
+			provider: "test-provider",
+			confidence: 0.97,
+			reason: "Matched Send button",
+			coordinateSpace: "image_pixels" as const,
+			point: { x: 600, y: 200 },
+			box: { x: 560, y: 160, width: 120, height: 80 },
+		});
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+
+		const clickCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+		);
+		expect(clickCall?.env.UNDERSTUDY_GUI_X).toBe("350");
+		expect(clickCall?.env.UNDERSTUDY_GUI_Y).toBe("220");
+		expect(result.details).toMatchObject({
+			grounding_image_point: { x: 600, y: 200 },
+			grounding_display_point: { x: 350, y: 220 },
+			grounding_display_box: { x: 330, y: 200, width: 60, height: 40 },
+			capture_rect: { x: 50, y: 120, width: 500, height: 320 },
+			window_count: 2,
+			window_capture_strategy: "app_union",
+		});
+	});
+
+	it("rejects out-of-bounds image-space grounding instead of clicking the capture edge", async () => {
+		const ground = vi.fn().mockResolvedValue({
+			method: "grounding" as const,
+			provider: "test-provider",
+			confidence: 0.94,
+			reason: "Matched outside the captured region",
+			coordinateSpace: "image_pixels" as const,
+			point: { x: 1200, y: 100 },
+			box: { x: 1180, y: 80, width: 80, height: 40 },
+		});
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.click({
+			target: "Send button",
+		});
+
+		expect(result.status).toEqual({
+			code: "not_found",
+			summary: "No confident visual GUI target was found.",
+		});
+		expect(result.details).toMatchObject({
+			error:
+				'Grounding resolved "Send button" to image-space point (1200, 100), but that point falls outside 800x600px.',
+			grounding_resolution_error:
+				'Grounding resolved "Send button" to image-space point (1200, 100), but that point falls outside 800x600px.',
+		});
+		expect(result.image?.mimeType).toBe("image/png");
+		expect(mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+		)).toBeUndefined();
+	});
+
+	it("does not replay out-of-bounds grounding diagnostics into the next click attempt", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce({
+				method: "grounding" as const,
+				provider: "test-provider",
+				confidence: 0.94,
+				reason: "Matched outside the captured region",
+				coordinateSpace: "image_pixels" as const,
+				point: { x: 1200, y: 100 },
+			})
+			.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.9));
+		const runtime = createRuntime(ground);
+
+		await runtime.click({
+			target: "Send button",
+		});
+		await runtime.click({
+			target: "Send button",
+		});
+
+		const sendButtonCalls = ground.mock.calls
+			.map((call) => call[0])
+			.filter((params) => params?.target === "Send button");
+		expect(sendButtonCalls).toHaveLength(2);
+		expect(sendButtonCalls[1]).toMatchObject({
+			groundingMode: undefined,
+			previousFailures: [],
+		});
+	});
+
+	it("sends a grounded click and returns evidence from the post-action capture", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.92));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+
+		expect(result.status).toEqual({
+			code: "action_sent",
+			summary: "GUI click was sent.",
+		});
+		expect(result.text).toContain('Clicked "Send button"');
+		expect(result.details).toMatchObject({
+			action_kind: "cg_click",
+			grounding_provider: "test-provider",
+			capture_mode: "window",
+			window_title: "Composer",
+			executed_point: { x: 124, y: 232 },
+		});
+		expect(ground.mock.calls[0]?.[0]).toMatchObject({
+			target: "Send button",
+			action: "click",
+			captureMode: "window",
+			windowTitle: "Composer",
+			previousFailures: [],
+		});
+		expect(mocks.execCalls.filter((call) => call.file === "osascript")).toHaveLength(0);
+	});
+
+	it("waits for the settle delay configured in the environment before capturing post-action evidence", async () => {
+		vi.useFakeTimers();
+		let clickPromise: Promise<Awaited<ReturnType<ComputerUseGuiRuntime["click"]>>> | undefined;
+		try {
+			process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS = "75";
+			const ground = vi.fn()
+				.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.92));
+			const runtime = new ComputerUseGuiRuntime({
+				groundingProvider: { ground },
+			});
+
+			let settled = false;
+			clickPromise = runtime.click({
+				app: "Mail",
+				target: "Send button",
+			}).then((result) => {
+				settled = true;
+				return result;
+			});
+
+			await vi.advanceTimersByTimeAsync(0);
+			expect(settled).toBe(false);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
+			expect(mocks.execCalls.filter((call) => call.file === "osascript")).toHaveLength(0);
+
+			await vi.advanceTimersByTimeAsync(74);
+			expect(settled).toBe(false);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
+
+			await vi.advanceTimersByTimeAsync(1);
+			const result = await clickPromise;
+
+			expect(settled).toBe(true);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(2);
+			expect(result.details).toMatchObject({
+				post_action_capture_settle_ms: 75,
+			});
+		} finally {
+			if (clickPromise) {
+				await vi.runAllTimersAsync();
+				await clickPromise.catch(() => undefined);
+			}
+			vi.useRealTimers();
+		}
+	});
+
+	it("defaults to a 3s settle delay before capturing post-action evidence", async () => {
+		vi.useFakeTimers();
+		let clickPromise: Promise<Awaited<ReturnType<ComputerUseGuiRuntime["click"]>>> | undefined;
+		try {
+			delete process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS;
+			const ground = vi.fn()
+				.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.92));
+			const runtime = new ComputerUseGuiRuntime({
+				groundingProvider: { ground },
+			});
+
+			let settled = false;
+			clickPromise = runtime.click({
+				app: "Mail",
+				target: "Send button",
+			}).then((result) => {
+				settled = true;
+				return result;
+			});
+
+			await vi.advanceTimersByTimeAsync(0);
+			expect(settled).toBe(false);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
+
+			await vi.advanceTimersByTimeAsync(2_999);
+			expect(settled).toBe(false);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
+
+			await vi.advanceTimersByTimeAsync(1);
+			const result = await clickPromise;
+
+			expect(settled).toBe(true);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(2);
+			expect(result.details).toMatchObject({
+				post_action_capture_settle_ms: 3_000,
+			});
+		} finally {
+			if (clickPromise) {
+				await vi.runAllTimersAsync();
+				await clickPromise.catch(() => undefined);
+			}
+			vi.useRealTimers();
+		}
+	});
+
+	it("reads the post-action settle delay from the environment", async () => {
+		vi.useFakeTimers();
+		let clickPromise: Promise<Awaited<ReturnType<ComputerUseGuiRuntime["click"]>>> | undefined;
+		try {
+			process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS = "1250";
+			const ground = vi.fn()
+				.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.92));
+			const runtime = new ComputerUseGuiRuntime({
+				groundingProvider: { ground },
+			});
+
+			let settled = false;
+			clickPromise = runtime.click({
+				app: "Mail",
+				target: "Send button",
+			}).then((result) => {
+				settled = true;
+				return result;
+			});
+
+			await vi.advanceTimersByTimeAsync(0);
+			expect(settled).toBe(false);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
+
+			await vi.advanceTimersByTimeAsync(1_249);
+			expect(settled).toBe(false);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
+
+			await vi.advanceTimersByTimeAsync(1);
+			const result = await clickPromise;
+
+			expect(settled).toBe(true);
+			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(2);
+			expect(result.details).toMatchObject({
+				post_action_capture_settle_ms: 1_250,
+			});
+		} finally {
+			if (clickPromise) {
+				await vi.runAllTimersAsync();
+				await clickPromise.catch(() => undefined);
+			}
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps each click grounding request stateless after a prior miss", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.93));
+		const runtime = createRuntime(ground);
+
+		const firstResult = await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+		expect(firstResult.status.code).toBe("not_found");
+
+		await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+
+		const sendButtonCalls = ground.mock.calls
+			.map((call) => call[0])
+			.filter((params) => params?.target === "Send button");
+		expect(sendButtonCalls).toHaveLength(2);
+		expect(sendButtonCalls[0]).toMatchObject({
+			action: "click",
+			groundingMode: undefined,
+			previousFailures: [],
+		});
+		expect(sendButtonCalls[1]).toMatchObject({
+			action: "click",
+			groundingMode: undefined,
+			previousFailures: [],
+		});
+	});
+
+	it("keeps later click grounding requests stateless after a success", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.93))
+			.mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.94));
+		const runtime = createRuntime(ground);
+
+		await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+		await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+		await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+
+		const sendButtonCalls = ground.mock.calls
+			.map((call) => call[0])
+			.filter((params) => params?.target === "Send button");
+		expect(sendButtonCalls).toHaveLength(3);
+		expect(sendButtonCalls[1]).toMatchObject({
+			groundingMode: undefined,
+			previousFailures: [],
+		});
+		expect(sendButtonCalls[2]).toMatchObject({
+			groundingMode: undefined,
+			previousFailures: [],
+		});
+	});
+
+	it("sends a grounded right click", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("File row", { x: 92, y: 140 }));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.rightClick({
+			target: "File row",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_right_click",
+			executed_point: { x: expect.any(Number), y: expect.any(Number) },
+		});
+	});
+
+	it("sends a grounded double click", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Open item", { x: 80, y: 96 }));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.doubleClick({
+			target: "Open item",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_double_click",
+			executed_point: { x: expect.any(Number), y: expect.any(Number) },
+		});
+	});
+
+	it("keeps the pointer on a grounded hover target", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Info icon", { x: 160, y: 104 }));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.hover({
+			target: "Info icon",
+			settleMs: 320,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_hover",
+			settle_ms: 320,
+			executed_point: { x: expect.any(Number), y: expect.any(Number) },
+		});
+		const hoverCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "hover",
+		);
+		expect(hoverCall?.env.UNDERSTUDY_GUI_SETTLE_MS).toBe("320");
+	});
+
+	it("clicks and holds a grounded target", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Record button", { x: 220, y: 180 }));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.clickAndHold({
+			target: "Record button",
+			groundingMode: "complex",
+			holdDurationMs: 900,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_click_and_hold",
+			hold_duration_ms: 900,
+			executed_point: { x: expect.any(Number), y: expect.any(Number) },
+		});
+		const holdCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click_and_hold",
+		);
+		expect(holdCall?.env.UNDERSTUDY_GUI_HOLD_DURATION_MS).toBe("900");
+		expect(ground).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				target: "Record button",
+				groundingMode: "complex",
+			}),
+		);
+	});
+
+	it("sends drag actions and records destination grounding", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Card A", { x: 64, y: 88 }))
+			.mockResolvedValueOnce(groundedTarget("Done column", { x: 280, y: 92 }, 0.9));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.drag({
+			fromTarget: "Card A",
+			toTarget: "Done column",
+			durationMs: 600,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_drag",
+			grounding_provider: "test-provider",
+			destination_target_resolution: {
+				grounding_provider: "test-provider",
+			},
+			executed_from_point: { x: 132, y: 244 },
+			executed_to_point: { x: expect.any(Number), y: expect.any(Number) },
+		});
+		expect(ground.mock.calls[0]?.[0]).toMatchObject({
+			action: "drag_source",
+			relatedTarget: "Done column",
+			relatedScope: undefined,
+			relatedAction: "drag_destination",
+		});
+		expect(ground.mock.calls[1]?.[0]).toMatchObject({
+			action: "drag_destination",
+			relatedTarget: "Card A",
+			relatedAction: "drag_source",
+			relatedPoint: { x: 132, y: 244 },
+		});
+	});
+
+	it("sends scroll actions against a grounded target", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Transcript panel", { x: 320, y: 400 }));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.scroll({
+			target: "Transcript panel",
+			direction: "down",
+			amount: 8,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_scroll",
+			direction: "down",
+			amount: 8,
+			executed_point: { x: expect.any(Number), y: expect.any(Number) },
+		});
+	});
+
+	it("focuses a grounded target before typing", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Composer", { x: 300, y: 500 }));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.type({
+			target: "Composer",
+			value: "hello world",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			executed_point: { x: expect.any(Number), y: expect.any(Number) },
+		});
+		expect(mocks.execCalls.map((call) => call.file)).toContain(MOCK_NATIVE_HELPER_PATH);
+		expect(mocks.execCalls.map((call) => call.file)).toContain("osascript");
+	});
+
+	it("sends hotkey actions", async () => {
+		const ground = vi.fn();
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.hotkey({
+			key: "k",
+			modifiers: ["command"],
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "key_event",
+			repeat: 1,
+			grounding_method: "visual",
+		});
+		expect(ground).not.toHaveBeenCalled();
+	});
+
+	it("sends keypress actions", async () => {
+		const ground = vi.fn();
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.keypress({
+			key: "ArrowDown",
+			repeat: 2,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "key_event",
+			repeat: 2,
+			grounding_method: "visual",
+		});
+		expect(ground).not.toHaveBeenCalled();
+	});
+
+	it("waits for a grounded target to appear", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Finished badge", { x: 480, y: 220 }, 0.93))
+			.mockResolvedValueOnce(groundedTarget("Finished badge", { x: 481, y: 221 }, 0.94));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.wait({
+			target: "Finished badge",
+			timeoutMs: 20,
+			intervalMs: 0,
+		});
+
+		expect(result.status).toEqual({
+			code: "condition_met",
+			summary: "Target appeared.",
+		});
+		expect(result.details).toMatchObject({
+			attempts: 2,
+			wait_confirmations_required: 2,
+			grounding_provider: "test-provider",
+		});
+		});
+});

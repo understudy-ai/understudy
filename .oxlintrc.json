@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxlint-config-schema/main/.oxlintrc.json",
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "eqeqeq": "warn"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "*.config.ts",
+    "*.config.js",
+    "scripts"
+  ]
+}

@@ -1,0 +1,5 @@
+assets/.DS_Store
+skills/**/.DS_Store
+skills/**/__pycache__/
+skills/**/scripts/test_*
+skills/**/*.pyc

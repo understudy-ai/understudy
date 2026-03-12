@@ -1,0 +1,42 @@
+{
+	"name": "@understudy/tools",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Understudy built-in tools (browser, web, process, memory, message, schedule, sessions)",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist",
+		"test": "vitest --run --config ../../vitest.package.config.ts"
+	},
+	"dependencies": {
+		"@mariozechner/pi-agent-core": "^0.56.2",
+		"@silvia-odwyer/photon-node": "^0.3.4",
+		"@sinclair/typebox": "^0.34.48",
+		"@understudy/core": "workspace:*",
+		"@understudy/gui": "workspace:*",
+		"@understudy/types": "workspace:*",
+		"croner": "^9.1.0",
+		"linkedom": "^0.18.9"
+	},
+	"optionalDependencies": {
+		"better-sqlite3": "^11.7.0",
+		"playwright": "^1.52.0"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.13",
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"license": "MIT"
+}

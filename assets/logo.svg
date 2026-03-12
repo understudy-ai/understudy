@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 140" width="480" height="140">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#100e20"/>
+      <stop offset="100%" stop-color="#0a0814"/>
+    </linearGradient>
+    <linearGradient id="spectrum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd54f"/>
+      <stop offset="30%" stop-color="#ff8a65"/>
+      <stop offset="60%" stop-color="#ce93d8"/>
+      <stop offset="100%" stop-color="#7c4dff"/>
+    </linearGradient>
+    <linearGradient id="spectrum-light" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd54f"/>
+      <stop offset="30%" stop-color="#ff8a65"/>
+      <stop offset="60%" stop-color="#ce93d8"/>
+      <stop offset="100%" stop-color="#b388ff"/>
+    </linearGradient>
+    <clipPath id="sq">
+      <rect x="6" y="6" width="128" height="128" rx="30" ry="30"/>
+    </clipPath>
+  </defs>
+
+  <!-- Icon squircle -->
+  <rect x="6" y="6" width="128" height="128" rx="30" ry="30" fill="url(#bg)"/>
+
+  <!-- Echo U -->
+  <path d="M30,22 L30,82 Q30,122 70,122 Q110,122 110,82 L110,22"
+        fill="none" stroke="#7c4dff" stroke-width="8" stroke-linecap="round" opacity="0.25"
+        clip-path="url(#sq)"/>
+
+  <!-- Main U -->
+  <path d="M44,34 L44,78 Q44,108 70,108 Q96,108 96,78 L96,34"
+        fill="none" stroke="url(#spectrum)" stroke-width="12" stroke-linecap="round"
+        clip-path="url(#sq)"/>
+
+  <!-- Text: "Understudy" -->
+  <text x="154" y="78" font-family="'SF Pro Display', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif"
+        font-size="44" font-weight="600" fill="#e8e0f0" letter-spacing="-0.5">
+    Understudy
+  </text>
+
+  <!-- Tagline -->
+  <text x="156" y="106" font-family="'SF Pro Text', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif"
+        font-size="14.5" font-weight="400" fill="#b388ff" letter-spacing="0.3" opacity="0.7">
+    An understudy watches. Then performs.
+  </text>
+</svg>

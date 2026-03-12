@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Understudy | A Teachable Desktop Agent</title>
+    <meta
+      name="description"
+      content="Understudy is a teachable desktop agent. It operates your computer like a human colleague, learns from demonstrations, turns successful paths into reusable skills, and keeps getting faster over time."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f5f0e8;
+        --panel: rgba(255, 249, 240, 0.78);
+        --panel-strong: rgba(255, 252, 247, 0.9);
+        --ink: #1f1a16;
+        --muted: #66584c;
+        --line: rgba(77, 55, 32, 0.14);
+        --accent: #d05f2d;
+        --accent-deep: #9e3f1d;
+        --accent-soft: rgba(208, 95, 45, 0.12);
+        --teal: #1e6b66;
+        --shadow: 0 24px 80px rgba(77, 55, 32, 0.14);
+        --radius-xl: 30px;
+        --content-width: 1180px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(208, 95, 45, 0.24), transparent 28%),
+          radial-gradient(circle at 85% 12%, rgba(30, 107, 102, 0.22), transparent 24%),
+          linear-gradient(180deg, #f7f1e8 0%, #f3ece3 44%, #efe5d7 100%);
+        min-height: 100vh;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(77, 55, 32, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(77, 55, 32, 0.045) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 85%);
+        opacity: 0.4;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        position: relative;
+        z-index: 1;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        backdrop-filter: blur(18px);
+        background: rgba(247, 241, 232, 0.72);
+        border-bottom: 1px solid rgba(77, 55, 32, 0.08);
+      }
+
+      .topbar-inner,
+      .section,
+      .footer-inner {
+        width: min(calc(100% - 32px), var(--content-width));
+        margin: 0 auto;
+      }
+
+      .topbar-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 72px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        text-decoration: none;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, var(--accent), #f0a95f);
+        color: #fff9f2;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 1.1rem;
+        font-weight: 700;
+        box-shadow: 0 10px 22px rgba(208, 95, 45, 0.28);
+      }
+
+      .brand-copy strong,
+      .hero h1,
+      .section h2,
+      .layer-card h3,
+      .metric strong,
+      .panel-title {
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+        letter-spacing: -0.02em;
+      }
+
+      .brand-copy {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .brand-copy strong {
+        font-size: 1rem;
+      }
+
+      .brand-copy span {
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .nav a {
+        text-decoration: none;
+        color: var(--muted);
+        font-size: 0.95rem;
+        padding: 8px 12px;
+        border-radius: 999px;
+        transition: background-color 180ms ease, color 180ms ease;
+      }
+
+      .nav a:hover {
+        background: rgba(255, 255, 255, 0.56);
+        color: var(--ink);
+      }
+
+      .hero-wrap {
+        padding: 48px 0 22px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 28px;
+        align-items: stretch;
+      }
+
+      .hero-main,
+      .hero-side,
+      .card,
+      .layer-card,
+      .route-card,
+      .command-panel,
+      .architecture-panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .hero-main {
+        padding: 36px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .hero-main::after {
+        content: "";
+        position: absolute;
+        width: 280px;
+        height: 280px;
+        right: -90px;
+        top: -70px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(208, 95, 45, 0.24) 0%, transparent 70%);
+      }
+
+      .eyebrow,
+      .lang-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.6);
+        border: 1px solid rgba(208, 95, 45, 0.18);
+        font-size: 0.9rem;
+        color: var(--accent-deep);
+        text-decoration: none;
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 6px rgba(208, 95, 45, 0.14);
+      }
+
+      .hero-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .hero h1 {
+        font-size: clamp(3rem, 7vw, 5.5rem);
+        line-height: 0.95;
+        margin: 20px 0 18px;
+        max-width: 11ch;
+      }
+
+      .hero-lead {
+        font-size: 1.12rem;
+        line-height: 1.75;
+        color: var(--muted);
+        max-width: 60ch;
+        margin: 0 0 24px;
+      }
+
+      .hero-actions,
+      .hero-tags,
+      .metric-grid,
+      .card-grid,
+      .layer-grid,
+      .route-grid,
+      .architecture-grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .hero-actions {
+        grid-template-columns: repeat(2, minmax(0, max-content));
+        align-items: center;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 50px;
+        padding: 0 18px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        background: linear-gradient(135deg, var(--accent), #f0a95f);
+        color: #fff9f2;
+        box-shadow: 0 18px 30px rgba(208, 95, 45, 0.22);
+      }
+
+      .button-secondary {
+        background: rgba(255, 255, 255, 0.6);
+        color: var(--ink);
+        border: 1px solid rgba(77, 55, 32, 0.1);
+      }
+
+      .hero-tags {
+        margin-top: 22px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .tag {
+        background: rgba(255, 255, 255, 0.52);
+        border: 1px solid rgba(77, 55, 32, 0.08);
+        border-radius: 18px;
+        padding: 14px 16px;
+      }
+
+      .tag strong {
+        display: block;
+        font-size: 0.95rem;
+        margin-bottom: 4px;
+      }
+
+      .tag span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.45;
+      }
+
+      .hero-side {
+        padding: 22px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .panel-title {
+        font-size: 1.15rem;
+        margin: 0 0 2px;
+      }
+
+      .panel-subtitle {
+        color: var(--muted);
+        line-height: 1.6;
+        margin: 0;
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 6px;
+      }
+
+      .metric {
+        padding: 18px;
+        border-radius: 20px;
+        background: var(--panel-strong);
+        border: 1px solid rgba(77, 55, 32, 0.08);
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 2rem;
+        margin-bottom: 8px;
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .code-slice {
+        background: #221d19;
+        color: #f4e9dd;
+        border-radius: 22px;
+        padding: 18px;
+        font-family: "IBM Plex Sans", monospace;
+        font-size: 0.95rem;
+        line-height: 1.7;
+        overflow: auto;
+      }
+
+      .code-slice .accent {
+        color: #f0a95f;
+      }
+
+      .section {
+        padding: 24px 0 12px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .section h2 {
+        font-size: clamp(2rem, 4.2vw, 3.2rem);
+        line-height: 1.02;
+        margin: 0;
+      }
+
+      .section-copy {
+        max-width: 64ch;
+        color: var(--muted);
+        line-height: 1.8;
+      }
+
+      .card-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card {
+        padding: 26px;
+      }
+
+      .card-kicker,
+      .layer-status,
+      .route-rank {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent-deep);
+        font-size: 0.84rem;
+        font-weight: 600;
+      }
+
+      .card h3,
+      .route-card h3 {
+        margin: 16px 0 12px;
+        font-size: 1.4rem;
+        line-height: 1.15;
+      }
+
+      .card p,
+      .route-card p,
+      .layer-card p,
+      .architecture-panel p,
+      .command-panel p {
+        color: var(--muted);
+        line-height: 1.75;
+        margin: 0;
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .list div {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.58);
+        border: 1px solid rgba(77, 55, 32, 0.08);
+        line-height: 1.55;
+      }
+
+      .list strong {
+        color: var(--ink);
+      }
+
+      .layer-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+
+      .layer-card {
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .layer-status.is-live {
+        background: rgba(30, 107, 102, 0.14);
+        color: var(--teal);
+      }
+
+      .layer-status.is-build {
+        background: rgba(240, 169, 95, 0.18);
+        color: #975209;
+      }
+
+      .layer-status.is-future {
+        background: rgba(102, 88, 76, 0.12);
+        color: var(--muted);
+      }
+
+      .layer-step {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      .route-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .route-card {
+        padding: 24px;
+      }
+
+      .route-rank {
+        background: rgba(30, 107, 102, 0.12);
+        color: var(--teal);
+      }
+
+      .route-note {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px dashed rgba(77, 55, 32, 0.14);
+        font-size: 0.94rem;
+      }
+
+      .architecture-panel,
+      .command-panel {
+        padding: 28px;
+      }
+
+      .architecture-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 20px;
+      }
+
+      .architecture-cell {
+        padding: 18px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.58);
+        border: 1px solid rgba(77, 55, 32, 0.08);
+      }
+
+      .architecture-cell strong {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      .command-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 22px;
+        align-items: start;
+      }
+
+      .terminal {
+        background: #1d1916;
+        color: #f2e6d8;
+        border-radius: 22px;
+        padding: 20px;
+        font-family: "IBM Plex Sans", monospace;
+        line-height: 1.8;
+        overflow: auto;
+      }
+
+      .terminal strong {
+        color: #f0a95f;
+      }
+
+      .footer {
+        padding: 28px 0 52px;
+      }
+
+      .footer-inner {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      .footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      .showcase-video {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 7314 / 2160;
+        border-radius: var(--radius-xl);
+        overflow: hidden;
+        box-shadow: var(--shadow);
+        border: 1px solid var(--line);
+      }
+
+      .showcase-video iframe {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+
+      .showcase-note {
+        text-align: center;
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.6;
+      }
+
+      .showcase-note a {
+        color: var(--accent-deep);
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(14px);
+        transition: opacity 500ms ease, transform 500ms ease;
+      }
+
+      .reveal.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 1120px) {
+        .hero,
+        .command-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-tags,
+        .card-grid,
+        .layer-grid,
+        .route-grid,
+        .architecture-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .topbar-inner,
+        .section,
+        .footer-inner {
+          width: min(calc(100% - 24px), var(--content-width));
+        }
+
+        .topbar-inner,
+        .section-head,
+        .footer-inner {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .hero-main,
+        .hero-side,
+        .card,
+        .layer-card,
+        .route-card,
+        .command-panel,
+        .architecture-panel {
+          border-radius: 24px;
+        }
+
+        .hero-main {
+          padding: 26px;
+        }
+
+        .hero h1 {
+          max-width: none;
+        }
+
+        .hero-actions,
+        .hero-tags,
+        .metric-grid,
+        .card-grid,
+        .layer-grid,
+        .route-grid,
+        .architecture-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .nav {
+          width: 100%;
+        }
+
+        .nav a {
+          padding-left: 0;
+          padding-right: 0;
+        }
+
+        .button {
+          width: 100%;
+        }
+
+        .hero-actions {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="brand" href="#top">
+            <div class="brand-mark">U</div>
+            <div class="brand-copy">
+              <strong>Understudy</strong>
+              <span>Teachable Desktop Agent</span>
+            </div>
+          </a>
+          <nav class="nav" aria-label="Primary">
+            <a href="#showcase">Showcase</a>
+            <a href="#highlights">Highlights</a>
+            <a href="#alpha">Alpha</a>
+            <a href="#layers">Layers</a>
+            <a href="#routes">Routes</a>
+            <a href="#start">Start</a>
+          </nav>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="hero-wrap">
+          <div class="section hero">
+            <article class="hero-main reveal">
+              <div class="hero-top">
+                <span class="eyebrow">Alpha on macOS · Local-first · Teachable</span>
+                <a class="lang-link" href="./zh-CN/index.html">中文</a>
+              </div>
+              <h1>Watch once. Then take the stage.</h1>
+              <p class="hero-lead">
+                Understudy is a teachable desktop agent. It operates your computer like a human colleague across GUI, browser, shell, files, and messaging. You demonstrate a task once, it learns the intent, remembers successful paths, and gradually upgrades to faster execution routes.
+              </p>
+              <div class="hero-actions">
+                <a class="button button-primary" href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">
+                  View Repository
+                </a>
+                <a
+                  class="button button-secondary"
+                  href="https://github.com/understudy-ai/understudy/blob/main/docs/Product_Design.md"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Read Product Design
+                </a>
+              </div>
+              <div class="hero-tags">
+                <div class="tag">
+                  <strong>Unified desktop execution</strong>
+                  <span>One task can mix GUI, browser, terminal, web search, and local files inside one agent session.</span>
+                </div>
+                <div class="tag">
+                  <strong>Not a macro recorder</strong>
+                  <span>It learns task intent, parameter slots, and success criteria, not fixed coordinates.</span>
+                </div>
+                <div class="tag">
+                  <strong>Gets sharper with use</strong>
+                  <span>Successful paths become reusable skills, reducing randomness and repeat exploration.</span>
+                </div>
+                <div class="tag">
+                  <strong>Upgrades to faster routes</strong>
+                  <span>Start with GUI if needed, then graduate toward browser, CLI, or API execution when verified.</span>
+                </div>
+              </div>
+            </article>
+
+            <aside class="hero-side reveal">
+              <div>
+                <h2 class="panel-title">Alpha Snapshot</h2>
+                <p class="panel-subtitle">
+                  This page is distilled from the repository README and product design docs, with a deliberate split between what exists in Alpha and what is part of the roadmap.
+                </p>
+              </div>
+              <div class="metric-grid">
+                <div class="metric">
+                  <strong>13</strong>
+                  <span>GUI action tools for clicking, dragging, typing, scrolling, waiting, reading, and screenshots.</span>
+                </div>
+                <div class="metric">
+                  <strong>30/30</strong>
+                  <span>Grounding benchmark targets resolved, including ambiguous prompts and icon-only controls.</span>
+                </div>
+                <div class="metric">
+                  <strong>8</strong>
+                  <span>Messaging channel adapters for connecting agent workflows to existing communication surfaces.</span>
+                </div>
+                <div class="metric">
+                  <strong>5</strong>
+                  <span>Product layers from “can do” to “acts proactively,” instead of a single automation feature.</span>
+                </div>
+              </div>
+              <div class="code-slice" aria-label="Product Snapshot">
+                <span class="accent">Operate</span> software natively
+                <br />
+                <span class="accent">Learn</span> from demonstrations
+                <br />
+                <span class="accent">Remember</span> successful paths
+                <br />
+                <span class="accent">Upgrade</span> to faster routes
+                <br />
+                <span class="accent">Act</span> proactively in its own workspace
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="section" id="showcase">
+          <div class="section-head reveal">
+            <div>
+              <h2>Showcase</h2>
+            </div>
+            <p class="section-copy">
+              See Understudy in action — operating desktop apps, browsers, and terminal in a single agent session.
+            </p>
+          </div>
+          <div class="reveal">
+            <div class="showcase-video">
+              <iframe
+                src="https://www.youtube.com/embed/3d5cRGnlb_0"
+                title="Understudy Showcase"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen
+              ></iframe>
+            </div>
+            <p class="showcase-note">
+              The video above has been sped up. Full-length original:
+              <a href="https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing" target="_blank" rel="noreferrer">Google Drive</a>
+            </p>
+          </div>
+        </section>
+
+        <section class="section" id="highlights">
+          <div class="section-head reveal">
+            <div>
+              <h2>Why This Is More Than Another GUI Clicker</h2>
+            </div>
+            <p class="section-copy">
+              Understudy is not interesting because it can press buttons. It is interesting because native desktop execution, teach-by-demonstration, memory crystallization, and route upgrades live inside one agent runtime.
+            </p>
+          </div>
+          <div class="card-grid">
+            <article class="card reveal">
+              <span class="card-kicker">Native Runtime</span>
+              <h3>One planner across GUI, browser, shell, web, and memory</h3>
+              <p>
+                A single task can search the web, run a local command, switch to a native app, click through a workflow, and send the result through a messaging channel. This is not stitched-together automation. It is one routed agent loop.
+              </p>
+              <div class="list">
+                <div><strong>GUI:</strong> screenshot grounding plus native input events</div>
+                <div><strong>Browser:</strong> Playwright plus Chrome extension relay</div>
+                <div><strong>Shell / Files:</strong> local execution and filesystem access</div>
+              </div>
+            </article>
+
+            <article class="card reveal">
+              <span class="card-kicker">Teach By Demonstration</span>
+              <h3>Show the task once, extract a reusable skill</h3>
+              <p>
+                Understudy records video and semantic events, then learns workflow intent rather than a coordinate trace. Scene detection, event clustering, keyframe extraction, evidence pack analysis, and teach drafts are already part of the product model.
+              </p>
+              <div class="list">
+                <div><strong>Dual-track recording:</strong> screen capture plus Swift global event monitor</div>
+                <div><strong>AI analysis:</strong> parameters, steps, success criteria, and route preferences</div>
+                <div><strong>Validation loop:</strong> replay the learned task and analyze the trace</div>
+              </div>
+            </article>
+
+            <article class="card reveal">
+              <span class="card-kicker">Path Upgrade</span>
+              <h3>Day one fallback, long-term acceleration</h3>
+              <p>
+                GUI is the universal fallback, not the permanent destination. Understudy can begin with GUI execution and later promote the same task toward browser, CLI, or API routes after repeated verified success.
+              </p>
+              <div class="list">
+                <div><strong>Day 1:</strong> GUI fallback means any visible software can be operated</div>
+                <div><strong>Week 1:</strong> remembered paths reduce repeated exploration</div>
+                <div><strong>Month 1+:</strong> faster routes become stable defaults</div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="alpha">
+          <div class="section-head reveal">
+            <div>
+              <h2>What The Alpha Already Demonstrates</h2>
+            </div>
+            <p class="section-copy">
+              This section stays intentionally strict: it reflects capabilities explicitly described in the docs today, without presenting future layers as already shipped.
+            </p>
+          </div>
+          <div class="card-grid">
+            <article class="card reveal">
+              <span class="card-kicker">01 · Grounded GUI</span>
+              <h3>A full native desktop execution loop</h3>
+              <p>
+                From screenshot capture and HiDPI normalization to target resolution, click-point stabilization, complex-mode overlay validation, and post-action verification, the GUI pipeline is already a disciplined execution system rather than a fragile click bot.
+              </p>
+              <div class="list">
+                <div><strong>Dual-model split:</strong> one model decides what to do, another decides where to do it</div>
+                <div><strong>Hard cases handled:</strong> crop refinement, dense-area retries, grounding feedback memory</div>
+                <div><strong>Structured outcomes:</strong> observed / resolved / action_sent / condition_met</div>
+              </div>
+            </article>
+
+            <article class="card reveal">
+              <span class="card-kicker">02 · Teach Loop</span>
+              <h3>Teach-by-demonstration is a product flow, not a concept slide</h3>
+              <p>
+                `/teach start`, `/teach stop`, `/teach confirm`, `/teach validate`, and `/teach publish` already define a concrete interface for turning one desktop demonstration into a task card and publishable skill output.
+              </p>
+              <div class="list">
+                <div><strong>Evidence pack:</strong> scene changes, event timelines, keyframes, and capability snapshots</div>
+                <div><strong>Clarification dialog:</strong> refine title, parameters, and success criteria in natural language</div>
+                <div><strong>Skill output:</strong> publish to a three-layer `SKILL.md` abstraction</div>
+              </div>
+            </article>
+
+            <article class="card reveal">
+              <span class="card-kicker">03 · Unified Agent Surface</span>
+              <h3>Already broader than a single CLI command</h3>
+              <p>
+                The repository already includes daemon, chat, agent, dashboard, webchat, channels, and scheduling surfaces. That matters because the project is aiming at a persistent local agent system, not a one-shot automation wrapper.
+              </p>
+              <div class="list">
+                <div><strong>Messaging:</strong> Telegram, Slack, Discord, WhatsApp, Signal, LINE, iMessage, and Web</div>
+                <div><strong>Automation:</strong> cron scheduling and one-shot timers</div>
+                <div><strong>Subagents:</strong> child sessions for parallel task decomposition</div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="layers">
+          <div class="section-head reveal">
+            <div>
+              <h2>Five Layers, No Cheap “Full Autonomy” Shortcut</h2>
+            </div>
+            <p class="section-copy">
+              The product narrative is unusually coherent: first make the agent capable, then teachable, then reliable, then faster, and only then proactive.
+            </p>
+          </div>
+          <div class="layer-grid">
+            <article class="layer-card reveal">
+              <span class="layer-status is-live">Layer 1 · Implemented</span>
+              <div class="layer-step">Operate Software Natively</div>
+              <h3>Use software like a human</h3>
+              <p>See, click, type, drag, scroll, and verify across real macOS applications.</p>
+            </article>
+
+            <article class="layer-card reveal">
+              <span class="layer-status is-live">Layer 2 · Implemented</span>
+              <div class="layer-step">Learn from Demonstrations</div>
+              <h3>Learn tasks from demonstration</h3>
+              <p>Capture evidence, extract workflow intent, refine task cards, and publish reusable skills.</p>
+            </article>
+
+            <article class="layer-card reveal">
+              <span class="layer-status is-build">Layer 3 · Partially Implemented</span>
+              <div class="layer-step">Crystallized Memory</div>
+              <h3>Lock in successful paths</h3>
+              <p>Repeated day-to-day usage is automatically crystallized into reusable workspace skills — no explicit teaching required.</p>
+            </article>
+
+            <article class="layer-card reveal">
+              <span class="layer-status is-build">Layer 4 · Partially Implemented</span>
+              <div class="layer-step">Route Optimization</div>
+              <h3>Promote faster execution routes</h3>
+              <p>Teach prompts and route preferences already push tasks toward faster routes, with a simpler but real upgrade path in place today.</p>
+            </article>
+
+            <article class="layer-card reveal">
+              <span class="layer-status is-future">Layer 5 · North Star</span>
+              <div class="layer-step">Proactive Autonomy</div>
+              <h3>Work proactively in an isolated space</h3>
+              <p>Understand routines, suggest next actions, and act without monopolizing the user’s screen.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="routes">
+          <div class="section-head reveal">
+            <div>
+              <h2>The Execution Route Pyramid</h2>
+            </div>
+            <p class="section-copy">
+              This is one of the strongest product ideas in Understudy: GUI is the universal start, but it is not the ideal final route.
+            </p>
+          </div>
+          <div class="route-grid">
+            <article class="route-card reveal">
+              <span class="route-rank">Fastest</span>
+              <h3>API / Direct Tool</h3>
+              <p>If a capability already has a direct tool or API surface, the agent should not route back through GUI.</p>
+              <div class="route-note">Best for structured actions, channel sends, and explicit tool surfaces.</div>
+            </article>
+
+            <article class="route-card reveal">
+              <span class="route-rank">Fast</span>
+              <h3>Shell / CLI</h3>
+              <p>Local commands, scripts, and filesystem operations often avoid repeated interface work entirely.</p>
+              <div class="route-note">Best for developer workflows, file transforms, and local system automation.</div>
+            </article>
+
+            <article class="route-card reveal">
+              <span class="route-rank">Fallback+</span>
+              <h3>Browser</h3>
+              <p>When the natural interface is a website, managed browser control can beat GUI while preserving real workflows.</p>
+              <div class="route-note">Best for SaaS products, dashboards, forms, and authenticated web tasks.</div>
+            </article>
+
+            <article class="route-card reveal">
+              <span class="route-rank">Universal</span>
+              <h3>GUI</h3>
+              <p>Anything with a visible interface can be operated. This is what gives Understudy broad real-world coverage.</p>
+              <div class="route-note">Not a “low-end” route, but the core universality layer for long-tail software.</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="architecture-panel reveal">
+            <h2 class="panel-title">One task can span the whole machine</h2>
+            <p>
+              The planner is not choosing a favorite tool up front. It is routing step-by-step toward the objective. That means the same task can inspect the web, read local files, operate a native app, and send the result out through a channel inside one flow.
+            </p>
+            <div class="architecture-grid">
+              <div class="architecture-cell">
+                <strong>Observe</strong>
+                Capture screenshots, read pages, inspect local state, and recover memory context.
+              </div>
+              <div class="architecture-cell">
+                <strong>Resolve</strong>
+                Decide whether the next step should use API, CLI, browser, or GUI.
+              </div>
+              <div class="architecture-cell">
+                <strong>Execute</strong>
+                Invoke tools, scripts, browser actions, or native input events.
+              </div>
+              <div class="architecture-cell">
+                <strong>Verify</strong>
+                Re-observe after action and emit structured signals for memory and route upgrades.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="start">
+          <div class="command-grid">
+            <article class="command-panel reveal">
+              <h2 class="panel-title">Quick Start</h2>
+              <p>
+                The current README recommends starting the daemon first, then using terminal or dashboard entry points. The project is still Alpha, with development and testing centered on macOS today.
+              </p>
+              <div class="terminal">
+                <strong>understudy daemon --start</strong>
+                <br />
+                understudy chat
+                <br />
+                understudy dashboard
+                <br />
+                understudy webchat
+                <br />
+                understudy agent --message "..."
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div class="footer-inner">
+          <div>Understudy · An understudy watches. Then performs.</div>
+          <div class="footer-links">
+            <a href="./zh-CN/index.html">中文</a>
+            <a href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">GitHub</a>
+            <a href="https://github.com/understudy-ai/understudy/blob/main/README.md" target="_blank" rel="noreferrer">README</a>
+            <a href="https://github.com/understudy-ai/understudy/blob/main/docs/Product_Design.md" target="_blank" rel="noreferrer">Product Design</a>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      const revealNodes = document.querySelectorAll(".reveal");
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+              observer.unobserve(entry.target);
+            }
+          }
+        },
+        { threshold: 0.16 }
+      );
+
+      for (const node of revealNodes) {
+        observer.observe(node);
+      }
+    </script>
+  </body>
+</html>

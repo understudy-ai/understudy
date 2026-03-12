@@ -1,0 +1,38 @@
+{
+	"name": "@understudy/core",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Understudy agent runtime core",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist",
+		"test": "vitest --run --config ../../vitest.package.config.ts"
+	},
+	"dependencies": {
+		"@mariozechner/pi-agent-core": "^0.56.2",
+		"@mariozechner/pi-ai": "^0.56.2",
+		"@mariozechner/pi-coding-agent": "^0.56.2",
+		"@understudy/types": "workspace:*",
+		"@sinclair/typebox": "^0.34.48",
+		"dotenv": "^16.4.7",
+		"json5": "^2.2.3",
+		"yaml": "^2.8.1",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"license": "MIT"
+}

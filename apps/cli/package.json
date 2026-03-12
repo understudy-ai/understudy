@@ -1,0 +1,40 @@
+{
+	"name": "@understudy/cli",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Understudy CLI",
+	"type": "module",
+	"bin": {
+		"understudy": "dist/bin.js"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist",
+		"test": "vitest --run --config ../../vitest.package.config.ts",
+		"start": "node --enable-source-maps dist/bin.js"
+	},
+	"dependencies": {
+		"@clack/prompts": "^1.1.0",
+		"@mariozechner/pi-ai": "^0.56.2",
+		"@mariozechner/pi-coding-agent": "^0.56.2",
+		"@mariozechner/pi-tui": "^0.56.2",
+		"@sinclair/typebox": "^0.34.48",
+		"@understudy/channels": "workspace:*",
+		"@understudy/core": "workspace:*",
+		"@understudy/gateway": "workspace:*",
+		"@understudy/gui": "workspace:*",
+		"@understudy/plugins": "workspace:*",
+		"@understudy/tools": "workspace:*",
+		"@understudy/types": "workspace:*",
+		"commander": "^13.1.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"@types/ws": "^8.5.13",
+		"typescript": "^5.7.3"
+	},
+	"license": "MIT"
+}
