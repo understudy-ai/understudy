@@ -62,6 +62,8 @@ Every layer depends on the one below it. No shortcuts — the system earns its w
 
 > *The video has been sped up. Full-length original: [Google Drive](https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing). For inline playback, visit the [Overview page](https://understudy-ai.github.io/understudy/#showcase).*
 
+> *The published skill artifact generated from this showcase demo is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md), so you can inspect the exact output directly.*
+
 ## What It Can Do Today
 
 ### Layer 1 — Operate Your Computer Natively

@@ -62,6 +62,8 @@ Layer 5 ┃ 主动观察，互不影响  在独立工作空间主动发现和执
 
 > *视频经过加速处理。完整原速视频：[Google Drive](https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing)。在线播放请访问[展示页](https://understudy-ai.github.io/understudy/zh-CN/index.html#showcase)。*
 
+> *这次 Showcase demo 生成出来的已发布 skill 产物放在 [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md)，可以直接查看最终产物。*
+
 ## 现在能做什么
 
 ### Layer 1 — 像人一样操作你的电脑
