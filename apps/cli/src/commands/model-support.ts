@@ -29,6 +29,10 @@ export const BUILTIN_MODELS: Record<string, string[]> = {
 		"gemini-2.0-pro",
 		"gemini-1.5-pro",
 	],
+	minimax: [
+		"MiniMax-M2.5",
+		"MiniMax-M2.5-highspeed",
+	],
 };
 
 export function parseModelRef(modelSpec: string | undefined): { provider: string; modelId: string } | undefined {

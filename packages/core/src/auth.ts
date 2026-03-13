@@ -75,6 +75,8 @@ const PROVIDER_ENV_KEYS: Record<string, string[]> = {
 	"openai-codex": ["OPENAI_API_KEY"],
 	google: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
 	gemini: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+	minimax: ["MINIMAX_API_KEY"],
+	"minimax-cn": ["MINIMAX_API_KEY"],
 };
 
 function resolveProviderEnvKeys(provider: string): string[] {
