@@ -21,7 +21,7 @@ describe("gateway session store", () => {
 		const tempDir = await createTempDir("understudy-gateway-session-store-");
 		const storePath = join(tempDir, "state.json");
 
-		await saveGatewaySessionState({
+	await saveGatewaySessionState({
 			storePath,
 			sessionEntries: new Map([
 				["session-1", {
@@ -42,6 +42,7 @@ describe("gateway session store", () => {
 				} as any],
 			]),
 			agentRuns: new Map(),
+			activeSessionBindings: new Map(),
 		});
 
 		const raw = JSON.parse(await readFile(storePath, "utf8")) as {
@@ -49,5 +50,39 @@ describe("gateway session store", () => {
 		};
 		expect(raw.sessions?.[0]).not.toHaveProperty("recentRuns");
 		expect(raw.sessions?.[0]).not.toHaveProperty("history");
+	});
+
+	it("persists active session bindings alongside session metadata", async () => {
+		const tempDir = await createTempDir("understudy-gateway-session-store-active-");
+		const storePath = join(tempDir, "state.json");
+
+		await saveGatewaySessionState({
+			storePath,
+			sessionEntries: new Map([
+				["session-1", {
+					id: "session-1",
+					createdAt: 1,
+					lastActiveAt: 2,
+					dayStamp: "2026-03-10",
+					messageCount: 1,
+					history: [],
+				} as any],
+			]),
+			agentRuns: new Map(),
+			activeSessionBindings: new Map([
+				["channel_sender:telegram:user-1", "session-1"],
+			]),
+		});
+
+		const raw = JSON.parse(await readFile(storePath, "utf8")) as {
+			activeSessionBindings?: Array<Record<string, unknown>>;
+		};
+
+		expect(raw.activeSessionBindings).toEqual([
+			{
+				routeKey: "channel_sender:telegram:user-1",
+				sessionId: "session-1",
+			},
+		]);
 	});
 });

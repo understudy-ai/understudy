@@ -322,7 +322,7 @@ export const DEFAULT_CONFIG: UnderstudyConfig = {
 			modules: [
 				{ name: "sanitize_tool_params", enabled: true },
 				{ name: "normalize_tool_result", enabled: true },
-				{ name: "route_retry_guard", enabled: true },
+				{ name: "route_retry_guard", enabled: false },
 				{ name: "strip_assistant_directive_tags", enabled: true },
 				{ name: "guard_assistant_reply", enabled: true },
 			],

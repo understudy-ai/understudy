@@ -671,6 +671,83 @@ describe("createGatewaySessionRuntime reset behavior", () => {
 		expect(result).toMatchObject({ sessionId: "scope-1" });
 	});
 
+	it("treats bare /reset as an in-place session recreation in chat handler", async () => {
+		const sessionEntries = new Map<string, SessionEntry>();
+		const inFlightSessionIds = new Set<string>();
+		const oldEntry = createEntry("scope-reset", {
+			channelId: "web",
+			senderId: "user-1",
+			parentId: "parent-1",
+			forkPoint: 2,
+			executionScopeKey: "scope-alpha",
+		});
+		const resetEntry = createEntry("scope-reset", {
+			channelId: "web",
+			senderId: "user-1",
+			parentId: "parent-1",
+			forkPoint: 2,
+			executionScopeKey: "scope-alpha",
+		});
+		const usageTracker = { record: vi.fn() };
+		const appendHistory = vi.fn();
+		const getOrCreateSession = vi.fn(async () => oldEntry);
+		const createScopedSession = vi.fn(async () => resetEntry);
+		const deletePersistedSession = vi.fn(async () => undefined);
+		const promptSession = vi.fn(async (_entry: SessionEntry, text: string) => ({
+			response: `assistant:${text}`,
+			runId: "run-reset",
+		}));
+		const abortSessionEntry = vi.fn(async () => false);
+
+		const runtime = createGatewaySessionRuntime({
+			sessionEntries,
+			inFlightSessionIds,
+			config: {
+				defaultModel: "claude-sonnet-4-6",
+				defaultProvider: "anthropic",
+				agent: { userTimezone: "Asia/Hong_Kong" },
+			} as any,
+			usageTracker: usageTracker as any,
+			estimateTokens: (text) => text.length,
+			appendHistory: appendHistory as any,
+			getOrCreateSession: getOrCreateSession as any,
+			createScopedSession: createScopedSession as any,
+			promptSession: promptSession as any,
+			abortSessionEntry: abortSessionEntry as any,
+			deletePersistedSession,
+		});
+
+		const result = await runtime.chatHandler("/reset", {
+			channelId: "web",
+			senderId: "user-1",
+		});
+
+		expect(getOrCreateSession).toHaveBeenCalledTimes(1);
+		expect(deletePersistedSession).toHaveBeenCalledWith({ sessionId: "scope-reset" });
+		expect(createScopedSession).toHaveBeenCalledWith({
+			sessionKey: "scope-reset",
+			parentId: "parent-1",
+			forkPoint: 2,
+			channelId: "web",
+			senderId: "user-1",
+			senderName: oldEntry.senderName,
+			conversationName: oldEntry.conversationName,
+			conversationType: oldEntry.conversationType,
+			threadId: oldEntry.threadId,
+			workspaceDir: oldEntry.workspaceDir,
+			configOverride: oldEntry.configOverride,
+			sandboxInfo: oldEntry.sandboxInfo,
+			executionScopeKey: "scope-alpha",
+		});
+		expect(promptSession).toHaveBeenCalledWith(
+			resetEntry,
+			expect.stringContaining("A new session was started via /new or /reset"),
+			expect.any(String),
+			undefined,
+		);
+		expect(result).toMatchObject({ sessionId: "scope-reset" });
+	});
+
 	it("serializes same-session prompt execution instead of starting concurrent runs", async () => {
 		const sessionEntries = new Map<string, SessionEntry>();
 		const inFlightSessionIds = new Set<string>();

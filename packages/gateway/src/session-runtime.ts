@@ -2492,6 +2492,28 @@ export function createGatewaySessionRuntime(
 		}
 	};
 
+	const recreateSessionEntry = async (entry: SessionEntry): Promise<SessionEntry> => {
+		await deletePersistedSession?.({ sessionId: entry.id });
+		const recreated = await createScopedSession({
+			sessionKey: entry.id,
+			parentId: entry.parentId,
+			forkPoint: entry.forkPoint,
+			channelId: entry.channelId,
+			senderId: entry.senderId,
+			senderName: entry.senderName,
+			conversationName: entry.conversationName,
+			conversationType: entry.conversationType,
+			threadId: entry.threadId,
+			workspaceDir: entry.workspaceDir,
+			configOverride: entry.configOverride,
+			sandboxInfo: entry.sandboxInfo,
+			executionScopeKey: entry.executionScopeKey,
+		});
+		sessionEntries.set(entry.id, recreated);
+		onStateChanged?.();
+		return recreated;
+	};
+
 	const taskDraftHandlers = createGatewayTaskDraftHandlers({
 		sessionEntries,
 		videoTeachAnalyzer,
@@ -5664,20 +5686,22 @@ export function createGatewaySessionRuntime(
 		const reset = parseResetCommand(text);
 		let effectiveText = text;
 		if (reset) {
-			scopedSession = await getOrCreateSession({
-				channelId: context?.channelId,
-				senderId: context?.senderId,
-				senderName: context?.senderName,
-				conversationName: context?.conversationName,
-				conversationType: context?.conversationType as "direct" | "group" | "thread" | undefined,
-				threadId: context?.threadId,
-				forceNew: true,
-				workspaceDir: requestedWorkspaceDir,
-				explicitWorkspace: Boolean(requestedWorkspaceDir),
-				configOverride: runtimeContext.configOverride,
-				sandboxInfo: runtimeContext.sandboxInfo,
-				executionScopeKey: runtimeContext.executionScopeKey,
-			});
+			scopedSession = reset.command === "new"
+				? await getOrCreateSession({
+					channelId: context?.channelId,
+					senderId: context?.senderId,
+					senderName: context?.senderName,
+					conversationName: context?.conversationName,
+					conversationType: context?.conversationType as "direct" | "group" | "thread" | undefined,
+					threadId: context?.threadId,
+					forceNew: true,
+					workspaceDir: requestedWorkspaceDir,
+					explicitWorkspace: Boolean(requestedWorkspaceDir),
+					configOverride: runtimeContext.configOverride,
+					sandboxInfo: runtimeContext.sandboxInfo,
+					executionScopeKey: runtimeContext.executionScopeKey,
+				})
+				: await recreateSessionEntry(scopedSession);
 			effectiveText = resolveResetPrompt(reset, config.agent.userTimezone);
 		}
 		const teach = parseTeachCommand(effectiveText);
@@ -5926,42 +5950,37 @@ export function createGatewaySessionRuntime(
 					throw new Error(`Session not found: ${sessionId}`);
 				}
 				if (reset) {
-					await deletePersistedSession?.({ sessionId });
-					const recreated = await createScopedSession({
-						sessionKey: sessionId,
-						parentId: entry.parentId,
-						forkPoint: entry.forkPoint,
-						channelId: entry.channelId,
-						senderId: entry.senderId,
-						senderName: entry.senderName,
-						conversationName: entry.conversationName,
-						conversationType: entry.conversationType,
-						threadId: entry.threadId,
-						workspaceDir: entry.workspaceDir,
-						configOverride: entry.configOverride,
-						sandboxInfo: entry.sandboxInfo,
-						executionScopeKey: entry.executionScopeKey,
-					});
-					sessionEntries.set(sessionId, recreated);
-					onStateChanged?.();
-					entry = recreated;
+					entry = await recreateSessionEntry(entry);
 					effectiveText = resolveResetPrompt(reset, config.agent.userTimezone);
 				}
 			} else {
-				entry = await getOrCreateSession({
+				const lookupContext = {
 					channelId: asString(params?.channelId),
 					senderId: asString(params?.senderId),
 					senderName: asString(params?.senderName),
 					conversationName: asString(params?.conversationName),
 					conversationType: asString(params?.conversationType) as "direct" | "group" | "thread" | undefined,
 					threadId: asString(params?.threadId),
-					forceNew: params?.forceNew === true || Boolean(reset),
 					workspaceDir: requestedWorkspaceDir,
 					explicitWorkspace: Boolean(requestedWorkspaceDir),
 					configOverride: (params as RuntimeSessionContextExtras | undefined)?.configOverride,
 					sandboxInfo: (params as RuntimeSessionContextExtras | undefined)?.sandboxInfo,
 					executionScopeKey: (params as RuntimeSessionContextExtras | undefined)?.executionScopeKey,
-				});
+				};
+				if (reset?.command === "new") {
+					entry = await getOrCreateSession({
+						...lookupContext,
+						forceNew: true,
+					});
+				} else {
+					entry = await getOrCreateSession({
+						...lookupContext,
+						forceNew: params?.forceNew === true,
+					});
+					if (reset?.command === "reset") {
+						entry = await recreateSessionEntry(entry);
+					}
+				}
 				onStateChanged?.();
 				if (reset) {
 					effectiveText = resolveResetPrompt(reset, config.agent.userTimezone);
@@ -6049,24 +6068,7 @@ export function createGatewaySessionRuntime(
 			if (!existing) {
 				throw new Error(`Session not found: ${sessionId}`);
 			}
-			await deletePersistedSession?.({ sessionId });
-			const recreated = await createScopedSession({
-				sessionKey: sessionId,
-				parentId: existing.parentId,
-				forkPoint: existing.forkPoint,
-				channelId: existing.channelId,
-				senderId: existing.senderId,
-				senderName: existing.senderName,
-				conversationName: existing.conversationName,
-				conversationType: existing.conversationType,
-				threadId: existing.threadId,
-				workspaceDir: existing.workspaceDir,
-				configOverride: existing.configOverride,
-				sandboxInfo: existing.sandboxInfo,
-				executionScopeKey: existing.executionScopeKey,
-			});
-			sessionEntries.set(sessionId, recreated);
-			onStateChanged?.();
+			const recreated = await recreateSessionEntry(existing);
 			return buildSessionSummary(recreated);
 		},
 		delete: async (params) => {

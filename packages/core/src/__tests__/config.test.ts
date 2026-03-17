@@ -35,6 +35,7 @@ describe("ConfigManager", () => {
 			"strip_assistant_directive_tags",
 			"guard_assistant_reply",
 		]);
+		expect(config.agent.runtimePolicies?.modules?.find((module) => module.name === "route_retry_guard")?.enabled).toBe(false);
 	});
 
 	it("merges overrides with defaults", () => {

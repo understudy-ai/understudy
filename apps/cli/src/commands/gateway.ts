@@ -63,6 +63,7 @@ import {
 	FileGatewaySessionMetadataStore,
 	resolveGatewaySessionStorePath,
 } from "./gateway-session-store.js";
+import { resolveGatewaySessionRoute } from "./gateway-session-routing.js";
 import {
 	FileGatewayTranscriptStore,
 	resolveGatewayTranscriptStoreDir,
@@ -383,6 +384,7 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 	const agentRuns = new Map<string, AgentRunSnapshot>();
 	const latestRunBySessionId = new Map<string, string>();
 	const maxAgentRuns = 1000;
+	const activeSessionBindings = new Map<string, string>();
 	const metadataStore = new FileGatewaySessionMetadataStore(resolveGatewaySessionStorePath());
 	const transcriptStore = new FileGatewayTranscriptStore(resolveGatewayTranscriptStoreDir());
 	const runTraceStore = new FileGatewayRunTraceStore(resolveGatewayRunTraceStoreDir());
@@ -436,6 +438,7 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 		const nextSave = metadataStore.save({
 			sessionEntries: sessionEntriesRef,
 			agentRuns,
+			activeSessionBindings,
 		}).catch((error) => {
 			const message = error instanceof Error ? error.message : String(error);
 			console.warn(`[gateway] failed to persist session state: ${message}`);
@@ -2784,22 +2787,44 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 	}): Promise<SessionEntry> {
 		const currentConfig = mergeSessionConfig(configManager.get(), context.configOverride);
 		const workspaceContext = resolveSessionWorkspaceContext(currentConfig, context.workspaceDir);
-		const scopeDiscriminatorParts = [
-			context.executionScopeKey,
-			context.explicitWorkspace
-				? buildWorkspaceScopeDiscriminator(workspaceContext.validationRoot)
-				: undefined,
-		].filter((value): value is string => typeof value === "string" && value.length > 0);
-		const sessionKey = buildSessionKey({
+		const workspaceScopeDiscriminator = context.explicitWorkspace
+			? buildWorkspaceScopeDiscriminator(workspaceContext.validationRoot)
+			: undefined;
+		const baseSessionKey = buildSessionKey({
 			scope: sessionScope,
 			dmScope,
 			channelId: context.channelId,
 			senderId: context.senderId,
 			threadId: context.threadId,
-			scopeDiscriminator: scopeDiscriminatorParts.length > 0
-				? scopeDiscriminatorParts.join(":")
-				: undefined,
+			scopeDiscriminator: workspaceScopeDiscriminator,
 		});
+		const mappedActiveSessionId = (() => {
+			if (context.executionScopeKey) {
+				return undefined;
+			}
+			const activeSessionId = activeSessionBindings.get(baseSessionKey);
+			if (!activeSessionId) {
+				return undefined;
+			}
+			if (sessionEntries.has(activeSessionId)) {
+				return activeSessionId;
+			}
+			activeSessionBindings.delete(baseSessionKey);
+			scheduleGatewayStateSave();
+			return undefined;
+		})();
+		const resolvedRoute = resolveGatewaySessionRoute({
+			scope: sessionScope,
+			dmScope,
+			channelId: context.channelId,
+			senderId: context.senderId,
+			threadId: context.threadId,
+			workspaceScopeDiscriminator,
+			executionScopeKey: context.executionScopeKey,
+			forceNew: context.forceNew,
+			activeSessionId: mappedActiveSessionId,
+		});
+		const sessionKey = resolvedRoute.sessionKey;
 		const now = Date.now();
 		const currentDay = dayStampFor(now);
 		const existing = sessionEntries.get(sessionKey);
@@ -2817,6 +2842,9 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 			existing.lastActiveAt = now;
 			existing.senderName = context.senderName ?? existing.senderName;
 			existing.conversationName = context.conversationName ?? existing.conversationName;
+			if (resolvedRoute.shouldPromoteToActive) {
+				activeSessionBindings.set(resolvedRoute.baseSessionKey, existing.id);
+			}
 			scheduleGatewayStateSave();
 			return existing;
 		}
@@ -2833,9 +2861,12 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 			explicitWorkspace: context.explicitWorkspace,
 			configOverride: context.configOverride,
 			sandboxInfo: context.sandboxInfo,
-			executionScopeKey: context.executionScopeKey,
+			executionScopeKey: existing?.executionScopeKey ?? resolvedRoute.executionScopeKey,
 		});
 		sessionEntries.set(sessionKey, created);
+		if (resolvedRoute.shouldPromoteToActive) {
+			activeSessionBindings.set(resolvedRoute.baseSessionKey, created.id);
+		}
 		scheduleGatewayStateSave();
 		return created;
 	}
@@ -2914,6 +2945,23 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 		},
 	} as any);
 	const sessionHandlers = sessionRuntime.sessionHandlers;
+	const deleteSessionHandler = sessionHandlers.delete;
+	if (deleteSessionHandler) {
+		sessionHandlers.delete = async (params) => {
+			const result = await deleteSessionHandler(params);
+			const deletedSessionId = asString(params?.sessionId);
+			const normalizedResult = asRecord(result);
+			if (normalizedResult?.deleted === true && deletedSessionId) {
+				for (const [routeKey, sessionId] of activeSessionBindings.entries()) {
+					if (sessionId === deletedSessionId) {
+						activeSessionBindings.delete(routeKey);
+					}
+				}
+				scheduleGatewayStateSave();
+			}
+			return result;
+		};
+	}
 	gateway.setChatHandler(async (text, context) => {
 		const approvalReply = await resolveExecApprovalFromChat({
 			text,
@@ -3018,6 +3066,11 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.warn(`[gateway] failed to restore session ${persistedSession.id}: ${message}`);
+			}
+		}
+		for (const binding of persistedGatewayState.activeSessionBindings ?? []) {
+			if (sessionEntries.has(binding.sessionId)) {
+				activeSessionBindings.set(binding.routeKey, binding.sessionId);
 			}
 		}
 

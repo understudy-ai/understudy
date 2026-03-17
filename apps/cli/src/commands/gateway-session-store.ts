@@ -31,11 +31,17 @@ export interface PersistedGatewaySessionRecord {
 	subagentMeta?: SessionEntry["subagentMeta"];
 }
 
+export interface PersistedGatewayActiveSessionBinding {
+	routeKey: string;
+	sessionId: string;
+}
+
 export interface PersistedGatewaySessionState {
 	version: 2;
 	savedAt: number;
 	sessions: PersistedGatewaySessionRecord[];
 	runs: PersistedAgentRunSnapshot[];
+	activeSessionBindings?: PersistedGatewayActiveSessionBinding[];
 }
 
 export interface GatewaySessionMetadataStore {
@@ -44,6 +50,7 @@ export interface GatewaySessionMetadataStore {
 	save(params: {
 		sessionEntries: Map<string, SessionEntry>;
 		agentRuns: Map<string, PersistedAgentRunSnapshot>;
+		activeSessionBindings: Map<string, string>;
 	}): Promise<void>;
 }
 
@@ -65,11 +72,13 @@ export class FileGatewaySessionMetadataStore implements GatewaySessionMetadataSt
 	async save(params: {
 		sessionEntries: Map<string, SessionEntry>;
 		agentRuns: Map<string, PersistedAgentRunSnapshot>;
+		activeSessionBindings: Map<string, string>;
 	}): Promise<void> {
 		await saveGatewaySessionState({
 			storePath: this.storePath,
 			sessionEntries: params.sessionEntries,
 			agentRuns: params.agentRuns,
+			activeSessionBindings: params.activeSessionBindings,
 		});
 	}
 }
@@ -84,6 +93,7 @@ export async function loadGatewaySessionState(
 			savedAt?: unknown;
 			sessions?: unknown[];
 			runs?: unknown[];
+			activeSessionBindings?: unknown[];
 		};
 		if (
 			!parsed ||
@@ -105,6 +115,15 @@ export async function loadGatewaySessionState(
 					Boolean(session) && typeof session === "object" && typeof (session as PersistedGatewaySessionRecord).id === "string")
 				.map((session) => ({ ...(session as PersistedGatewaySessionRecord) })),
 			runs: parsed.runs as PersistedAgentRunSnapshot[],
+			activeSessionBindings: Array.isArray(parsed.activeSessionBindings)
+				? parsed.activeSessionBindings
+					.filter((binding): binding is PersistedGatewayActiveSessionBinding =>
+						Boolean(binding) &&
+						typeof binding === "object" &&
+						typeof (binding as PersistedGatewayActiveSessionBinding).routeKey === "string" &&
+						typeof (binding as PersistedGatewayActiveSessionBinding).sessionId === "string")
+					.map((binding) => ({ ...(binding as PersistedGatewayActiveSessionBinding) }))
+				: undefined,
 		};
 	} catch {
 		return null;
@@ -142,12 +161,17 @@ export async function saveGatewaySessionState(params: {
 	storePath: string;
 	sessionEntries: Map<string, SessionEntry>;
 	agentRuns: Map<string, PersistedAgentRunSnapshot>;
+	activeSessionBindings: Map<string, string>;
 }): Promise<void> {
 	const payload: PersistedGatewaySessionState = {
 		version: 2,
 		savedAt: Date.now(),
 		sessions: Array.from(params.sessionEntries.values()).map(serializeSessionEntry),
 		runs: Array.from(params.agentRuns.values()),
+		activeSessionBindings: Array.from(params.activeSessionBindings.entries()).map(([routeKey, sessionId]) => ({
+			routeKey,
+			sessionId,
+		})),
 	};
 	await atomicWriteJsonFile(params.storePath, payload, "utf-8");
 }
