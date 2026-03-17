@@ -54,13 +54,21 @@ function createPngBuffer(width: number, height: number): Buffer {
 	return bytes;
 }
 
-function groundedTarget(target: string, point: { x: number; y: number }, confidence = 0.92) {
+function groundedTarget(
+	target: string,
+	point: { x: number; y: number },
+	confidence = 0.92,
+	options?: {
+		coordinateSpace?: "image_pixels" | "display_pixels";
+	},
+) {
+	const coordinateSpace = options?.coordinateSpace ?? "image_pixels";
 	return {
 		method: "grounding" as const,
 		provider: "test-provider",
 		confidence,
 		reason: `Matched ${target}`,
-		coordinateSpace: "image_pixels" as const,
+		coordinateSpace,
 		point,
 		box: {
 			x: point.x - 10,
@@ -539,6 +547,38 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(result.image?.mimeType).toBe("image/png");
 	});
 
+	it("accepts display-space grounding points from custom providers without reprojecting them", async () => {
+		const ground = vi.fn().mockResolvedValue(
+			groundedTarget(
+				"Send button",
+				{ x: 240, y: 280 },
+				0.97,
+				{ coordinateSpace: "display_pixels" },
+			),
+		);
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.click({
+			target: "Send button",
+		});
+
+		const clickCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+		);
+		expect(clickCall?.env.UNDERSTUDY_GUI_X).toBe("240");
+		expect(clickCall?.env.UNDERSTUDY_GUI_Y).toBe("280");
+		expect(result.details).toMatchObject({
+			grounding_coordinate_space: "display_pixels",
+			grounding_display_point: { x: 240, y: 280 },
+			grounding_display_box: { x: 230, y: 272, width: 20, height: 16 },
+			grounding_image_point: undefined,
+			grounding_image_box: undefined,
+			executed_point: { x: 240, y: 280 },
+		});
+	});
+
 	it("converts image-space grounding points against a multi-window union capture", async () => {
 		mocks.captureContextPayload = {
 			...mocks.captureContextPayload,
@@ -1003,6 +1043,79 @@ describe("ComputerUseGuiRuntime", () => {
 		});
 	});
 
+	it("uses display capture for cross-window drag targets and propagates destination hints", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget('file "Budget.csv"', { x: 64, y: 88 }))
+			.mockResolvedValueOnce(groundedTarget("Trash icon in the Dock", { x: 720, y: 560 }, 0.88));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.drag({
+			app: "Finder",
+			fromTarget: 'file "Budget.csv"',
+			toTarget: "Trash icon in the Dock",
+			fromLocationHint: "bottom half of the Finder window",
+			toLocationHint: "far right side of the Dock",
+			captureMode: "display",
+			durationMs: 750,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_drag",
+			capture_mode: "display",
+			executed_from_point: { x: 64, y: 88 },
+			executed_to_point: { x: 720, y: 560 },
+		});
+		expect(ground.mock.calls[0]?.[0]).toMatchObject({
+			action: "drag_source",
+			target: 'file "Budget.csv"',
+			captureMode: "display",
+			locationHint: "bottom half of the Finder window",
+			relatedTarget: "Trash icon in the Dock",
+			relatedLocationHint: "far right side of the Dock",
+		});
+		expect(ground.mock.calls[1]?.[0]).toMatchObject({
+			action: "drag_destination",
+			target: "Trash icon in the Dock",
+			captureMode: "display",
+			locationHint: "far right side of the Dock",
+			relatedTarget: 'file "Budget.csv"',
+			relatedLocationHint: "bottom half of the Finder window",
+			relatedPoint: { x: 64, y: 88 },
+		});
+	});
+
+	it("returns a not_found result when drag destination grounding fails after resolving the source", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Card A", { x: 64, y: 88 }))
+			.mockResolvedValueOnce(undefined);
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.drag({
+			fromTarget: "Card A",
+			toTarget: 'the drop zone between "Doing" and "Done"',
+			toLocationHint: "between the second and third columns",
+		});
+
+		expect(result.status).toEqual({
+			code: "not_found",
+			summary: "No confident visual drag destination was found.",
+		});
+		expect(result.text).toContain('Could not visually resolve a drag destination matching "the drop zone between "Doing" and "Done"".');
+		expect(result.details).toMatchObject({
+			error: "No confident visual drag destination was found.",
+			confidence: 0,
+			capture_mode: "window",
+			window_title: "Composer",
+		});
+		expect(ground).toHaveBeenCalledTimes(2);
+		expect(mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "drag",
+		)).toBeUndefined();
+	});
+
 	it("sends scroll actions against a grounded target", async () => {
 		const ground = vi.fn()
 			.mockResolvedValueOnce(groundedTarget("Transcript panel", { x: 320, y: 400 }));
@@ -1019,8 +1132,45 @@ describe("ComputerUseGuiRuntime", () => {
 			action_kind: "cg_scroll",
 			direction: "down",
 			amount: 8,
+			scroll_distance: "custom",
+			scroll_unit: "line",
 			executed_point: { x: expect.any(Number), y: expect.any(Number) },
 		});
+	});
+
+	it("defaults targetless scrolls to a page-like semantic distance", async () => {
+		const ground = vi.fn();
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.scroll({
+			direction: "down",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_scroll",
+			direction: "down",
+			amount: 225,
+			scroll_distance: "page",
+			scroll_unit: "pixel",
+			scroll_viewport_dimension: 300,
+			scroll_viewport_source: "window",
+			scroll_travel_fraction: 0.75,
+			grounding_method: "visual",
+		});
+		expect(ground).not.toHaveBeenCalled();
+		const scrollCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "scroll",
+		);
+		const contextCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "capture-context",
+		);
+		expect(contextCall).toBeTruthy();
+		expect(scrollCall?.env.UNDERSTUDY_GUI_SCROLL_UNIT).toBe("pixel");
+		expect(scrollCall?.env.UNDERSTUDY_GUI_SCROLL_Y).toBe("-225");
 	});
 
 	it("focuses a grounded target before typing", async () => {
@@ -1099,5 +1249,86 @@ describe("ComputerUseGuiRuntime", () => {
 			wait_confirmations_required: 2,
 			grounding_provider: "test-provider",
 		});
+		expect(ground.mock.calls[0]?.[0]).toMatchObject({
+			action: "wait",
 		});
+	});
+
+	it("waits for a grounded target to disappear after consecutive misses", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Uploading badge", { x: 420, y: 180 }, 0.91))
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(undefined);
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.wait({
+			target: "Uploading badge",
+			state: "disappear",
+			timeoutMs: 20,
+			intervalMs: 0,
+		});
+
+		expect(result.status).toEqual({
+			code: "condition_met",
+			summary: "Target disappeared.",
+		});
+		expect(result.details).toMatchObject({
+			attempts: 3,
+			wait_confirmations_required: 2,
+			grounding_method: "grounding",
+			confidence: 0,
+		});
+		expect(ground.mock.calls[0]?.[0]).toMatchObject({
+			action: "wait",
+		});
+	});
+
+	it("does not satisfy an appear wait on a single flickering detection", async () => {
+		const ground = vi.fn()
+			.mockResolvedValueOnce(groundedTarget("Finished badge", { x: 480, y: 220 }, 0.93))
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(groundedTarget("Finished badge", { x: 482, y: 222 }, 0.94))
+			.mockResolvedValueOnce(groundedTarget("Finished badge", { x: 483, y: 223 }, 0.95));
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.wait({
+			target: "Finished badge",
+			timeoutMs: 20,
+			intervalMs: 0,
+		});
+
+		expect(result.status).toEqual({
+			code: "condition_met",
+			summary: "Target appeared.",
+		});
+		expect(result.details).toMatchObject({
+			attempts: 4,
+			wait_confirmations_required: 2,
+			grounding_provider: "test-provider",
+		});
+	});
+
+	it("times out when a wait target never satisfies the requested state", async () => {
+		const ground = vi.fn().mockResolvedValue(undefined);
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.wait({
+			target: "Finished badge",
+			timeoutMs: 0,
+			intervalMs: 0,
+		});
+
+		expect(result.status).toEqual({
+			code: "timeout",
+			summary: "GUI wait timed out.",
+		});
+		expect(result.text).toContain('Timed out waiting for "Finished badge" to appear.');
+		expect(typeof result.details?.attempts).toBe("number");
+		expect((result.details?.attempts as number)).toBeGreaterThanOrEqual(1);
+		expect(result.details).toMatchObject({
+			wait_confirmations_required: 2,
+			grounding_method: "grounding",
+			confidence: 0,
+		});
+	});
 });

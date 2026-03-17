@@ -502,9 +502,11 @@ func handleEvent() throws {
 		}
 		let vertical = try requiredInt32("UNDERSTUDY_GUI_SCROLL_Y")
 		let horizontal = try requiredInt32("UNDERSTUDY_GUI_SCROLL_X")
+		let scrollUnit = trimmedEnv("UNDERSTUDY_GUI_SCROLL_UNIT")
+		let units: CGScrollEventUnit = scrollUnit == "pixel" ? .pixel : .line
 		guard let event = CGEvent(
 			scrollWheelEvent2Source: nil,
-			units: .line,
+			units: units,
 			wheelCount: 2,
 			wheel1: vertical,
 			wheel2: horizontal,

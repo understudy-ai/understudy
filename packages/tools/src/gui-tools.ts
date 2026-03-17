@@ -174,7 +174,7 @@ const GuiDragSchema = Type.Object({
 
 const GuiScrollSchema = Type.Object({
 	app: Type.Optional(Type.String({ description: "Optional macOS application name to act on. Defaults to the frontmost app." })),
-	target: Type.Optional(Type.String({ description: `Semantic scroll target — name the scrollable CONTAINER or content area, not just a heading within it. E.g. 'the message list below "Inbox"', 'the scrollable panel containing the file list', 'the code editor area showing "main.ts"', 'the document body'. ${GUI_TARGET_DESCRIPTION_SUFFIX}` })),
+	target: Type.Optional(Type.String({ description: `Optional semantic scroll target — name the scrollable CONTAINER or content area, not just a heading within it. E.g. 'the message list below "Inbox"', 'the scrollable panel containing the file list', 'the code editor area showing "main.ts"', 'the document body'. Omit this for the common case where you just want to keep scrolling the current surface. ${GUI_TARGET_DESCRIPTION_SUFFIX}` })),
 	groundingMode: Type.Optional(Type.Union([
 		Type.Literal("single"),
 		Type.Literal("complex"),
@@ -192,7 +192,12 @@ const GuiScrollSchema = Type.Object({
 		Type.Literal("left"),
 		Type.Literal("right"),
 	], { description: 'Scroll direction. Default: "down".' })),
-	amount: Type.Optional(Type.Number({ description: "Approximate number of scroll notches or lines. Default: 5." })),
+	distance: Type.Optional(Type.Union([
+		Type.Literal("small"),
+		Type.Literal("medium"),
+		Type.Literal("page"),
+	], { description: 'Semantic scroll distance. Default: "page" for targetless scrolls and "medium" for grounded container scrolls. `page` aims to preserve some on-screen overlap instead of jumping a full viewport.' })),
+	amount: Type.Optional(Type.Number({ description: "Advanced low-level override for scroll notches or lines. When provided, this overrides `distance` and uses legacy line-based scrolling." })),
 });
 
 const GuiTypeSchema = Type.Object({
@@ -799,8 +804,9 @@ const GUI_TOOL_FACTORIES: Array<{ name: GuiToolName; create: GuiToolFactory }> =
 			name: "gui_scroll",
 			label: "GUI Scroll",
 				description:
-					"Scroll a visually grounded GUI region or the active app in a cardinal direction. " +
-					"Use this to reveal off-screen content before reading or clicking again.",
+					"Scroll the active surface or a visually grounded GUI region in a cardinal direction. " +
+					"Omitting `target` is the common case when you just need to reveal more content. " +
+					"Prefer semantic `distance` values for page-like scrolling with preserved context unless you specifically need a low-level `amount` override.",
 			parameters: GuiScrollSchema,
 			method: "scroll",
 			progressLabel: "GUI scroll",

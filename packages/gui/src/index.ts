@@ -50,11 +50,12 @@ export type {
 	GuiReadParams,
 	GuiRightClickParams,
 	GuiScreenshotParams,
+	GuiScrollDistance,
 	GuiScrollParams,
 	GuiTypeParams,
 	GuiWaitParams,
 	GuiWindowSelector,
-	} from "./types.js";
+} from "./types.js";
 export type {
 	GuiEnvironmentReadinessCheck,
 	GuiEnvironmentReadinessSnapshot,

@@ -30,11 +30,12 @@ import type {
 	GuiResolution,
 	GuiRightClickParams,
 	GuiScreenshotParams,
+	GuiScrollDistance,
 	GuiScrollParams,
 	GuiTypeParams,
 	GuiWaitParams,
 	GuiWindowSelector,
-	} from "./types.js";
+} from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_WAIT_TIMEOUT_MS = 8_000;
@@ -45,6 +46,18 @@ const DEFAULT_HOVER_SETTLE_MS = 200;
 const DEFAULT_POST_ACTION_CAPTURE_SETTLE_MS = 3_000;
 const DEFAULT_CLICK_AND_HOLD_MS = 650;
 const DEFAULT_SCROLL_AMOUNT = 5;
+const DEFAULT_TARGETED_SCROLL_DISTANCE: GuiScrollDistance = "medium";
+const DEFAULT_TARGETLESS_SCROLL_DISTANCE: GuiScrollDistance = "page";
+const SCROLL_DISTANCE_AMOUNTS: Record<GuiScrollDistance, number> = {
+	small: 3,
+	medium: DEFAULT_SCROLL_AMOUNT,
+	page: 12,
+};
+const SCROLL_DISTANCE_FRACTIONS: Record<GuiScrollDistance, number> = {
+	small: 0.25,
+	medium: 0.5,
+	page: 0.75,
+};
 const WAIT_CONFIRMATION_COUNT = 2;
 const COMMON_KEY_CODES: Record<string, number> = {
 	enter: 36,
@@ -117,6 +130,47 @@ interface GuiTargetProbe {
 	grounded?: GroundedGuiTarget;
 	capture?: GuiCaptureMetadata;
 	image?: GuiActionResult["image"];
+}
+
+type PointActionIntent =
+	| "click"
+	| "right_click"
+	| "double_click"
+	| "hover"
+	| "click_and_hold";
+
+interface GroundedPointActionRequest {
+	appName?: string;
+	target?: string;
+	scope?: string;
+	groundingMode?: GuiGroundingMode;
+	locationHint?: string;
+	captureMode?: GuiCaptureMode;
+	windowTitle?: string;
+	windowSelector?: GuiWindowSelector;
+	action: PointActionIntent;
+	targetFallback: string;
+	notFoundText: (targetDescription: string) => string;
+	successText: (params: {
+		targetDescription: string;
+		actionKind: string;
+		appName?: string;
+	}) => string;
+	summary: string;
+	execute: (point: GuiPoint) => Promise<GuiNativeActionResult>;
+	extraDetails?: Record<string, unknown>;
+}
+
+type GuiScrollUnit = "line" | "pixel";
+type GuiScrollViewportSource = "target_box" | "capture_rect" | "window" | "display";
+
+interface ResolvedGuiScrollPlan {
+	amount: number;
+	distancePreset: GuiScrollDistance | "custom";
+	unit: GuiScrollUnit;
+	viewportDimension?: number;
+	viewportSource?: GuiScrollViewportSource;
+	travelFraction?: number;
 }
 
 interface GuiCaptureMetadata {
@@ -441,6 +495,17 @@ function transformImagePointToDisplay(point: GuiPoint, artifact: GuiCaptureMetad
 	return clampPointToRect(resolved, artifact.captureRect);
 }
 
+function normalizeDisplayPointInCapture(point: GuiPoint, artifact: GuiCaptureMetadata): GuiPoint | undefined {
+	const resolved = {
+		x: Math.round(point.x),
+		y: Math.round(point.y),
+	};
+	if (!rectContainsPoint(artifact.captureRect, resolved, 0.5)) {
+		return undefined;
+	}
+	return clampPointToRect(resolved, artifact.captureRect);
+}
+
 function transformImageRectToDisplay(rect: GuiRect, artifact: GuiCaptureMetadata): GuiRect | undefined {
 	const imageBounds = artifact.imageWidth && artifact.imageHeight
 		? {
@@ -481,6 +546,30 @@ function transformImageRectToDisplay(rect: GuiRect, artifact: GuiCaptureMetadata
 		y: clamp(top, artifact.captureRect.y, artifact.captureRect.y + artifact.captureRect.height),
 		width: Math.max(1, clamp(right, artifact.captureRect.x, artifact.captureRect.x + artifact.captureRect.width) - clamp(left, artifact.captureRect.x, artifact.captureRect.x + artifact.captureRect.width)),
 		height: Math.max(1, clamp(bottom, artifact.captureRect.y, artifact.captureRect.y + artifact.captureRect.height) - clamp(top, artifact.captureRect.y, artifact.captureRect.y + artifact.captureRect.height)),
+	});
+}
+
+function normalizeDisplayRectInCapture(rect: GuiRect, artifact: GuiCaptureMetadata): GuiRect | undefined {
+	const left = clamp(rect.x, artifact.captureRect.x, artifact.captureRect.x + artifact.captureRect.width);
+	const top = clamp(rect.y, artifact.captureRect.y, artifact.captureRect.y + artifact.captureRect.height);
+	const right = clamp(
+		rect.x + rect.width,
+		artifact.captureRect.x,
+		artifact.captureRect.x + artifact.captureRect.width,
+	);
+	const bottom = clamp(
+		rect.y + rect.height,
+		artifact.captureRect.y,
+		artifact.captureRect.y + artifact.captureRect.height,
+	);
+	if (right <= left || bottom <= top) {
+		return undefined;
+	}
+	return normalizeRect({
+		x: left,
+		y: top,
+		width: right - left,
+		height: bottom - top,
 	});
 }
 
@@ -1030,14 +1119,89 @@ async function performDrag(
 	return { actionKind };
 }
 
+function scrollDirectionUsesHorizontalAxis(direction: NonNullable<GuiScrollParams["direction"]>): boolean {
+	return direction === "left" || direction === "right";
+}
+
+function scrollViewportDimensionForDirection(
+	rect: GuiRect,
+	direction: NonNullable<GuiScrollParams["direction"]>,
+): number {
+	return scrollDirectionUsesHorizontalAxis(direction) ? rect.width : rect.height;
+}
+
+function resolveScrollPlan(params: GuiScrollParams, options: {
+	grounded?: GroundedGuiTarget;
+	context?: GuiCaptureContext;
+}): ResolvedGuiScrollPlan {
+	const direction = params.direction ?? "down";
+	if (params.amount !== undefined) {
+		return {
+			amount: Math.max(1, Math.min(50, Math.round(params.amount))),
+			distancePreset: "custom",
+			unit: "line",
+		};
+	}
+	const distancePreset = params.distance ??
+		(params.target?.trim() ? DEFAULT_TARGETED_SCROLL_DISTANCE : DEFAULT_TARGETLESS_SCROLL_DISTANCE);
+	const groundedRect = options.grounded?.displayBox;
+	if (groundedRect) {
+		const viewportDimension = Math.max(1, Math.round(scrollViewportDimensionForDirection(groundedRect, direction)));
+		return {
+			amount: Math.max(1, Math.min(4_000, Math.round(viewportDimension * SCROLL_DISTANCE_FRACTIONS[distancePreset]))),
+			distancePreset,
+			unit: "pixel",
+			viewportDimension,
+			viewportSource: "target_box",
+			travelFraction: SCROLL_DISTANCE_FRACTIONS[distancePreset],
+		};
+	}
+	const captureRect = options.grounded?.artifact.captureRect;
+	if (captureRect) {
+		const viewportDimension = Math.max(1, Math.round(scrollViewportDimensionForDirection(captureRect, direction)));
+		return {
+			amount: Math.max(1, Math.min(4_000, Math.round(viewportDimension * SCROLL_DISTANCE_FRACTIONS[distancePreset]))),
+			distancePreset,
+			unit: "pixel",
+			viewportDimension,
+			viewportSource: "capture_rect",
+			travelFraction: SCROLL_DISTANCE_FRACTIONS[distancePreset],
+		};
+	}
+	const contextRect = options.context
+		? (params.captureMode === "display" || !options.context.windowBounds
+			? options.context.display.bounds
+			: options.context.windowBounds)
+		: undefined;
+	if (contextRect) {
+		const viewportDimension = Math.max(1, Math.round(scrollViewportDimensionForDirection(contextRect, direction)));
+		return {
+			amount: Math.max(1, Math.min(4_000, Math.round(viewportDimension * SCROLL_DISTANCE_FRACTIONS[distancePreset]))),
+			distancePreset,
+			unit: "pixel",
+			viewportDimension,
+			viewportSource: params.captureMode === "display" || !options.context?.windowBounds ? "display" : "window",
+			travelFraction: SCROLL_DISTANCE_FRACTIONS[distancePreset],
+		};
+	}
+	return {
+		amount: SCROLL_DISTANCE_AMOUNTS[distancePreset],
+		distancePreset,
+		unit: "line",
+	};
+}
+
 async function performScroll(
 	appName: string | undefined,
 	point: { x: number; y: number } | undefined,
-	params: GuiScrollParams,
+	params: {
+		direction?: GuiScrollParams["direction"];
+		plan: ResolvedGuiScrollPlan;
+	},
 	options: { activateApp?: boolean } = {},
 ): Promise<GuiNativeActionResult> {
 	const direction = params.direction ?? "down";
-	const amount = Math.max(1, Math.min(50, Math.round(params.amount ?? DEFAULT_SCROLL_AMOUNT)));
+	const amount = params.plan.amount;
 	const deltaX =
 		direction === "left" ? -amount :
 			direction === "right" ? amount :
@@ -1054,6 +1218,7 @@ async function performScroll(
 			UNDERSTUDY_GUI_EVENT_MODE: "scroll",
 			UNDERSTUDY_GUI_X: point ? String(point.x) : undefined,
 			UNDERSTUDY_GUI_Y: point ? String(point.y) : undefined,
+			UNDERSTUDY_GUI_SCROLL_UNIT: params.plan.unit,
 			UNDERSTUDY_GUI_SCROLL_X: String(deltaX),
 			UNDERSTUDY_GUI_SCROLL_Y: String(deltaY),
 		},
@@ -1278,12 +1443,14 @@ export class ComputerUseGuiRuntime {
 			grounding_model_image: telemetry.modelImage,
 			grounding_working_image: telemetry.workingImage,
 			grounding_original_image: telemetry.originalImage,
-			grounding_request_image: telemetry.requestImage,
-			grounding_model_to_original_scale: telemetry.modelToOriginalScale,
-			grounding_working_to_original_scale: telemetry.workingToOriginalScale,
-			grounding_image_box: result.grounded.box,
-			grounding_image_point: result.imagePoint,
-			confidence: result.grounded.confidence,
+				grounding_request_image: telemetry.requestImage,
+				grounding_model_to_original_scale: telemetry.modelToOriginalScale,
+				grounding_working_to_original_scale: telemetry.workingToOriginalScale,
+				grounding_image_box: coordinateSpace === "image_pixels"
+					? result.grounded.box
+					: undefined,
+				grounding_image_point: result.imagePoint,
+				confidence: result.grounded.confidence,
 			raw_grounding: result.grounded.raw,
 		};
 	}
@@ -1339,8 +1506,13 @@ export class ComputerUseGuiRuntime {
 	private describeGroundingResolutionError(params: {
 		target: string;
 		point: GuiPoint;
+		coordinateSpace: GuiGroundingCoordinateSpace;
 		artifact: GuiCaptureMetadata;
 	}): string {
+		if (params.coordinateSpace === "display_pixels") {
+			const rect = params.artifact.captureRect;
+			return `Grounding resolved "${params.target}" to display-space point (${Math.round(params.point.x)}, ${Math.round(params.point.y)}), but that point falls outside capture rect (${rect.x}, ${rect.y}, ${rect.width}, ${rect.height}).`;
+		}
 		const imageSize = params.artifact.imageWidth && params.artifact.imageHeight
 			? `${params.artifact.imageWidth}x${params.artifact.imageHeight}px`
 			: "the captured screenshot";
@@ -1403,26 +1575,33 @@ export class ComputerUseGuiRuntime {
 					"single",
 				grounding_previous_failures: 0,
 			},
-		};
-		const coordinateSpace: GuiGroundingCoordinateSpace = grounded.coordinateSpace;
-		if (coordinateSpace !== "image_pixels") {
-			this.lastGroundingResolutionError =
-				`Grounding provider returned unsupported coordinate space "${String(coordinateSpace)}".`;
-			return undefined;
-		}
-		const imagePoint = groundedWithMetadata.point;
-		const point = transformImagePointToDisplay(groundedWithMetadata.point, params.artifact.metadata);
-		if (!point) {
-			this.lastGroundingResolutionError = this.describeGroundingResolutionError({
-				target: params.target,
-				point: groundedWithMetadata.point,
-				artifact: params.artifact.metadata,
-			});
-			return undefined;
-		}
-		const displayBox = groundedWithMetadata.box
-			? transformImageRectToDisplay(groundedWithMetadata.box, params.artifact.metadata)
-			: undefined;
+			};
+			const coordinateSpace: GuiGroundingCoordinateSpace = grounded.coordinateSpace;
+			if (coordinateSpace !== "image_pixels" && coordinateSpace !== "display_pixels") {
+				this.lastGroundingResolutionError =
+					`Grounding provider returned unsupported coordinate space "${String(coordinateSpace)}".`;
+				return undefined;
+			}
+			const imagePoint = coordinateSpace === "image_pixels"
+				? groundedWithMetadata.point
+				: undefined;
+			const point = coordinateSpace === "image_pixels"
+				? transformImagePointToDisplay(groundedWithMetadata.point, params.artifact.metadata)
+				: normalizeDisplayPointInCapture(groundedWithMetadata.point, params.artifact.metadata);
+			if (!point) {
+				this.lastGroundingResolutionError = this.describeGroundingResolutionError({
+					target: params.target,
+					point: groundedWithMetadata.point,
+					coordinateSpace,
+					artifact: params.artifact.metadata,
+				});
+				return undefined;
+			}
+			const displayBox = groundedWithMetadata.box
+				? coordinateSpace === "image_pixels"
+					? transformImageRectToDisplay(groundedWithMetadata.box, params.artifact.metadata)
+					: normalizeDisplayRectInCapture(groundedWithMetadata.box, params.artifact.metadata)
+				: undefined;
 		const resolved = {
 			resolution: createGroundingResolution(groundedWithMetadata),
 			point,
@@ -1475,7 +1654,7 @@ export class ComputerUseGuiRuntime {
 					locationHint: params.locationHint,
 					scope: params.scope,
 					app: params.appName,
-					action: "read",
+					action: "wait",
 				});
 			} finally {
 				await artifact.cleanup();
@@ -1547,6 +1726,81 @@ export class ComputerUseGuiRuntime {
 			}
 		} catch {
 			return {};
+		}
+	}
+
+	private async executeGroundedPointAction(
+		params: GroundedPointActionRequest,
+	): Promise<GuiActionResult> {
+		const windowSelection = resolveWindowSelection({
+			windowTitle: params.windowTitle,
+			windowSelector: params.windowSelector,
+		});
+		const artifact = await captureScreenshotArtifact({
+			appName: params.appName,
+			captureMode: params.captureMode,
+			windowTitle: windowSelection?.title,
+			windowSelector: windowSelection,
+		});
+		try {
+			const targetDescription = describeGuiTarget({
+				target: params.target,
+				fallback: params.targetFallback,
+			});
+			const grounded = await this.resolveGuiTarget({
+				artifact,
+				target: params.target,
+				groundingMode: params.groundingMode,
+				locationHint: params.locationHint,
+				scope: params.scope,
+				app: params.appName,
+				action: params.action,
+			});
+			if (!grounded) {
+				return buildGuiResult({
+					text: params.notFoundText(targetDescription),
+					status: "not_found",
+					summary: "No confident visual GUI target was found.",
+					details: {
+						error: "No confident visual GUI target was found.",
+						...buildCaptureDetails(artifact.metadata),
+						...this.targetResolutionDetails(undefined),
+						confidence: 0,
+						app: params.appName,
+					},
+					image: screenshotArtifactToImage(artifact),
+				});
+			}
+
+			const action = await params.execute(grounded.point);
+			const evidence = await this.captureEvidenceImage({
+				appName: params.appName,
+				captureMode: params.captureMode,
+				windowTitle: windowSelection?.title,
+				windowSelector: windowSelection,
+			});
+			return buildGuiResult({
+				text: params.successText({
+					targetDescription,
+					actionKind: action.actionKind,
+					appName: params.appName,
+				}),
+				resolution: grounded.resolution,
+				status: "action_sent",
+				summary: params.summary,
+				details: {
+					action_kind: action.actionKind,
+					...params.extraDetails,
+					...this.targetResolutionDetails(grounded),
+					...evidence.details,
+					app: params.appName,
+					executed_point: grounded.point,
+					pre_action_capture: buildCaptureDetails(grounded.artifact),
+				},
+				image: evidence.image,
+			});
+		} finally {
+			await artifact.cleanup();
 		}
 	}
 
@@ -1646,74 +1900,26 @@ export class ComputerUseGuiRuntime {
 		}
 
 		const appName = normalizeOptionalString(params.app);
-		const scope = params.scope;
-		const windowSelection = resolveWindowSelection({
+		return await this.executeGroundedPointAction({
+			appName,
+			target: params.target,
+			scope: params.scope,
+			groundingMode: params.groundingMode,
+			locationHint: params.locationHint,
+			captureMode: params.captureMode,
 			windowTitle: params.windowTitle,
 			windowSelector: params.windowSelector,
+			action: "click",
+			targetFallback: "the requested GUI target",
+			notFoundText: (targetDescription) =>
+				`Could not visually resolve a clickable GUI target matching ${targetDescription}.`,
+			successText: ({ targetDescription, actionKind, appName: resolvedAppName }) =>
+				`Clicked ${targetDescription} via ${actionKind}${resolvedAppName ? ` in ${resolvedAppName}` : ""}.`,
+			summary: "GUI click was sent.",
+			execute: async (point) => await performPointClick(appName, point, {
+				activateApp: false,
+			}),
 		});
-		const artifact = await captureScreenshotArtifact({
-			appName,
-			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
-			windowSelector: windowSelection,
-		});
-		try {
-			const targetDescription = describeGuiTarget({
-				target: params.target,
-				fallback: "the requested GUI target",
-			});
-				const grounded = await this.resolveGuiTarget({
-					artifact,
-					target: params.target,
-					groundingMode: params.groundingMode,
-					locationHint: params.locationHint,
-					scope,
-					app: appName,
-					action: "click",
-			});
-			if (!grounded) {
-				return buildGuiResult({
-					text: `Could not visually resolve a clickable GUI target matching ${targetDescription}.`,
-					status: "not_found",
-					summary: "No confident visual GUI target was found.",
-					details: {
-						error: "No confident visual GUI target was found.",
-						...buildCaptureDetails(artifact.metadata),
-						...this.targetResolutionDetails(undefined),
-						confidence: 0,
-						app: appName,
-					},
-					image: screenshotArtifactToImage(artifact),
-				});
-			}
-
-				const action = await performPointClick(appName, grounded.point, {
-					activateApp: false,
-				});
-				const evidence = await this.captureEvidenceImage({
-					appName,
-					captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
-				windowSelector: windowSelection,
-			});
-				return buildGuiResult({
-					text: `Clicked ${targetDescription} via ${action.actionKind}${appName ? ` in ${appName}` : ""}.`,
-					resolution: grounded.resolution,
-					status: "action_sent",
-					summary: "GUI click was sent.",
-					details: {
-						action_kind: action.actionKind,
-						...this.targetResolutionDetails(grounded),
-						...evidence.details,
-						app: appName,
-						executed_point: grounded.point,
-						pre_action_capture: buildCaptureDetails(grounded.artifact),
-					},
-				image: evidence.image,
-			});
-		} finally {
-			await artifact.cleanup();
-		}
 	}
 
 	async rightClick(params: GuiRightClickParams): Promise<GuiActionResult> {
@@ -1722,74 +1928,26 @@ export class ComputerUseGuiRuntime {
 		}
 
 		const appName = normalizeOptionalString(params.app);
-		const scope = params.scope;
-		const windowSelection = resolveWindowSelection({
+		return await this.executeGroundedPointAction({
+			appName,
+			target: params.target,
+			scope: params.scope,
+			groundingMode: params.groundingMode,
+			locationHint: params.locationHint,
+			captureMode: params.captureMode,
 			windowTitle: params.windowTitle,
 			windowSelector: params.windowSelector,
+			action: "right_click",
+			targetFallback: "the requested GUI target",
+			notFoundText: (targetDescription) =>
+				`Could not visually resolve a GUI target to right click matching ${targetDescription}.`,
+			successText: ({ targetDescription, actionKind, appName: resolvedAppName }) =>
+				`Right-clicked ${targetDescription} via ${actionKind}${resolvedAppName ? ` in ${resolvedAppName}` : ""}.`,
+			summary: "GUI right click was sent.",
+			execute: async (point) => await performRightClick(appName, point, {
+				activateApp: false,
+			}),
 		});
-		const artifact = await captureScreenshotArtifact({
-			appName,
-			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
-			windowSelector: windowSelection,
-		});
-		try {
-			const targetDescription = describeGuiTarget({
-				target: params.target,
-				fallback: "the requested GUI target",
-			});
-				const grounded = await this.resolveGuiTarget({
-					artifact,
-					target: params.target,
-					groundingMode: params.groundingMode,
-					locationHint: params.locationHint,
-					scope,
-					app: appName,
-					action: "right_click",
-			});
-			if (!grounded) {
-				return buildGuiResult({
-					text: `Could not visually resolve a GUI target to right click matching ${targetDescription}.`,
-					status: "not_found",
-					summary: "No confident visual GUI target was found.",
-					details: {
-						error: "No confident visual GUI target was found.",
-						...buildCaptureDetails(artifact.metadata),
-						...this.targetResolutionDetails(undefined),
-						confidence: 0,
-						app: appName,
-					},
-					image: screenshotArtifactToImage(artifact),
-				});
-			}
-
-				const action = await performRightClick(appName, grounded.point, {
-					activateApp: false,
-				});
-				const evidence = await this.captureEvidenceImage({
-					appName,
-					captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
-				windowSelector: windowSelection,
-			});
-				return buildGuiResult({
-					text: `Right-clicked ${targetDescription} via ${action.actionKind}${appName ? ` in ${appName}` : ""}.`,
-					resolution: grounded.resolution,
-					status: "action_sent",
-					summary: "GUI right click was sent.",
-					details: {
-						action_kind: action.actionKind,
-						...this.targetResolutionDetails(grounded),
-						...evidence.details,
-						app: appName,
-						executed_point: grounded.point,
-						pre_action_capture: buildCaptureDetails(grounded.artifact),
-					},
-				image: evidence.image,
-			});
-		} finally {
-			await artifact.cleanup();
-		}
 	}
 
 	async doubleClick(params: GuiDoubleClickParams): Promise<GuiActionResult> {
@@ -1798,74 +1956,26 @@ export class ComputerUseGuiRuntime {
 		}
 
 		const appName = normalizeOptionalString(params.app);
-		const scope = params.scope;
-		const windowSelection = resolveWindowSelection({
+		return await this.executeGroundedPointAction({
+			appName,
+			target: params.target,
+			scope: params.scope,
+			groundingMode: params.groundingMode,
+			locationHint: params.locationHint,
+			captureMode: params.captureMode,
 			windowTitle: params.windowTitle,
 			windowSelector: params.windowSelector,
+			action: "double_click",
+			targetFallback: "the requested GUI target",
+			notFoundText: (targetDescription) =>
+				`Could not visually resolve a GUI target to double click matching ${targetDescription}.`,
+			successText: ({ targetDescription, actionKind, appName: resolvedAppName }) =>
+				`Double-clicked ${targetDescription} via ${actionKind}${resolvedAppName ? ` in ${resolvedAppName}` : ""}.`,
+			summary: "GUI double click was sent.",
+			execute: async (point) => await performDoubleClick(appName, point, {
+				activateApp: false,
+			}),
 		});
-		const artifact = await captureScreenshotArtifact({
-			appName,
-			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
-			windowSelector: windowSelection,
-		});
-		try {
-			const targetDescription = describeGuiTarget({
-				target: params.target,
-				fallback: "the requested GUI target",
-			});
-				const grounded = await this.resolveGuiTarget({
-					artifact,
-					target: params.target,
-					groundingMode: params.groundingMode,
-					locationHint: params.locationHint,
-					scope,
-					app: appName,
-					action: "double_click",
-			});
-			if (!grounded) {
-				return buildGuiResult({
-					text: `Could not visually resolve a GUI target to double click matching ${targetDescription}.`,
-					status: "not_found",
-					summary: "No confident visual GUI target was found.",
-					details: {
-						error: "No confident visual GUI target was found.",
-						...buildCaptureDetails(artifact.metadata),
-						...this.targetResolutionDetails(undefined),
-						confidence: 0,
-						app: appName,
-					},
-					image: screenshotArtifactToImage(artifact),
-				});
-			}
-
-				const action = await performDoubleClick(appName, grounded.point, {
-					activateApp: false,
-				});
-				const evidence = await this.captureEvidenceImage({
-					appName,
-					captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
-				windowSelector: windowSelection,
-			});
-				return buildGuiResult({
-					text: `Double-clicked ${targetDescription} via ${action.actionKind}${appName ? ` in ${appName}` : ""}.`,
-					resolution: grounded.resolution,
-					status: "action_sent",
-					summary: "GUI double click was sent.",
-					details: {
-						action_kind: action.actionKind,
-						...this.targetResolutionDetails(grounded),
-						...evidence.details,
-						app: appName,
-						executed_point: grounded.point,
-						pre_action_capture: buildCaptureDetails(grounded.artifact),
-					},
-				image: evidence.image,
-			});
-		} finally {
-			await artifact.cleanup();
-		}
 	}
 
 	async hover(params: GuiHoverParams): Promise<GuiActionResult> {
@@ -1874,76 +1984,30 @@ export class ComputerUseGuiRuntime {
 		}
 
 		const appName = normalizeOptionalString(params.app);
-		const scope = params.scope;
 		const settleMs = Math.max(0, Math.round(params.settleMs ?? DEFAULT_HOVER_SETTLE_MS));
-		const windowSelection = resolveWindowSelection({
+		return await this.executeGroundedPointAction({
+			appName,
+			target: params.target,
+			scope: params.scope,
+			groundingMode: params.groundingMode,
+			locationHint: params.locationHint,
+			captureMode: params.captureMode,
 			windowTitle: params.windowTitle,
 			windowSelector: params.windowSelector,
+			action: "hover",
+			targetFallback: "the requested GUI target",
+			notFoundText: (targetDescription) =>
+				`Could not visually resolve a GUI target to hover matching ${targetDescription}.`,
+			successText: ({ targetDescription, actionKind, appName: resolvedAppName }) =>
+				`Hovered ${targetDescription} via ${actionKind}${resolvedAppName ? ` in ${resolvedAppName}` : ""}.`,
+			summary: "GUI hover was sent.",
+			execute: async (point) => await performHover(appName, point, settleMs, {
+				activateApp: false,
+			}),
+			extraDetails: {
+				settle_ms: settleMs,
+			},
 		});
-		const artifact = await captureScreenshotArtifact({
-			appName,
-			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
-			windowSelector: windowSelection,
-		});
-		try {
-			const targetDescription = describeGuiTarget({
-				target: params.target,
-				fallback: "the requested GUI target",
-			});
-				const grounded = await this.resolveGuiTarget({
-					artifact,
-					target: params.target,
-					groundingMode: params.groundingMode,
-					locationHint: params.locationHint,
-					scope,
-					app: appName,
-					action: "hover",
-			});
-			if (!grounded) {
-				return buildGuiResult({
-					text: `Could not visually resolve a GUI target to hover matching ${targetDescription}.`,
-					status: "not_found",
-					summary: "No confident visual GUI target was found.",
-					details: {
-						error: "No confident visual GUI target was found.",
-						...buildCaptureDetails(artifact.metadata),
-						...this.targetResolutionDetails(undefined),
-						confidence: 0,
-						app: appName,
-					},
-					image: screenshotArtifactToImage(artifact),
-				});
-			}
-
-				const action = await performHover(appName, grounded.point, settleMs, {
-					activateApp: false,
-				});
-				const evidence = await this.captureEvidenceImage({
-					appName,
-					captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
-				windowSelector: windowSelection,
-			});
-				return buildGuiResult({
-					text: `Hovered ${targetDescription} via ${action.actionKind}${appName ? ` in ${appName}` : ""}.`,
-					resolution: grounded.resolution,
-					status: "action_sent",
-					summary: "GUI hover was sent.",
-					details: {
-						action_kind: action.actionKind,
-						settle_ms: settleMs,
-						...this.targetResolutionDetails(grounded),
-						...evidence.details,
-						app: appName,
-						executed_point: grounded.point,
-						pre_action_capture: buildCaptureDetails(grounded.artifact),
-					},
-				image: evidence.image,
-			});
-		} finally {
-			await artifact.cleanup();
-		}
 	}
 
 	async clickAndHold(params: GuiClickAndHoldParams): Promise<GuiActionResult> {
@@ -1952,76 +2016,30 @@ export class ComputerUseGuiRuntime {
 		}
 
 		const appName = normalizeOptionalString(params.app);
-		const scope = params.scope;
 		const holdDurationMs = Math.max(100, Math.round(params.holdDurationMs ?? DEFAULT_CLICK_AND_HOLD_MS));
-		const windowSelection = resolveWindowSelection({
+		return await this.executeGroundedPointAction({
+			appName,
+			target: params.target,
+			scope: params.scope,
+			groundingMode: params.groundingMode,
+			locationHint: params.locationHint,
+			captureMode: params.captureMode,
 			windowTitle: params.windowTitle,
 			windowSelector: params.windowSelector,
+			action: "click_and_hold",
+			targetFallback: "the requested GUI target",
+			notFoundText: (targetDescription) =>
+				`Could not visually resolve a GUI target to click and hold matching ${targetDescription}.`,
+			successText: ({ targetDescription, actionKind, appName: resolvedAppName }) =>
+				`Clicked and held ${targetDescription} via ${actionKind}${resolvedAppName ? ` in ${resolvedAppName}` : ""}.`,
+			summary: "GUI click and hold was sent.",
+			execute: async (point) => await performClickAndHold(appName, point, holdDurationMs, {
+				activateApp: false,
+			}),
+			extraDetails: {
+				hold_duration_ms: holdDurationMs,
+			},
 		});
-		const artifact = await captureScreenshotArtifact({
-			appName,
-			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
-			windowSelector: windowSelection,
-		});
-		try {
-			const targetDescription = describeGuiTarget({
-				target: params.target,
-				fallback: "the requested GUI target",
-			});
-				const grounded = await this.resolveGuiTarget({
-					artifact,
-					target: params.target,
-					groundingMode: params.groundingMode,
-					locationHint: params.locationHint,
-					scope,
-					app: appName,
-					action: "click_and_hold",
-			});
-			if (!grounded) {
-				return buildGuiResult({
-					text: `Could not visually resolve a GUI target to click and hold matching ${targetDescription}.`,
-					status: "not_found",
-					summary: "No confident visual GUI target was found.",
-					details: {
-						error: "No confident visual GUI target was found.",
-						...buildCaptureDetails(artifact.metadata),
-						...this.targetResolutionDetails(undefined),
-						confidence: 0,
-						app: appName,
-					},
-					image: screenshotArtifactToImage(artifact),
-				});
-			}
-
-				const action = await performClickAndHold(appName, grounded.point, holdDurationMs, {
-					activateApp: false,
-				});
-				const evidence = await this.captureEvidenceImage({
-					appName,
-					captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
-				windowSelector: windowSelection,
-			});
-				return buildGuiResult({
-					text: `Clicked and held ${targetDescription} via ${action.actionKind}${appName ? ` in ${appName}` : ""}.`,
-					resolution: grounded.resolution,
-					status: "action_sent",
-					summary: "GUI click and hold was sent.",
-					details: {
-						action_kind: action.actionKind,
-						hold_duration_ms: holdDurationMs,
-						...this.targetResolutionDetails(grounded),
-						...evidence.details,
-						app: appName,
-						executed_point: grounded.point,
-						pre_action_capture: buildCaptureDetails(grounded.artifact),
-					},
-				image: evidence.image,
-			});
-		} finally {
-			await artifact.cleanup();
-		}
 	}
 
 	async drag(params: GuiDragParams): Promise<GuiActionResult> {
@@ -2165,6 +2183,7 @@ export class ComputerUseGuiRuntime {
 			target: params.target,
 			fallback: "the current surface",
 		});
+		let context: GuiCaptureContext | undefined;
 		let grounded: GroundedGuiTarget | undefined;
 		if (params.target?.trim()) {
 				const artifact = await captureScreenshotArtifact({
@@ -2201,10 +2220,22 @@ export class ComputerUseGuiRuntime {
 			} finally {
 				await artifact.cleanup();
 			}
+		} else {
+			context = await resolveCaptureContext(appName, {
+				windowTitle: windowSelection?.title,
+				windowSelector: windowSelection,
+			});
 		}
 
-			const action = await performScroll(appName, grounded?.point, params, {
-				activateApp: !grounded,
+			const scrollPlan = resolveScrollPlan(params, {
+				grounded,
+				context,
+			});
+			const action = await performScroll(appName, grounded?.point, {
+				direction: params.direction,
+				plan: scrollPlan,
+			}, {
+				activateApp: !grounded && !context,
 			});
 			const direction = params.direction ?? "down";
 			const evidence = await this.captureEvidenceImage({
@@ -2225,7 +2256,12 @@ export class ComputerUseGuiRuntime {
 					...(grounded ? this.targetResolutionDetails(grounded) : { grounding_method: "visual" }),
 					...evidence.details,
 					direction,
-					amount: Math.max(1, Math.round(params.amount ?? DEFAULT_SCROLL_AMOUNT)),
+					amount: scrollPlan.amount,
+					scroll_distance: scrollPlan.distancePreset,
+					scroll_unit: scrollPlan.unit,
+					scroll_viewport_dimension: scrollPlan.viewportDimension,
+					scroll_viewport_source: scrollPlan.viewportSource,
+					scroll_travel_fraction: scrollPlan.travelFraction,
 					app: appName,
 					executed_point: grounded?.point,
 					...(grounded ? { pre_action_capture: buildCaptureDetails(grounded.artifact) } : {}),

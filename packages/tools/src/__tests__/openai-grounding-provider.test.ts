@@ -341,6 +341,34 @@ describe("createOpenAIGroundingProvider", () => {
 		});
 	});
 
+	it("stabilizes edge-biased drag source points back toward the bbox center for small controls", async () => {
+		const imagePath = await createTestImage(800, 600, "openai-drag-source-stabilized.png");
+		const fetchMock = createSequentialFetch([
+			'{"status":"resolved","found":true,"confidence":0.84,"reason":"matched drag handle","coordinate_space":"image_pixels","click_point":{"x":438,"y":220},"bbox":{"x1":404,"y1":204,"x2":436,"y2":236}}',
+		]);
+		const provider = createOpenAIGroundingProvider({
+			apiKey: "test-key",
+			model: "gpt-5.4",
+			fetchImpl: fetchMock as unknown as typeof fetch,
+		});
+
+		const grounded = await provider.ground({
+			imagePath,
+			target: "drag handle for Layer 1",
+			action: "drag_source",
+		});
+
+		expect(grounded).toMatchObject({
+			coordinateSpace: "image_pixels",
+			point: { x: 420, y: 220 },
+			raw: {
+				grounding_point_stabilized: true,
+				grounding_original_point: { x: 438, y: 220 },
+				grounding_stabilized_point: { x: 420, y: 220 },
+			},
+		});
+	});
+
 	it("stabilizes typing points into the safe interior of the editable field", async () => {
 		const imagePath = await createTestImage(900, 600, "openai-type-safe-interior.png");
 		const fetchMock = createSequentialFetch([

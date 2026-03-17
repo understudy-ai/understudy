@@ -62,8 +62,9 @@ export interface GuiGroundingBox {
 	height: number;
 }
 
-export type GuiGroundingCoordinateSpace = "image_pixels";
+export type GuiGroundingCoordinateSpace = "image_pixels" | "display_pixels";
 export type GuiGroundingMode = "single" | "complex";
+export type GuiScrollDistance = "small" | "medium" | "page";
 export type GuiGroundingFailureKind =
 	| "wrong_region"
 	| "scope_mismatch"
@@ -228,6 +229,7 @@ export interface GuiScrollParams {
 	windowTitle?: string;
 	windowSelector?: GuiWindowSelector;
 	direction?: "up" | "down" | "left" | "right";
+	distance?: GuiScrollDistance;
 	amount?: number;
 }
 
