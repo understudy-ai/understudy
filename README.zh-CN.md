@@ -369,7 +369,7 @@ understudy wizard
 
 ## 技能系统
 
-47 个内置技能 + 你自己创建或安装的 workspace 技能。
+内置技能 + 你自己创建或安装的 workspace 技能。
 
 ```bash
 understudy skills --list                    # 浏览可用技能
@@ -400,7 +400,7 @@ packages/gui       原生 GUI runtime、截图 grounding、演示录制器
 packages/tools     内置工具：浏览器、Web、记忆、调度、GUI、消息
 packages/channels  频道适配器（8 个平台）
 packages/types     共享 TypeScript 类型定义
-skills/            47 个内置技能模块
+skills/            内置技能模块
 examples/          示例发布产物与参考输出
 docs/              愿景、产品设计文档
 ```

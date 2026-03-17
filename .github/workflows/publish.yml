@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Publish packages
 
 on:
   push:
@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      packages: write
 
     steps:
       - name: Checkout
@@ -64,5 +65,17 @@ jobs:
       - name: Release check
         run: pnpm release:check
 
-      - name: Publish
+      - name: Publish to npm
         run: npm publish --access public
+
+      - name: Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@understudy-ai"
+
+      - name: Publish to GitHub Packages
+        run: npm publish --registry https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

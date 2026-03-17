@@ -370,7 +370,7 @@ Full screenshot-grounded GUI automation on macOS depends on the native helper pl
 
 ## Skills
 
-47 built-in skills + workspace skills you create or install.
+Built-in skills + workspace skills you create or install.
 
 ```bash
 understudy skills --list                    # browse available skills
@@ -401,7 +401,7 @@ packages/gui       Native GUI runtime, screenshot grounding, demo recorder
 packages/tools     Built-in tools: browser, web, memory, schedule, GUI, message
 packages/channels  Channel adapters (8 platforms)
 packages/types     Shared TypeScript type definitions
-skills/            47 built-in skill modules
+skills/            Built-in skill modules
 examples/          Sample published artifacts and reference outputs
 docs/              Vision, product design documentation
 ```

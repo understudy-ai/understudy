@@ -510,7 +510,7 @@ Promotion criteria: N consecutive successful executions of the same skill + no u
 - Workspace skills with publish flow
 - Session persistence, execution traces, memory
 - 8 channel adapters, scheduled jobs, subagent delegation
-- 47 built-in skills
+- Built-in skill library
 
 **Honest about what's not done:**
 
