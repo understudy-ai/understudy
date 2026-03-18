@@ -342,7 +342,7 @@ understudy wizard
 | **OpenAI** | `OPENAI_API_KEY` | GPT-4.x, GPT-5.x, `o*`, and related OpenAI models available in your current Understudy runtime |
 | **OpenAI Codex** | `OPENAI_API_KEY` or OAuth | Codex/Responses models such as `gpt-5.4`; shares auth with OpenAI |
 | **Google / Gemini** | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `gemini` is accepted as a provider alias for `google` |
-| **MiniMax** | `MINIMAX_API_KEY` | `MiniMax-M2.5`, `MiniMax-M2.5-highspeed`; use `minimax-cn` provider for the China endpoint |
+| **MiniMax** | `MINIMAX_API_KEY` | `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5`, `MiniMax-M2.5-highspeed`; use `minimax-cn` provider for the China endpoint |
 | **Additional compatible providers** | Provider-specific auth | Depending on your current Understudy runtime, examples may include GitHub Copilot, OpenRouter, xAI, Mistral, Groq, Bedrock, Vertex, and more |
 | **Custom providers / models** | Provider-specific auth | You can add custom model entries through the underlying model registry |
 

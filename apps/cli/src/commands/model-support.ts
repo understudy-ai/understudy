@@ -30,6 +30,8 @@ export const BUILTIN_MODELS: Record<string, string[]> = {
 		"gemini-1.5-pro",
 	],
 	minimax: [
+		"MiniMax-M2.7",
+		"MiniMax-M2.7-highspeed",
 		"MiniMax-M2.5",
 		"MiniMax-M2.5-highspeed",
 	],
@@ -97,7 +99,7 @@ export function mergeKnownModels(
 	return Object.fromEntries(
 		Array.from(merged.entries())
 			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([provider, models]) => [provider, Array.from(models).sort()]),
+			.map(([provider, models]) => [provider, Array.from(models)]),
 	);
 }
 

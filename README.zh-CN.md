@@ -341,7 +341,7 @@ understudy wizard
 | **OpenAI** | `OPENAI_API_KEY` | 当前 Understudy 运行时可用的 GPT-4.x、GPT-5.x、`o*` 等 OpenAI 模型 |
 | **OpenAI Codex** | `OPENAI_API_KEY` 或 OAuth | 例如 `gpt-5.4` 这类 Codex / Responses 模型；与 OpenAI 共用认证 |
 | **Google / Gemini** | `GOOGLE_API_KEY` 或 `GEMINI_API_KEY` | `gemini` 可作为 `google` 的提供方别名 |
-| **MiniMax** | `MINIMAX_API_KEY` | `MiniMax-M2.5`、`MiniMax-M2.5-highspeed`；使用 `minimax-cn` 提供方可切换至国内端点 |
+| **MiniMax** | `MINIMAX_API_KEY` | `MiniMax-M2.7`、`MiniMax-M2.7-highspeed`、`MiniMax-M2.5`、`MiniMax-M2.5-highspeed`；使用 `minimax-cn` 提供方可切换至国内端点 |
 | **更多兼容提供方** | 提供方自己的认证方式 | 取决于当前 Understudy 运行时，常见示例包括 GitHub Copilot、OpenRouter、xAI、Mistral、Groq、Bedrock、Vertex 等 |
 | **自定义提供方 / 模型** | 提供方自己的认证方式 | 可以通过底层 model registry 增加自定义模型条目 |
 
