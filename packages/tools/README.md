@@ -8,7 +8,7 @@ Provides the tool implementations that agents use during session execution:
 
 | Tool | Description |
 |------|-------------|
-| `gui_*` | 13 GUI tools — screenshot-grounded desktop interaction |
+| `gui_*` | 8 composable GUI tools — screenshot-grounded desktop interaction |
 | `browser` | Playwright managed browser + Chrome extension relay |
 | `bash` | Shell command execution with timeout and output capture |
 | `web-search` | Web search via configured provider |
