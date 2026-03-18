@@ -885,6 +885,7 @@ export async function createGatewayBackedInteractiveSession(
 		await emit({ type: "message_start", message: cloneValue(userMessage) });
 		await emit({ type: "message_end", message: cloneValue(userMessage) });
 		await emit({ type: "agent_start" });
+		let historySyncedFromGateway = false;
 		try {
 			const result = await options.client.call<GatewaySessionSendResult>("session.send", {
 				sessionId: gatewayState.sessionId,
@@ -911,6 +912,7 @@ export async function createGatewayBackedInteractiveSession(
 							: undefined,
 				});
 			}
+			historySyncedFromGateway = true;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await finalizeTurn({
@@ -919,7 +921,9 @@ export async function createGatewayBackedInteractiveSession(
 			});
 			throw error;
 		} finally {
-			await syncHistory().catch(() => {});
+			if (historySyncedFromGateway) {
+				await syncHistory().catch(() => {});
+			}
 			await flushQueuedPrompts().catch(() => {});
 		}
 	};

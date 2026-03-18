@@ -102,6 +102,8 @@ function createClient(params: {
 	sessionId: string;
 	workspaceDir?: string;
 	listedSessionIds?: string[];
+	sendResult?: Record<string, unknown>;
+	sendError?: Error;
 }) {
 	return {
 		call: vi.fn(async (method: string, payload?: Record<string, unknown>) => {
@@ -123,6 +125,17 @@ function createClient(params: {
 				return {
 					id: String(payload?.sessionId ?? params.sessionId),
 					sessionName: payload?.sessionName,
+				};
+			}
+			if (method === "session.send") {
+				if (params.sendError) {
+					throw params.sendError;
+				}
+				return {
+					sessionId: params.sessionId,
+					status: "ok",
+					response: "",
+					...(params.sendResult ?? {}),
 				};
 			}
 			throw new Error(`unexpected RPC method: ${method}`);
@@ -282,5 +295,31 @@ describe("createGatewayBackedInteractiveSession", () => {
 		await session.close();
 
 		expect(socket?.close).toHaveBeenCalledTimes(1);
+	});
+
+	it("preserves the local failed turn when session.send throws before gateway history is updated", async () => {
+		const client = createClient({
+			sessionId: "gateway-session-1",
+			sendError: new Error("send failed"),
+		});
+		const session = await createGatewayBackedInteractiveSession({
+			baseSession: createBaseSession(),
+			client: client as any,
+			gatewayUrl: "https://gateway.example.com",
+			cwd: "/tmp/workspace",
+			forceNew: true,
+		});
+
+		await expect((session as any).prompt("hello gateway")).rejects.toThrow("send failed");
+
+		expect(session.agent.state.messages).toEqual([
+			expect.objectContaining({
+				role: "user",
+				content: [expect.objectContaining({ type: "text", text: "hello gateway" })],
+			}),
+		]);
+		expect(client.call.mock.calls.filter(([method]) => method === "session.history")).toHaveLength(1);
+
+		await session.close();
 	});
 });
