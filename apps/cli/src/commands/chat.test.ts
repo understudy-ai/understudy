@@ -34,14 +34,19 @@ const modelSupportMocks = vi.hoisted(() => ({
 	resolveCliModel: vi.fn(),
 }));
 
-vi.mock("@understudy/core", () => ({
-	ConfigManager: {
-		load: mocks.loadConfig,
-	},
-	createUnderstudySession: mocks.createUnderstudySession,
-	normalizeAssistantDisplayText: (text: string) => ({ text: text.replace(/\[\[[^\]]+\]\]\s*/g, "").trim() }),
-	resolveUnderstudyHomeDir: mocks.resolveUnderstudyHomeDir,
-}));
+vi.mock("@understudy/core", async () => {
+	const actual = await vi.importActual<typeof import("@understudy/core")>("@understudy/core");
+	return {
+		...actual,
+		ConfigManager: {
+			load: mocks.loadConfig,
+		},
+		createUnderstudySession: mocks.createUnderstudySession,
+		normalizeAssistantDisplayText: (text: string) => ({ text: text.replace(/\[\[[^\]]+\]\]\s*/g, "").trim() }),
+		resolveUnderstudyHomeDir: mocks.resolveUnderstudyHomeDir,
+		resolveUnderstudyPackageVersion: actual.resolveUnderstudyPackageVersion,
+	};
+});
 
 vi.mock("@understudy/gateway", () => ({
 	ConfigReloader: class {
@@ -208,7 +213,7 @@ describe("resolveCliVersion", () => {
 		expect(resolveCliVersion(nestedDir)).toBe("1.2.3");
 	});
 
-	it("prefers the nearest CLI package when available", async () => {
+	it("prefers the root published package version over the private CLI workspace package", async () => {
 		const rootDir = await mkdtemp(join(tmpdir(), "understudy-cli-version-"));
 		tempDirs.push(rootDir);
 		const cliDir = join(rootDir, "apps", "cli");
@@ -219,6 +224,21 @@ describe("resolveCliVersion", () => {
 			JSON.stringify({ name: "@understudy-ai/understudy", version: "1.2.3" }),
 			"utf8",
 		);
+		await writeFile(
+			join(cliDir, "package.json"),
+			JSON.stringify({ name: "@understudy/cli", version: "1.2.4" }),
+			"utf8",
+		);
+
+		expect(resolveCliVersion(nestedDir)).toBe("1.2.3");
+	});
+
+	it("falls back to the private CLI workspace package when no root package is present", async () => {
+		const rootDir = await mkdtemp(join(tmpdir(), "understudy-cli-version-"));
+		tempDirs.push(rootDir);
+		const cliDir = join(rootDir, "apps", "cli");
+		const nestedDir = join(cliDir, "dist", "commands");
+		await mkdir(nestedDir, { recursive: true });
 		await writeFile(
 			join(cliDir, "package.json"),
 			JSON.stringify({ name: "@understudy/cli", version: "1.2.4" }),

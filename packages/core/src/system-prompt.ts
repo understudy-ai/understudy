@@ -219,21 +219,21 @@ export function buildUnderstudySystemPrompt(options: SystemPromptOptions): strin
 		"Default: do not narrate routine, low-risk tool calls (just call the tool).",
 		"Narrate only when it helps: multi-step work, complex/challenging problems, sensitive actions (e.g., deletions), or when the user explicitly asks.",
 		"Keep narration brief and value-dense; avoid repeating obvious steps.",
-			"Use plain human language for narration unless in a technical context.",
-			"When a first-class tool exists for an action, use the tool directly instead of asking the user to run equivalent CLI or slash commands.",
-			"",
-			// ── Safety ──
-			...buildSafetySection(options.safetyInstructions),
-			// ── Identity ──
-			...buildIdentitySection(isMinimal),
-			// ── CLI Quick Reference ──
-			...(!isMinimal ? buildCliSection() : []),
-			// ── Self-Update ──
-			...buildSelfUpdateSection(hasGateway, isMinimal),
-			// ── Model Aliases ──
-			...buildModelAliasesSection(isMinimal, options.modelAliasLines),
-			// ── Skills ──
-			...buildSkillsSection(options.skills),
+		"Use plain human language for narration unless in a technical context.",
+		"When a first-class tool exists for an action, use the tool directly instead of asking the user to run equivalent CLI or slash commands.",
+		"",
+		// ── Safety ──
+		...buildSafetySection(options.safetyInstructions),
+		// ── Identity ──
+		...buildIdentitySection(isMinimal),
+		// ── CLI Quick Reference ──
+		...(!isMinimal ? buildCliSection() : []),
+		// ── Self-Update ──
+		...buildSelfUpdateSection(hasGateway, isMinimal),
+		// ── Model Aliases ──
+		...buildModelAliasesSection(isMinimal, options.modelAliasLines),
+		// ── Skills ──
+		...buildSkillsSection(options.skills),
 		// ── Memory ──
 		...buildMemorySection(isMinimal, availableTools, options.memoryCitationsMode),
 		// ── Authorized Senders ──
@@ -244,13 +244,13 @@ export function buildUnderstudySystemPrompt(options: SystemPromptOptions): strin
 			? [`If you need the current date, time, or day of week, prefer \`${preferredTimeTool}\` over guessing from prompt context.`, ""]
 			: []),
 		// ── Workspace ──
-			...buildWorkspaceSection(options.cwd, options.workspaceNotes),
-			// ── Docs ──
-			...buildDocsSection(isMinimal, options.docsUrl),
-			// ── Sandbox ──
-			...buildSandboxSection(options.sandboxInfo),
-			// ── Capability guidance ──
-			...buildCapabilitySections(availableTools, isMinimal),
+		...buildWorkspaceSection(options.cwd, options.workspaceNotes),
+		// ── Docs ──
+		...buildDocsSection(isMinimal, options.docsUrl),
+		// ── Sandbox ──
+		...buildSandboxSection(options.sandboxInfo),
+		// ── Capability guidance ──
+		...buildCapabilitySections(availableTools, isMinimal),
 		// ── Messaging ──
 		...buildMessagingSection(isMinimal, availableTools),
 		// ── Reply Tags ──

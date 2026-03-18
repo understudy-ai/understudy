@@ -2,7 +2,14 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { asRecord as asCanonicalRecord, asString, asStringArray as asCanonicalStringArray } from "@understudy/core";
+import {
+	asRecord as asCanonicalRecord,
+	asString,
+	asStringArray as asCanonicalStringArray,
+	resolveUnderstudyPackageVersion,
+} from "@understudy/core";
+
+const UNDERSTUDY_MCP_CLIENT_VERSION = resolveUnderstudyPackageVersion(import.meta.dirname) ?? "0.0.0";
 
 interface McpServerConfig {
 	command: string;
@@ -203,7 +210,7 @@ class StdioMcpClient {
 			capabilities: {},
 			clientInfo: {
 				name: "understudy",
-				version: "0.1.0",
+				version: UNDERSTUDY_MCP_CLIENT_VERSION,
 			},
 		});
 		this.notify("notifications/initialized", {});

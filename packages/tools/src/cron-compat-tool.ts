@@ -9,6 +9,26 @@
 
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
+import { asRecord as coreAsRecord, asString, asBoolean, asNumber } from "@understudy/core";
+
+function asRecord(value: unknown): Record<string, unknown> {
+	return coreAsRecord(value) ?? {};
+}
+
+function asStrictNumber(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return value;
+	}
+	if (typeof value !== "string") {
+		return undefined;
+	}
+	const trimmed = value.trim();
+	if (!/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) {
+		return undefined;
+	}
+	const parsed = Number(trimmed);
+	return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 const CronCompatibilitySchema = Type.Object(
 	{
@@ -36,24 +56,6 @@ const CronCompatibilitySchema = Type.Object(
 );
 
 type CronCompatibilityParams = Static<typeof CronCompatibilitySchema>;
-
-function asRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? value as Record<string, unknown>
-		: {};
-}
-
-function asString(value: unknown): string | undefined {
-	return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-	return typeof value === "boolean" ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
 
 function prependNotes(
 	result: AgentToolResult<unknown>,
@@ -142,7 +144,7 @@ function normalizeSchedule(
 			};
 		}
 		case "every": {
-			const everyMs = asNumber(input.everyMs);
+			const everyMs = asStrictNumber(input.everyMs);
 			if (!everyMs || everyMs <= 0) {
 				throw new Error("OpenClaw cron compatibility requires a positive schedule.everyMs for kind=every");
 			}
@@ -152,7 +154,7 @@ function normalizeSchedule(
 					`OpenClaw cron compatibility note: everyMs=${everyMs} was rounded up to ${intervalSeconds}s because Understudy's scheduler stores second-level intervals.`,
 				);
 			}
-			const anchorMs = asNumber(input.anchorMs);
+			const anchorMs = asStrictNumber(input.anchorMs);
 			return {
 				schedule: "* * * * * *",
 				scheduleOptions: {

@@ -1,6 +1,6 @@
 {
 	"name": "@understudy/gui",
-	"version": "0.1.0",
+	"version": "0.1.5",
 	"private": true,
 	"description": "Understudy visual GUI runtime for screenshot-grounded desktop actions",
 	"type": "module",

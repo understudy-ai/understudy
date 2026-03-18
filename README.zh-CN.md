@@ -392,7 +392,7 @@ understudy channels --add telegram
 ## 仓库结构
 
 ```
-apps/cli           CLI 入口，30+ 操作命令
+apps/cli           CLI 入口，20+ 操作命令
 packages/core      Agent session runtime、配置、认证、技能、策略
 packages/gateway   HTTP + WebSocket 网关、session runtime、Web 界面
 packages/gui       原生 GUI runtime、截图 grounding、演示录制器

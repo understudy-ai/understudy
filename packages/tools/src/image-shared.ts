@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { extname, resolve as resolvePath } from "node:path";
+import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -65,23 +65,6 @@ export async function loadImageSource(
 
 export function toSha256(bytes: Buffer): string {
 	return createHash("sha256").update(bytes).digest("hex");
-}
-
-export function mimeTypeToExtension(mimeType: string): string {
-	switch (mimeType.trim().toLowerCase()) {
-		case "image/jpeg":
-			return ".jpg";
-		case "image/png":
-			return ".png";
-		case "image/gif":
-			return ".gif";
-		case "image/webp":
-			return ".webp";
-		case "image/bmp":
-			return ".bmp";
-		default:
-			return extname(mimeType).trim().toLowerCase() || ".img";
-	}
 }
 
 export function detectMimeType(bytes: Buffer): string {

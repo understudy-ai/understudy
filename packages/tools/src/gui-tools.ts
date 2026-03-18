@@ -350,19 +350,7 @@ export function createDefaultGuiRuntime(): ComputerUseGuiRuntime {
 	});
 }
 
-type GuiRuntimeMethod =
-	| "observe"
-	| "click"
-	| "drag"
-	| "scroll"
-	| "type"
-	| "key"
-	| "wait"
-	| "move";
-
-type GuiRuntimeWithCapabilities = ComputerUseGuiRuntime & {
-	describeCapabilities?(platform?: NodeJS.Platform): GuiRuntimeCapabilitySnapshot;
-};
+type GuiRuntimeMethod = GuiToolName extends `gui_${infer M}` ? M : never;
 
 interface GuiToolRuntimeMap {
 	observe: (params: GuiObserveParams, signal?: AbortSignal) => Promise<GuiActionResult>;
@@ -461,7 +449,7 @@ function throwIfGuiSignalAborted(signal?: AbortSignal): void {
 }
 
 function resolveGuiCapabilities(
-	runtime: GuiRuntimeWithCapabilities,
+	runtime: ComputerUseGuiRuntime,
 ): GuiRuntimeCapabilitySnapshot | undefined {
 	return typeof runtime.describeCapabilities === "function"
 		? runtime.describeCapabilities()
@@ -542,10 +530,10 @@ interface CreateGuiToolOptions<TSchemaType extends TSchema> {
 }
 
 function createGuiTool<TSchemaType extends TSchema>(
-	runtime: GuiRuntimeWithCapabilities,
+	runtime: ComputerUseGuiRuntime,
 	options: CreateGuiToolOptions<TSchemaType>,
 ): AgentTool<TSchemaType> {
-	const runner = runtime as unknown as GuiRuntimeWithCapabilities & GuiToolRuntimeMap;
+	const runner = runtime as unknown as ComputerUseGuiRuntime & GuiToolRuntimeMap;
 	return {
 		name: options.name,
 		label: options.label,
@@ -570,7 +558,7 @@ function createGuiTool<TSchemaType extends TSchema>(
 			try {
 				throwIfGuiSignalAborted(signal);
 				const invokeRuntime = runner[options.method] as (
-					this: GuiRuntimeWithCapabilities & GuiToolRuntimeMap,
+					this: ComputerUseGuiRuntime & GuiToolRuntimeMap,
 					args: Static<TSchemaType>,
 					signal?: AbortSignal,
 				) => Promise<GuiActionResult>;
@@ -591,7 +579,7 @@ function createGuiTool<TSchemaType extends TSchema>(
 	};
 }
 
-type GuiToolFactory = (runtime: GuiRuntimeWithCapabilities) => AgentTool<any>;
+type GuiToolFactory = (runtime: ComputerUseGuiRuntime) => AgentTool<any>;
 interface GuiToolFactoryEntry {
 	name: GuiToolName;
 	label: string;
@@ -736,7 +724,7 @@ export function listGuiToolCatalog(): GuiToolCatalogEntry[] {
 }
 
 export function createGuiToolset(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<any>[] {
-	const capabilities = resolveGuiCapabilities(runtime as GuiRuntimeWithCapabilities);
+	const capabilities = resolveGuiCapabilities(runtime as ComputerUseGuiRuntime);
 	return GUI_TOOL_FACTORIES
 		.filter((entry) => {
 			if (!capabilities) {
@@ -744,37 +732,37 @@ export function createGuiToolset(runtime: ComputerUseGuiRuntime = createDefaultG
 			}
 			return capabilities.toolAvailability[entry.name]?.enabled === true;
 		})
-		.map((entry) => entry.create(runtime as GuiRuntimeWithCapabilities));
+		.map((entry) => entry.create(runtime as ComputerUseGuiRuntime));
 }
 
 export function createGuiObserveTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiObserveSchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_observe")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiObserveSchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_observe")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiObserveSchema>;
 }
 
 export function createGuiClickTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiClickSchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_click")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiClickSchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_click")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiClickSchema>;
 }
 
 export function createGuiDragTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiDragSchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_drag")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiDragSchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_drag")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiDragSchema>;
 }
 
 export function createGuiScrollTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiScrollSchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_scroll")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiScrollSchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_scroll")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiScrollSchema>;
 }
 
 export function createGuiTypeTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiTypeSchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_type")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiTypeSchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_type")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiTypeSchema>;
 }
 
 export function createGuiKeyTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiKeySchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_key")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiKeySchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_key")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiKeySchema>;
 }
 
 export function createGuiWaitTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiWaitSchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_wait")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiWaitSchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_wait")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiWaitSchema>;
 }
 
 export function createGuiMoveTool(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<typeof GuiMoveSchema> {
-	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_move")!.create(runtime as GuiRuntimeWithCapabilities) as AgentTool<typeof GuiMoveSchema>;
+	return GUI_TOOL_FACTORIES.find((entry) => entry.name === "gui_move")!.create(runtime as ComputerUseGuiRuntime) as AgentTool<typeof GuiMoveSchema>;
 }

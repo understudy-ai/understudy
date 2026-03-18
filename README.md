@@ -393,7 +393,7 @@ understudy channels --add telegram
 ## Repository Layout
 
 ```
-apps/cli           CLI entrypoints, 30+ operator commands
+apps/cli           CLI entrypoints, 20+ operator commands
 packages/core      Agent session runtime, config, auth, skills, policies
 packages/gateway   HTTP + WebSocket gateway, session runtime, web surfaces
 packages/gui       Native GUI runtime, screenshot grounding, demo recorder

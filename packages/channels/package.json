@@ -1,6 +1,6 @@
 {
 	"name": "@understudy/channels",
-	"version": "0.1.0",
+	"version": "0.1.5",
 	"private": true,
 	"description": "Understudy channel adapters (Web, Telegram, Discord, Slack, Signal, LINE, WhatsApp, iMessage)",
 	"type": "module",

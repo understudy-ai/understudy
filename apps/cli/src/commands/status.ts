@@ -63,7 +63,7 @@ async function resolveGatewayProbe(lockPort?: number): Promise<GatewayProbeResul
 }
 
 export async function runStatusCommand(opts: StatusOptions): Promise<void> {
-	const { resolveUnderstudyHomeDir } = await import("@understudy/core");
+	const { resolveUnderstudyHomeDir, resolveUnderstudyPackageVersion } = await import("@understudy/core");
 	const { existsSync } = await import("node:fs");
 	const { join } = await import("node:path");
 	const { GatewayLock } = await import("@understudy/gateway");
@@ -74,7 +74,7 @@ export async function runStatusCommand(opts: StatusOptions): Promise<void> {
 	const probe = await resolveGatewayProbe(lockData?.port);
 
 	const status: Record<string, unknown> = {
-		version: "0.1.0",
+		version: resolveUnderstudyPackageVersion(import.meta.dirname) ?? "0.0.0",
 		homeDir,
 		configPath: join(homeDir, "config.json5"),
 		configExists: existsSync(join(homeDir, "config.json5")),

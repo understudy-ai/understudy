@@ -7,7 +7,7 @@ import { createServer, type Server } from "node:http";
 import express, { type Express } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import { createLogger } from "@understudy/core";
+import { createLogger, resolveUnderstudyPackageVersion } from "@understudy/core";
 import type {
 	GatewayCapabilitiesResult,
 	GatewayCapabilityInventory,
@@ -72,7 +72,7 @@ import { mountControlUi } from "./control-ui.js";
 import { buildWebChatHtml } from "./webchat-ui.js";
 import { asRecord, asString } from "./value-coerce.js";
 
-export const GATEWAY_VERSION = "0.1.0";
+export const GATEWAY_VERSION = resolveUnderstudyPackageVersion(import.meta.dirname) ?? "0.0.0";
 
 function describeCapabilityMethod(name: string): GatewayCapabilityMethodDescriptor {
 	const parts = name.split(".");

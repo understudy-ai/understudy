@@ -5,7 +5,12 @@
  */
 
 import { Command } from "commander";
-import { ConfigManager, ensureRuntimeEngineAgentDirEnv, resolveUnderstudyAgentDir } from "@understudy/core";
+import {
+	ConfigManager,
+	ensureRuntimeEngineAgentDirEnv,
+	resolveUnderstudyAgentDir,
+	resolveUnderstudyPackageVersion,
+} from "@understudy/core";
 import { loadUnderstudyPlugins } from "@understudy/plugins";
 import { runChatCommand } from "./commands/chat.js";
 import { runConfigCommand } from "./commands/config.js";
@@ -36,6 +41,7 @@ import { collectRepeatValue } from "./commands/option-utils.js";
 
 process.title = "understudy-cli";
 ensureRuntimeEngineAgentDirEnv(resolveUnderstudyAgentDir());
+const understudyVersion = resolveUnderstudyPackageVersion(import.meta.dirname) ?? "0.0.0";
 
 const program = new Command();
 
@@ -56,7 +62,7 @@ function resolveConfigPathFromArgv(argv: string[]): string | undefined {
 program
 	.name("understudy")
 	.description("Understudy — The teachable GUI agent runtime")
-	.version("0.1.3");
+	.version(understudyVersion);
 
 program
 	.command("chat")
@@ -72,8 +78,8 @@ program
 	.action(runChatCommand);
 
 program
-	.command("tui")
-	.description("Start an interactive terminal chat session")
+	.command("tui", { hidden: true })
+	.description("Start an interactive terminal chat session (alias for chat)")
 	.option("-m, --model <model>", "Model to use (provider/model-id)")
 	.option("-t, --thinking <level>", "Thinking level (off|minimal|low|medium|high|xhigh)")
 	.option("-c, --cwd <dir>", "Working directory")

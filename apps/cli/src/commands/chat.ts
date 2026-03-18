@@ -2,15 +2,15 @@
  * Interactive terminal chat.
  */
 
-import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
 	ConfigManager,
 	createUnderstudySession,
 	normalizeAssistantDisplayText,
+	resolveUnderstudyPackageVersion,
 } from "@understudy/core";
 import {
 	ConfigReloader,
@@ -252,36 +252,7 @@ async function createInteractiveChatRuntime(params: {
 }
 
 export function resolveCliVersion(startDir?: string): string | undefined {
-	try {
-		let current = startDir ?? import.meta.dirname;
-		if (!current) return undefined;
-		for (let depth = 0; depth < 8; depth += 1) {
-			const packageJsonPath = join(current, "package.json");
-			if (existsSync(packageJsonPath)) {
-				const raw = readFileSync(packageJsonPath, "utf-8");
-				const parsed = JSON.parse(raw) as { name?: unknown; version?: unknown };
-				if (
-					(
-						parsed.name === "understudy" ||
-						parsed.name === "@understudy/cli" ||
-						parsed.name === "@understudy-ai/understudy"
-					) &&
-					typeof parsed.version === "string" &&
-					parsed.version.trim().length > 0
-				) {
-					return parsed.version.trim();
-				}
-			}
-			const next = dirname(current);
-			if (next === current) {
-				break;
-			}
-			current = next;
-		}
-	} catch {
-		// fall through
-	}
-	return undefined;
+	return resolveUnderstudyPackageVersion(startDir);
 }
 
 async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<ReturnType<typeof prepareCliPromptInput>>): Promise<void> {

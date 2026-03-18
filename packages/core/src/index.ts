@@ -8,6 +8,7 @@ export { ToolRegistry } from "./tool-registry.js";
 
 // Config
 export { ConfigManager, getConfigDir, getDefaultConfigPath } from "./config.js";
+export { resolveUnderstudyPackageVersion, UNDERSTUDY_PACKAGE_VERSION } from "./version.js";
 
 // Config schema validation
 export { validateUnderstudyConfig } from "./config-schema.js";

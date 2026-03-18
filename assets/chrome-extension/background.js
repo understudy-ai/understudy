@@ -349,7 +349,7 @@ function ensureGatewayHandshakeStarted(payload) {
       maxProtocol: 3,
       client: {
         id: 'chrome-relay-extension',
-        version: '0.1.0',
+        version: '0.1.5',
         platform: 'chrome-extension',
         mode: 'webchat',
       },

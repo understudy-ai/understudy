@@ -162,6 +162,32 @@ describe("createOpenClawCronCompatibilityTool", () => {
 		});
 	});
 
+	it("rejects malformed numeric strings for everyMs instead of parsing a prefix", async () => {
+		const { cronTool, scheduleService } = await createCronTool();
+		const result = await cronTool.execute("id", {
+			action: "add",
+			job: {
+				name: "heartbeat",
+				schedule: {
+					kind: "every",
+					everyMs: "5m",
+				},
+				payload: {
+					kind: "systemEvent",
+					text: "wake up",
+				},
+			},
+		});
+
+		expect((result.content[0] as { text: string }).text).toContain(
+			"OpenClaw cron compatibility requires a positive schedule.everyMs for kind=every",
+		);
+		expect(result.details).toMatchObject({
+			status: "failed",
+		});
+		expect(scheduleService.list({ includeDisabled: true })).toHaveLength(0);
+	});
+
 	it("rejects OpenClaw webhook delivery that Understudy cannot emulate", async () => {
 		const { cronTool } = await createCronTool();
 		const result = await cronTool.execute("id", {

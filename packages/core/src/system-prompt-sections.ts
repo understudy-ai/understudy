@@ -249,77 +249,77 @@ export function buildCapabilitySections(availableTools: Set<string>, isMinimal: 
 		);
 	}
 
-		if (hasGuiTools) {
-			const guiActionPatterns = [
-				"- Typical GUI patterns:",
-				"- `gui_observe` -> `gui_click` when you need a screenshot-grounded action on the current surface.",
-				"- Follow-up GUI actions should re-describe the visible target on the current surface instead of relying on cached or previously resolved target ids.",
-				"- When a GUI action fails, keep the same visible target and scope if they are still correct so the next attempt can re-ground from the latest screenshot without relying on stale grounding history.",
-				"- Use `groundingMode: \"single\"` for straightforward GUI targets with one clear visible match.",
-				"- Use `groundingMode: \"complex\"` for ambiguous or otherwise high-risk GUI targets so the runtime enables validator-and-retry grounding.",
-				"- After a GUI action misfires, retry the same visible target with `groundingMode: \"complex\"` unless the latest screenshot shows the original target description was wrong.",
-				"- If the same visible target already failed once in the current turn and you still intend the same target, the retry must use `groundingMode: \"complex\"`.",
-				"- `gui_click` with `button: \"none\"` when a tooltip, hover menu, inline affordance, preview card, or drag handle only appears while the pointer stays over a control.",
-				"- `gui_click` with `button: \"right\"` -> `gui_observe` -> `gui_click` for context-menu workflows. The context menu you get depends on WHAT you right-click (file vs. text selection vs. blank area). Be precise about the right-click target.",
-				"- `gui_click` with `holdMs` for long-press or mouse-down dwell behaviors that are not equivalent to a full drag.",
-				"- `gui_observe` -> `gui_scroll` -> `gui_observe` when content may be off-screen. If the target is not visible in the current screenshot, scroll to find it before clicking.",
-				"- `gui_drag` when you need a screenshot-grounded drag gesture between two visual targets. Use `captureMode: \"display\"` for cross-window drags.",
-				"- Use `gui_key` for single keys (Enter, Tab, Escape, Space, Delete, Backspace, arrow keys, Page Up/Down, Home, End) and also for modifier combos like Command+O, Command+S, or Shift+Command+P.",
-				"- Use `captureMode: \"window\"` for normal window-local work, and `captureMode: \"display\"` for desktop-wide surfaces like the menu bar, Dock, desktop, notifications, or cross-window drags.",
-				"- Prefer setting `captureMode` explicitly instead of encoding display-vs-window intent indirectly in `scope` wording.",
-				"- When an app has multiple visible windows, set `windowTitle` or `windowSelector` so grounding and follow-up inspection stay on the intended surface.",
-				"- Keep `scope` visual and screen-grounded. Prefer labels the screenshot actually shows, such as `Export dialog` or `active document window`, instead of invisible structural guesses like `footer` or `card`.",
-				"- For navigation or selection changes where confirmation may be subtle, prefer a follow-up `gui_observe` on the new surface or a plainly visible label instead of assuming success.",
-				"- After an asynchronous GUI action, prefer `gui_wait` before assuming the UI changed.",
-				"",
-				"- **Writing good `target` descriptions (critical for grounding accuracy):**",
-				'- ALWAYS quote visible text: when a control shows a text label, include that exact text. Write `button labeled "Save"` not `the save button`. Write `menu item "Export as PDF"` not `the export option`.',
-				'- For icon-only controls, describe the icon: `gear icon button`, `magnifying glass icon`, `red circular close button`, `three-dot overflow menu icon`.',
-				'- For list/table/tree/sidebar items, cite the row text that identifies it: `the row containing "report.pdf"`, `sidebar item "Downloads"`, `cell showing "$150.00"`, `the message from "Alice" starting with "Hey, can you..."`. Do NOT just say `a row` or `the third item`.',
-				'- For text fields, reference placeholder or current content: `search field with placeholder "Search..."`, `input field currently showing "hello world"`, `empty "Name" text field`.',
-				'- For tabs, include tab text: `tab titled "Settings"`, `the "Network" tab in DevTools`. Do NOT just say `a tab`.',
-				'- For checkboxes/toggles/radio buttons, include the associated label text: `checkbox labeled "Remember me"`, `toggle next to "Dark mode"`, `radio button "Monthly"`. Do NOT just say `the checkbox`.',
-				'- When a control has visual state (disabled/greyed-out, selected, checked, highlighted), describe that state: `the selected "Network" tab`, `disabled "Save" button`, `checked "Auto-save" checkbox`, `the active toggle next to "Dark mode"`. This is critical when similar controls exist in different states.',
-				'- For status indicators and badges: `"Messages" icon with red badge showing "3"`, `green status dot next to "Online"`, `the warning triangle icon next to "Storage"`. Do NOT ignore these visual signals.',
-				'- For empty areas (e.g. right-click blank space, drop targets): `the empty desktop area`, `blank area below the last file in the folder`, `the empty canvas area`, `the drop zone between "Item A" and "Item B"`.',
-				'- For dense/small UIs (spreadsheets, code editors, timelines), use `groundingMode: "complex"` and provide maximum detail: cell coordinates, exact visible text, nearby column/row headers, line numbers.',
-				"- Include role (button, link, checkbox, toggle, slider, input, dropdown, menu item, etc.) plus nearby context and coarse location when they reduce ambiguity.",
-				"- Name the actionable control itself in `target`, not surrounding whitespace, wallpaper, or generic container chrome — unless the blank area IS the intended target.",
-				"- For `gui_type`, name the editable field or caret-bearing interior itself, not the surrounding composer bar, toolbar, or panel background.",
-				"- When you know the rough region separately from the visible label, keep the visible label in `target` and put the coarse region in `locationHint`.",
-				"- When the target is visually subtle, include the visible label, symbol, indicator, local grouping, or nearby context that makes it unique.",
-				"- When several similar controls are visible, include nearby text, order, or coarse location so the runtime can disambiguate them.",
-				"- For list, menu, and navigation items, include the surrounding section or nearby neighbors when that evidence is visible.",
-				"- Use `scope` for window, panel, dialog, or region hints such as `macOS top menu bar`, `left sidebar`, or a concrete window title.",
-				"- When a GUI action fails or misfires, revise the next target and scope using the latest screenshot evidence instead of repeating the same vague description.",
-				"- For menus and popovers, prefer a follow-up `gui_observe` or `gui_wait` when the visible confirmation may take a moment.",
-			];
-			if (availableTools.has("vision_read")) {
-				guiActionPatterns.push(
-					"- `gui_observe` (screenshot mode) -> `vision_read` when you want a second focused visual interpretation of the captured UI.",
-				);
-			} else {
+	if (hasGuiTools) {
+		const guiActionPatterns = [
+			"- Typical GUI patterns:",
+			"- `gui_observe` -> `gui_click` when you need a screenshot-grounded action on the current surface.",
+			"- Follow-up GUI actions should re-describe the visible target on the current surface instead of relying on cached or previously resolved target ids.",
+			"- When a GUI action fails, keep the same visible target and scope if they are still correct so the next attempt can re-ground from the latest screenshot without relying on stale grounding history.",
+			"- Use `groundingMode: \"single\"` for straightforward GUI targets with one clear visible match.",
+			"- Use `groundingMode: \"complex\"` for ambiguous or otherwise high-risk GUI targets so the runtime enables validator-and-retry grounding.",
+			"- After a GUI action misfires, retry the same visible target with `groundingMode: \"complex\"` unless the latest screenshot shows the original target description was wrong.",
+			"- If the same visible target already failed once in the current turn and you still intend the same target, the retry must use `groundingMode: \"complex\"`.",
+			"- `gui_click` with `button: \"none\"` when a tooltip, hover menu, inline affordance, preview card, or drag handle only appears while the pointer stays over a control.",
+			"- `gui_click` with `button: \"right\"` -> `gui_observe` -> `gui_click` for context-menu workflows. The context menu you get depends on WHAT you right-click (file vs. text selection vs. blank area). Be precise about the right-click target.",
+			"- `gui_click` with `holdMs` for long-press or mouse-down dwell behaviors that are not equivalent to a full drag.",
+			"- `gui_observe` -> `gui_scroll` -> `gui_observe` when content may be off-screen. If the target is not visible in the current screenshot, scroll to find it before clicking.",
+			"- `gui_drag` when you need a screenshot-grounded drag gesture between two visual targets. Use `captureMode: \"display\"` for cross-window drags.",
+			"- Use `gui_key` for single keys (Enter, Tab, Escape, Space, Delete, Backspace, arrow keys, Page Up/Down, Home, End) and also for modifier combos like Command+O, Command+S, or Shift+Command+P.",
+			"- Use `captureMode: \"window\"` for normal window-local work, and `captureMode: \"display\"` for desktop-wide surfaces like the menu bar, Dock, desktop, notifications, or cross-window drags.",
+			"- Prefer setting `captureMode` explicitly instead of encoding display-vs-window intent indirectly in `scope` wording.",
+			"- When an app has multiple visible windows, set `windowTitle` or `windowSelector` so grounding and follow-up inspection stay on the intended surface.",
+			"- Keep `scope` visual and screen-grounded. Prefer labels the screenshot actually shows, such as `Export dialog` or `active document window`, instead of invisible structural guesses like `footer` or `card`.",
+			"- For navigation or selection changes where confirmation may be subtle, prefer a follow-up `gui_observe` on the new surface or a plainly visible label instead of assuming success.",
+			"- After an asynchronous GUI action, prefer `gui_wait` before assuming the UI changed.",
+			"",
+			"- **Writing good `target` descriptions (critical for grounding accuracy):**",
+			'- ALWAYS quote visible text: when a control shows a text label, include that exact text. Write `button labeled "Save"` not `the save button`. Write `menu item "Export as PDF"` not `the export option`.',
+			'- For icon-only controls, describe the icon: `gear icon button`, `magnifying glass icon`, `red circular close button`, `three-dot overflow menu icon`.',
+			'- For list/table/tree/sidebar items, cite the row text that identifies it: `the row containing "report.pdf"`, `sidebar item "Downloads"`, `cell showing "$150.00"`, `the message from "Alice" starting with "Hey, can you..."`. Do NOT just say `a row` or `the third item`.',
+			'- For text fields, reference placeholder or current content: `search field with placeholder "Search..."`, `input field currently showing "hello world"`, `empty "Name" text field`.',
+			'- For tabs, include tab text: `tab titled "Settings"`, `the "Network" tab in DevTools`. Do NOT just say `a tab`.',
+			'- For checkboxes/toggles/radio buttons, include the associated label text: `checkbox labeled "Remember me"`, `toggle next to "Dark mode"`, `radio button "Monthly"`. Do NOT just say `the checkbox`.',
+			'- When a control has visual state (disabled/greyed-out, selected, checked, highlighted), describe that state: `the selected "Network" tab`, `disabled "Save" button`, `checked "Auto-save" checkbox`, `the active toggle next to "Dark mode"`. This is critical when similar controls exist in different states.',
+			'- For status indicators and badges: `"Messages" icon with red badge showing "3"`, `green status dot next to "Online"`, `the warning triangle icon next to "Storage"`. Do NOT ignore these visual signals.',
+			'- For empty areas (e.g. right-click blank space, drop targets): `the empty desktop area`, `blank area below the last file in the folder`, `the empty canvas area`, `the drop zone between "Item A" and "Item B"`.',
+			'- For dense/small UIs (spreadsheets, code editors, timelines), use `groundingMode: "complex"` and provide maximum detail: cell coordinates, exact visible text, nearby column/row headers, line numbers.',
+			"- Include role (button, link, checkbox, toggle, slider, input, dropdown, menu item, etc.) plus nearby context and coarse location when they reduce ambiguity.",
+			"- Name the actionable control itself in `target`, not surrounding whitespace, wallpaper, or generic container chrome — unless the blank area IS the intended target.",
+			"- For `gui_type`, name the editable field or caret-bearing interior itself, not the surrounding composer bar, toolbar, or panel background.",
+			"- When you know the rough region separately from the visible label, keep the visible label in `target` and put the coarse region in `locationHint`.",
+			"- When the target is visually subtle, include the visible label, symbol, indicator, local grouping, or nearby context that makes it unique.",
+			"- When several similar controls are visible, include nearby text, order, or coarse location so the runtime can disambiguate them.",
+			"- For list, menu, and navigation items, include the surrounding section or nearby neighbors when that evidence is visible.",
+			"- Use `scope` for window, panel, dialog, or region hints such as `macOS top menu bar`, `left sidebar`, or a concrete window title.",
+			"- When a GUI action fails or misfires, revise the next target and scope using the latest screenshot evidence instead of repeating the same vague description.",
+			"- For menus and popovers, prefer a follow-up `gui_observe` or `gui_wait` when the visible confirmation may take a moment.",
+		];
+		if (availableTools.has("vision_read")) {
+			guiActionPatterns.push(
+				"- `gui_observe` (screenshot mode) -> `vision_read` when you want a second focused visual interpretation of the captured UI.",
+			);
+		} else {
 			guiActionPatterns.push(
 				"- Use `gui_observe` in screenshot mode when the current desktop/app state itself must be captured as an image artifact.",
 			);
 		}
-			sections.push(
-				"## GUI Automation",
-					"- `gui_*` tools are the generic visual computer-use route.",
-					"- GUI tools use screenshot capture plus visual grounding. They do not depend on hidden semantic element trees.",
-					"- Use `gui_observe` to inspect unfamiliar interfaces before `gui_click`, `gui_drag`, `gui_type`, `gui_scroll`, or `gui_key` when the target is ambiguous.",
-					"- `gui_move` is a low-level fallback for absolute display coordinates when a raw pixel position is already known; prefer semantic grounded tools first.",
-					"- GUI tools take semantic targets and optional app/scope hints; the runtime grounds them visually so the model does not need to invent coordinates.",
-					"- When choosing a semantic target, describe the actionable or editable surface itself rather than a broad surrounding region.",
-					"- `groundingMode: \"single\"` is the default fast path for straightforward targets.",
-					"- Use `groundingMode: \"complex\"` for ambiguous or high-risk targets, and always use it after one failed attempt on the same visible target.",
-					"- Prefer app, scope, and window hints when they materially reduce ambiguity.",
-					"- Use `gui_*` when browser-native automation is unavailable or when a visual desktop route is the right choice for the current surface.",
-					"- For meaningful GUI state changes, prefer an explicit follow-up `gui_wait` or `gui_observe` instead of assuming the action succeeded.",
-				...guiActionPatterns,
-				"",
-			);
-		}
+		sections.push(
+			"## GUI Automation",
+			"- `gui_*` tools are the generic visual computer-use route.",
+			"- GUI tools use screenshot capture plus visual grounding. They do not depend on hidden semantic element trees.",
+			"- Use `gui_observe` to inspect unfamiliar interfaces before `gui_click`, `gui_drag`, `gui_type`, `gui_scroll`, or `gui_key` when the target is ambiguous.",
+			"- `gui_move` is a low-level fallback for absolute display coordinates when a raw pixel position is already known; prefer semantic grounded tools first.",
+			"- GUI tools take semantic targets and optional app/scope hints; the runtime grounds them visually so the model does not need to invent coordinates.",
+			"- When choosing a semantic target, describe the actionable or editable surface itself rather than a broad surrounding region.",
+			"- `groundingMode: \"single\"` is the default fast path for straightforward targets.",
+			"- Use `groundingMode: \"complex\"` for ambiguous or high-risk targets, and always use it after one failed attempt on the same visible target.",
+			"- Prefer app, scope, and window hints when they materially reduce ambiguity.",
+			"- Use `gui_*` when browser-native automation is unavailable or when a visual desktop route is the right choice for the current surface.",
+			"- For meaningful GUI state changes, prefer an explicit follow-up `gui_wait` or `gui_observe` instead of assuming the action succeeded.",
+			...guiActionPatterns,
+			"",
+		);
+	}
 
 	if (availableTools.has("image") || availableTools.has("vision_read")) {
 		sections.push(
@@ -330,11 +330,11 @@ export function buildCapabilitySections(availableTools: Set<string>, isMinimal: 
 					"- Enable base64 output only when downstream processing truly needs raw image payload",
 				]
 				: []),
-				...(availableTools.has("vision_read")
-					? [
-						"- Use `vision_read` for screenshots or photos when you need UI interpretation or a focused read of visible content",
-						"- Pass a short `focus` hint when the user cares about a specific region or question",
-					]
+			...(availableTools.has("vision_read")
+				? [
+					"- Use `vision_read` for screenshots or photos when you need UI interpretation or a focused read of visible content",
+					"- Pass a short `focus` hint when the user cares about a specific region or question",
+				]
 				: []),
 			"",
 		);
