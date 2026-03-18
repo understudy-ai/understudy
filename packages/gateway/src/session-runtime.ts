@@ -4586,8 +4586,8 @@ export function createGatewaySessionRuntime(
 						windowTitle: asString(entry.windowTitle) ?? baseStep?.windowTitle,
 						toolArgs: explicitToolArgs || implicitToolArgs
 							? {
-								...(implicitToolArgs ?? {}),
-								...(explicitToolArgs ?? {}),
+								...implicitToolArgs,
+								...explicitToolArgs,
 							}
 							: baseStep?.toolArgs,
 						captureMode: captureMode === "window" || captureMode === "display"

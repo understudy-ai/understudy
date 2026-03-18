@@ -9,6 +9,7 @@ import {
 	createGuiScrollTool,
 	createGuiTypeTool,
 	createGuiWaitTool,
+	listGuiToolCatalog,
 	setDefaultGuiRuntime,
 } from "../gui-tools.js";
 
@@ -92,7 +93,7 @@ function createRuntime() {
 				summary: "Pressed Enter",
 			},
 			details: {
-				grounding_method: "visual",
+				grounding_method: "targetless",
 				confidence: 1,
 			},
 		}),
@@ -245,7 +246,7 @@ describe("gui tool wrappers", () => {
 				summary: "Command+K sent",
 			},
 			details: {
-				grounding_method: "visual",
+				grounding_method: "targetless",
 			},
 		});
 		const hotkeyResult = await keyTool.execute("tool-8", { key: "k", modifiers: ["command"] });
@@ -275,6 +276,19 @@ describe("gui tool wrappers", () => {
 		const moveResult = await moveTool.execute("tool-11", { x: 100, y: 200 });
 		expect((moveResult.content[0] as any).text).toContain("Moved cursor to (100, 200)");
 		expect(runtime.move).toHaveBeenCalledWith({ x: 100, y: 200 }, undefined);
+	});
+
+	it("lists the static GUI tool catalog", () => {
+		expect(listGuiToolCatalog()).toEqual([
+			expect.objectContaining({ name: "gui_observe", label: "GUI Observe" }),
+			expect.objectContaining({ name: "gui_click", label: "GUI Click" }),
+			expect.objectContaining({ name: "gui_drag", label: "GUI Drag" }),
+			expect.objectContaining({ name: "gui_scroll", label: "GUI Scroll" }),
+			expect.objectContaining({ name: "gui_type", label: "GUI Type" }),
+			expect.objectContaining({ name: "gui_key", label: "GUI Key" }),
+			expect.objectContaining({ name: "gui_wait", label: "GUI Wait" }),
+			expect.objectContaining({ name: "gui_move", label: "GUI Move" }),
+		]);
 	});
 
 	it("reuses the configured default gui runtime when one is provided", () => {

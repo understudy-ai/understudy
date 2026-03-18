@@ -592,139 +592,133 @@ function createGuiTool<TSchemaType extends TSchema>(
 }
 
 type GuiToolFactory = (runtime: GuiRuntimeWithCapabilities) => AgentTool<any>;
-const GUI_TOOL_FACTORIES: Array<{ name: GuiToolName; create: GuiToolFactory }> = [
-	{
+interface GuiToolFactoryEntry {
+	name: GuiToolName;
+	label: string;
+	description: string;
+	create: GuiToolFactory;
+}
+
+function defineGuiToolFactory<TSchemaType extends TSchema>(
+	options: CreateGuiToolOptions<TSchemaType>,
+): GuiToolFactoryEntry {
+	return {
+		name: options.name,
+		label: options.label,
+		description: options.description,
+		create: (runtime) => createGuiTool(runtime, options),
+	};
+}
+
+const GUI_TOOL_FACTORIES: GuiToolFactoryEntry[] = [
+	defineGuiToolFactory({
 		name: "gui_observe",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_observe",
-			label: "GUI Observe",
-			description:
-				"Capture the current GUI state as a visual snapshot. Optionally ground a target. " +
-				"Use when you need to see what is on screen.",
-			parameters: GuiObserveSchema,
-			method: "observe",
-			progressLabel: "GUI observe",
-			errorLabel: "GUI observe",
-			actionTarget: (params: GuiObserveParams) => params.target,
-			guard: resolveTargetlessOnlyGuard("gui_observe") as CapabilityGuard<GuiObserveParams>,
-			toResult: toScreenshotToolResult,
-			allowMidflightAbort: true,
-		}),
-	},
-	{
+		label: "GUI Observe",
+		description:
+			"Capture the current GUI state as a visual snapshot. Optionally ground a target. " +
+			"Use when you need to see what is on screen.",
+		parameters: GuiObserveSchema,
+		method: "observe",
+		progressLabel: "GUI observe",
+		errorLabel: "GUI observe",
+		actionTarget: (params: GuiObserveParams) => params.target,
+		guard: resolveTargetlessOnlyGuard("gui_observe") as CapabilityGuard<GuiObserveParams>,
+		toResult: toScreenshotToolResult,
+		allowMidflightAbort: true,
+	}),
+	defineGuiToolFactory({
 		name: "gui_click",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_click",
-			label: "GUI Click",
-			description:
-				"Click a visually grounded GUI target. " +
-				"Use `button` to choose left/right/none(hover), `clicks: 2` for double-click, `holdMs` for press-and-hold. " +
-				"Default is a single left click.",
-			parameters: GuiClickSchema,
-			method: "click",
-			progressLabel: "GUI click",
-			errorLabel: "GUI click",
-			actionTarget: (params: GuiClickParams) => params.target,
-		}),
-	},
-	{
+		label: "GUI Click",
+		description:
+			"Click a visually grounded GUI target. " +
+			"Use `button` to choose left/right/none(hover), `clicks: 2` for double-click, `holdMs` for press-and-hold. " +
+			"Default is a single left click.",
+		parameters: GuiClickSchema,
+		method: "click",
+		progressLabel: "GUI click",
+		errorLabel: "GUI click",
+		actionTarget: (params: GuiClickParams) => params.target,
+	}),
+	defineGuiToolFactory({
 		name: "gui_drag",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_drag",
-			label: "GUI Drag",
-			description:
-				"Drag between two visually grounded GUI targets, for example moving a file, reordering a list item, or dropping onto Trash. " +
-				"Use `groundingMode: \"complex\"` when either endpoint is ambiguous or a prior attempt failed.",
-			parameters: GuiDragSchema,
-			method: "drag",
-			progressLabel: "GUI drag",
-			errorLabel: "GUI drag",
-			actionTarget: (params: GuiDragParams) => `${params.fromTarget ?? "source"} -> ${params.toTarget ?? "destination"}`,
-		}),
-	},
-	{
+		label: "GUI Drag",
+		description:
+			"Drag between two visually grounded GUI targets, for example moving a file, reordering a list item, or dropping onto Trash. " +
+			"Use `groundingMode: \"complex\"` when either endpoint is ambiguous or a prior attempt failed.",
+		parameters: GuiDragSchema,
+		method: "drag",
+		progressLabel: "GUI drag",
+		errorLabel: "GUI drag",
+		actionTarget: (params: GuiDragParams) => `${params.fromTarget ?? "source"} -> ${params.toTarget ?? "destination"}`,
+	}),
+	defineGuiToolFactory({
 		name: "gui_scroll",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_scroll",
-			label: "GUI Scroll",
-			description:
-				"Scroll the active surface or a visually grounded GUI region in a cardinal direction. " +
-				"Omitting `target` is the common case when you just need to reveal more content.",
-			parameters: GuiScrollSchema,
-			method: "scroll",
-			progressLabel: "GUI scroll",
-			errorLabel: "GUI scroll",
-			actionTarget: (params: GuiScrollParams) => params.target ?? `${params.direction ?? "down"} scroll`,
-			guard: resolveTargetlessOnlyGuard("gui_scroll") as CapabilityGuard<GuiScrollParams>,
-		}),
-	},
-	{
+		label: "GUI Scroll",
+		description:
+			"Scroll the active surface or a visually grounded GUI region in a cardinal direction. " +
+			"Omitting `target` is the common case when you just need to reveal more content.",
+		parameters: GuiScrollSchema,
+		method: "scroll",
+		progressLabel: "GUI scroll",
+		errorLabel: "GUI scroll",
+		actionTarget: (params: GuiScrollParams) => params.target ?? `${params.direction ?? "down"} scroll`,
+		guard: resolveTargetlessOnlyGuard("gui_scroll") as CapabilityGuard<GuiScrollParams>,
+	}),
+	defineGuiToolFactory({
 		name: "gui_type",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_type",
-			label: "GUI Type",
-			description:
-				"Type text into a visually grounded editable GUI field such as an input field or search box. " +
-				"Name the editable field itself in `target`. " +
-				"Use `replace=false` only when appending is intentional.",
-			parameters: GuiTypeSchema,
-			method: "type",
-			progressLabel: "GUI type",
-			errorLabel: "GUI type",
-			actionTarget: (params: GuiTypeParams) => params.target ?? "focused control",
-			guard: resolveTargetlessOnlyGuard("gui_type") as CapabilityGuard<GuiTypeParams>,
-		}),
-	},
-	{
+		label: "GUI Type",
+		description:
+			"Type text into a visually grounded editable GUI field such as an input field or search box. " +
+			"Name the editable field itself in `target`. " +
+			"Use `replace=false` only when appending is intentional.",
+		parameters: GuiTypeSchema,
+		method: "type",
+		progressLabel: "GUI type",
+		errorLabel: "GUI type",
+		actionTarget: (params: GuiTypeParams) => params.target ?? "focused control",
+		guard: resolveTargetlessOnlyGuard("gui_type") as CapabilityGuard<GuiTypeParams>,
+	}),
+	defineGuiToolFactory({
 		name: "gui_key",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_key",
-			label: "GUI Key",
-			description:
-				"Send a keyboard shortcut or single key press. " +
-				"Examples: gui_key(key:'s', modifiers:['command']) for Cmd+S, gui_key(key:'Enter') for Enter. " +
-				"Does not require visual grounding.",
-			parameters: GuiKeySchema,
-			method: "key",
-			progressLabel: "GUI key",
-			errorLabel: "GUI key",
-			actionTarget: (params: GuiKeyParams) =>
-				[...(params.modifiers ?? []), params.key].filter(Boolean).join("+"),
-		}),
-	},
-	{
+		label: "GUI Key",
+		description:
+			"Send a keyboard shortcut or single key press. " +
+			"Examples: gui_key(key:'s', modifiers:['command']) for Cmd+S, gui_key(key:'Enter') for Enter. " +
+			"Does not require visual grounding.",
+		parameters: GuiKeySchema,
+		method: "key",
+		progressLabel: "GUI key",
+		errorLabel: "GUI key",
+		actionTarget: (params: GuiKeyParams) =>
+			[...(params.modifiers ?? []), params.key].filter(Boolean).join("+"),
+	}),
+	defineGuiToolFactory({
 		name: "gui_wait",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_wait",
-			label: "GUI Wait",
-			description:
-				"Wait for a visually grounded GUI target to appear or disappear. " +
-				"Use this after triggering UI work that completes asynchronously.",
-			parameters: GuiWaitSchema,
-			method: "wait",
-			progressLabel: "GUI wait",
-			errorLabel: "GUI wait",
-			actionTarget: (params: GuiWaitParams) => params.target,
-			argsForHeartbeat: (params: GuiWaitParams) => ({ app: params.app }),
-			allowMidflightAbort: true,
-		}),
-	},
-	{
+		label: "GUI Wait",
+		description:
+			"Wait for a visually grounded GUI target to appear or disappear. " +
+			"Use this after triggering UI work that completes asynchronously.",
+		parameters: GuiWaitSchema,
+		method: "wait",
+		progressLabel: "GUI wait",
+		errorLabel: "GUI wait",
+		actionTarget: (params: GuiWaitParams) => params.target,
+		argsForHeartbeat: (params: GuiWaitParams) => ({ app: params.app }),
+		allowMidflightAbort: true,
+	}),
+	defineGuiToolFactory({
 		name: "gui_move",
-		create: (runtime) => createGuiTool(runtime, {
-			name: "gui_move",
-			label: "GUI Move",
-			description:
-				"Move the cursor to absolute display coordinates without clicking. " +
-				"Use when you already know the exact pixel position.",
-			parameters: GuiMoveSchema,
-			method: "move",
-			progressLabel: "GUI move",
-			errorLabel: "GUI move",
-			actionTarget: (params: GuiMoveParams) => `(${params.x}, ${params.y})`,
-			argsForHeartbeat: (params: GuiMoveParams) => ({ app: params.app }),
-		}),
-	},
+		label: "GUI Move",
+		description:
+			"Move the cursor to absolute display coordinates without clicking. " +
+			"Use when you already know the exact pixel position.",
+		parameters: GuiMoveSchema,
+		method: "move",
+		progressLabel: "GUI move",
+		errorLabel: "GUI move",
+		actionTarget: (params: GuiMoveParams) => `(${params.x}, ${params.y})`,
+		argsForHeartbeat: (params: GuiMoveParams) => ({ app: params.app }),
+	}),
 ];
 
 export interface GuiToolCatalogEntry {
@@ -733,17 +727,12 @@ export interface GuiToolCatalogEntry {
 	description: string;
 }
 
-const GUI_TOOL_CATALOG_RUNTIME = {} as GuiRuntimeWithCapabilities;
-
 export function listGuiToolCatalog(): GuiToolCatalogEntry[] {
-	return GUI_TOOL_FACTORIES.map(({ create }) => {
-		const tool = create(GUI_TOOL_CATALOG_RUNTIME);
-		return {
-			name: tool.name as GuiToolName,
-			label: typeof tool.label === "string" && tool.label.length > 0 ? tool.label : tool.name,
-			description: typeof tool.description === "string" ? tool.description : "",
-		};
-	});
+	return GUI_TOOL_FACTORIES.map(({ name, label, description }) => ({
+		name,
+		label,
+		description,
+	}));
 }
 
 export function createGuiToolset(runtime: ComputerUseGuiRuntime = createDefaultGuiRuntime()): AgentTool<any>[] {

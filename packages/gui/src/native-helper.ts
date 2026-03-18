@@ -602,11 +602,10 @@ export async function resolveNativeGuiHelperBinary(): Promise<string> {
 
 		helperBinaryPath = binaryPath;
 		return binaryPath;
-	})();
-
-	try {
-		return await helperBinaryPromise;
-	} finally {
+	})().catch((error) => {
 		helperBinaryPromise = undefined;
-	}
+		throw error;
+	});
+
+	return await helperBinaryPromise;
 }

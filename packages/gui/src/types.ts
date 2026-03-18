@@ -1,13 +1,3 @@
-export type GuiActionType =
-	| "observe"
-	| "click"
-	| "drag"
-	| "scroll"
-	| "type"
-	| "key"
-	| "wait"
-	| "move";
-
 export type GuiGroundingActionIntent =
 	| "observe"
 	| "click"

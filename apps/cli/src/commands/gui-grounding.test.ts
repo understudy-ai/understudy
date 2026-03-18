@@ -412,6 +412,26 @@ describe("createOpenAIRuntimeGroundingProvider", () => {
 		}));
 	});
 
+	it("does not retry runtime grounding on unauthorized responses", async () => {
+		const imagePath = await createTestImage(640, 480, "runtime-unauthorized.png");
+		const promptCalls: Array<{ text: string; options: any }> = [];
+		const { createAgentSessionImpl, session } = createRuntimeGroundingSessionMock([], promptCalls);
+		session.prompt.mockRejectedValue(new Error("HTTP 401 unauthorized"));
+		const provider = createOpenAIRuntimeGroundingProvider({
+			authManager: { authStorage: {}, modelRegistry: {} } as any,
+			model: { provider: "openai-codex", id: "gpt-5.4", input: ["text", "image"] } as any,
+			providerName: "main:openai-codex/gpt-5.4:runtime",
+			createAgentSessionImpl,
+		});
+
+		await expect(provider?.ground({
+			imagePath,
+			target: "Publish button",
+		})).rejects.toThrow("HTTP 401 unauthorized");
+		expect(createAgentSessionImpl).toHaveBeenCalledTimes(1);
+		expect(session.prompt).toHaveBeenCalledTimes(1);
+	});
+
 	it("runs a separate validator round before accepting a grounded type target", async () => {
 		const imagePath = await createTestImage(1600, 1000, "telegram-runtime.png");
 		const promptCalls: Array<{ text: string; options: any }> = [];

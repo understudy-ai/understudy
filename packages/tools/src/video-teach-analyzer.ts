@@ -100,8 +100,8 @@ function extractVideoTeachStepToolArgs(record: Record<string, unknown>): TaughtT
 		return undefined;
 	}
 	return {
-		...(implicit ?? {}),
-		...(explicit ?? {}),
+		...implicit,
+		...explicit,
 	};
 }
 

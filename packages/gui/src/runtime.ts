@@ -1025,12 +1025,10 @@ async function resolveCaptureContext(
 	appName: string | undefined,
 	options: {
 		activateApp?: boolean;
-		windowTitle?: string;
 		windowSelector?: GuiWindowSelector;
 	} = {},
 ): Promise<GuiCaptureContext> {
 	const windowSelection = resolveWindowSelection({
-		windowTitle: options.windowTitle,
 		windowSelector: options.windowSelector,
 	});
 	const raw = await runNativeHelper({
@@ -1387,7 +1385,6 @@ async function captureScreenshotArtifact(params: {
 	});
 	const context = await resolveCaptureContext(params.appName, {
 		activateApp: params.activateApp,
-		windowTitle: windowSelection?.title,
 		windowSelector: windowSelection,
 	});
 	if (windowSelection && params.captureMode !== "display" && !context.windowBounds) {
@@ -1735,7 +1732,6 @@ export class ComputerUseGuiRuntime {
 		locationHint?: string;
 		scope?: string;
 		captureMode?: GuiCaptureMode;
-		windowTitle?: string;
 		windowSelector?: GuiWindowSelector;
 		state: "appear" | "disappear";
 		timeoutMs: number;
@@ -1750,7 +1746,7 @@ export class ComputerUseGuiRuntime {
 		let lastCapture: GuiCaptureMetadata | undefined;
 		let lastImage: GuiActionResult["image"] | undefined;
 
-		while (Date.now() <= deadline) {
+		while (attempts === 0 || Date.now() < deadline) {
 			attempts += 1;
 			// When no explicit captureMode is specified, retry with display capture after the first
 			// miss. This helps detect targets that appear outside the original window bounds (e.g.
@@ -1762,12 +1758,15 @@ export class ComputerUseGuiRuntime {
 				appName: params.appName,
 				captureMode: attemptCaptureMode,
 				activateApp: params.activateApp,
-				windowTitle: params.windowTitle,
 				windowSelector: params.windowSelector,
 			});
 			try {
 				lastCapture = artifact.metadata;
 				lastImage = screenshotArtifactToImage(artifact);
+				if (Date.now() >= deadline) {
+					lastGrounded = undefined;
+					break;
+				}
 				lastGrounded = await this.groundTarget({
 					artifact,
 					target: params.target,
@@ -1796,7 +1795,11 @@ export class ComputerUseGuiRuntime {
 					};
 				}
 
-			await new Promise((resolve) => setTimeout(resolve, intervalMs));
+			const remainingIntervalMs = deadline - Date.now();
+			if (remainingIntervalMs <= 0) {
+				break;
+			}
+			await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, remainingIntervalMs)));
 		}
 
 			return {
@@ -1811,7 +1814,6 @@ export class ComputerUseGuiRuntime {
 	private async captureEvidenceImage(params: {
 		appName?: string;
 		captureMode?: GuiCaptureMode;
-		windowTitle?: string;
 		windowSelector?: GuiWindowSelector;
 		settleMs?: number;
 	}): Promise<{ image?: GuiActionResult["image"]; details?: Record<string, unknown> }> {
@@ -1831,7 +1833,6 @@ export class ComputerUseGuiRuntime {
 				appName: params.appName,
 				captureMode: params.captureMode,
 				activateApp: false,
-				windowTitle: params.windowTitle,
 				windowSelector: params.windowSelector,
 			});
 			try {
@@ -1860,7 +1861,6 @@ export class ComputerUseGuiRuntime {
 		const artifact = await captureScreenshotArtifact({
 			appName: params.appName,
 			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
 			windowSelector: windowSelection,
 		});
 		try {
@@ -1897,7 +1897,6 @@ export class ComputerUseGuiRuntime {
 			const evidence = await this.captureEvidenceImage({
 				appName: params.appName,
 				captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
 				windowSelector: windowSelection,
 			});
 			return buildGuiResult({
@@ -1939,7 +1938,6 @@ export class ComputerUseGuiRuntime {
 		const artifact = await captureScreenshotArtifact({
 			appName,
 			captureMode,
-			windowTitle: windowSelection?.title,
 			windowSelector: windowSelection,
 			includeCursor: !params.target?.trim(),
 		});
@@ -2117,7 +2115,6 @@ export class ComputerUseGuiRuntime {
 		const artifact = await captureScreenshotArtifact({
 			appName,
 			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
 			windowSelector: windowSelection,
 		});
 		try {
@@ -2129,17 +2126,17 @@ export class ComputerUseGuiRuntime {
 				target: params.toTarget,
 				fallback: "the drag destination",
 			});
-				const source = await this.resolveGuiTarget({
-					artifact,
-					target: params.fromTarget,
-					groundingMode: params.groundingMode,
-					locationHint: params.fromLocationHint,
-					scope: fromScope,
-					app: appName,
-					action: "drag_source",
-					relatedTarget: params.toTarget,
-					relatedScope: toScope,
-					relatedAction: "drag_destination",
+			const source = await this.resolveGuiTarget({
+				artifact,
+				target: params.fromTarget,
+				groundingMode: params.groundingMode,
+				locationHint: params.fromLocationHint,
+				scope: fromScope,
+				app: appName,
+				action: "drag_source",
+				relatedTarget: params.toTarget,
+				relatedScope: toScope,
+				relatedAction: "drag_destination",
 				relatedLocationHint: params.toLocationHint,
 			});
 			if (!source) {
@@ -2158,15 +2155,15 @@ export class ComputerUseGuiRuntime {
 				});
 			}
 
-				const destination = await this.resolveGuiTarget({
-					artifact,
-					target: params.toTarget,
-					groundingMode: params.groundingMode,
-					locationHint: params.toLocationHint,
-					scope: toScope,
-					app: appName,
-					action: "drag_destination",
-					relatedTarget: params.fromTarget,
+			const destination = await this.resolveGuiTarget({
+				artifact,
+				target: params.toTarget,
+				groundingMode: params.groundingMode,
+				locationHint: params.toLocationHint,
+				scope: toScope,
+				app: appName,
+				action: "drag_destination",
+				relatedTarget: params.fromTarget,
 				relatedScope: fromScope,
 				relatedAction: "drag_source",
 				relatedLocationHint: params.fromLocationHint,
@@ -2189,37 +2186,36 @@ export class ComputerUseGuiRuntime {
 				});
 			}
 
-				const action = await performDrag(
-					appName,
-					source.point,
-					destination.point,
-					Math.max(100, params.durationMs ?? DEFAULT_DRAG_DURATION_MS),
-					{ activateApp: true },
-				);
-				const evidence = await this.captureEvidenceImage({
-					appName,
-					captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
+			const action = await performDrag(
+				appName,
+				source.point,
+				destination.point,
+				Math.max(100, params.durationMs ?? DEFAULT_DRAG_DURATION_MS),
+				{ activateApp: true },
+			);
+			const evidence = await this.captureEvidenceImage({
+				appName,
+				captureMode: params.captureMode,
 				windowSelector: windowSelection,
 			});
-				return buildGuiResult({
-					text: `Dragged from ${sourceDescription} to ${destinationDescription} via ${action.actionKind}.`,
-					resolution: source.resolution,
-					status: "action_sent",
-					summary: "GUI drag was sent.",
-					details: {
-						action_kind: action.actionKind,
-						...this.targetResolutionDetails(source),
+			return buildGuiResult({
+				text: `Dragged from ${sourceDescription} to ${destinationDescription} via ${action.actionKind}.`,
+				resolution: source.resolution,
+				status: "action_sent",
+				summary: "GUI drag was sent.",
+				details: {
+					action_kind: action.actionKind,
+					...this.targetResolutionDetails(source),
 					destination_target_resolution: {
 						...this.targetResolutionDetails(destination),
 						reason: destination.grounded.reason,
 					},
-						...evidence.details,
-						confidence: Math.min(source.grounded.confidence, destination.grounded.confidence),
-						app: appName,
-						executed_from_point: source.point,
-						executed_to_point: destination.point,
-						pre_action_capture: buildCaptureDetails(source.artifact),
+					...evidence.details,
+					confidence: Math.min(source.grounded.confidence, destination.grounded.confidence),
+					app: appName,
+					executed_from_point: source.point,
+					executed_to_point: destination.point,
+					pre_action_capture: buildCaptureDetails(source.artifact),
 				},
 				image: evidence.image,
 			});
@@ -2249,7 +2245,6 @@ export class ComputerUseGuiRuntime {
 				const artifact = await captureScreenshotArtifact({
 					appName,
 					captureMode: params.captureMode,
-					windowTitle: windowSelection?.title,
 					windowSelector: windowSelection,
 			});
 			try {
@@ -2282,7 +2277,6 @@ export class ComputerUseGuiRuntime {
 			}
 		} else {
 			context = await resolveCaptureContext(appName, {
-				windowTitle: windowSelection?.title,
 				windowSelector: windowSelection,
 			});
 		}
@@ -2301,7 +2295,6 @@ export class ComputerUseGuiRuntime {
 			const evidence = await this.captureEvidenceImage({
 				appName,
 				captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
 				windowSelector: windowSelection,
 			});
 			return buildGuiResult({
@@ -2313,7 +2306,7 @@ export class ComputerUseGuiRuntime {
 				summary: "GUI scroll was sent.",
 				details: {
 					action_kind: action.actionKind,
-					...(grounded ? this.targetResolutionDetails(grounded) : { grounding_method: "visual" }),
+					...(grounded ? this.targetResolutionDetails(grounded) : { grounding_method: "targetless" }),
 					...evidence.details,
 					direction,
 					amount: scrollPlan.amount,
@@ -2350,7 +2343,6 @@ export class ComputerUseGuiRuntime {
 				const artifact = await captureScreenshotArtifact({
 					appName,
 					captureMode: params.captureMode,
-					windowTitle: windowSelection?.title,
 					windowSelector: windowSelection,
 			});
 			try {
@@ -2391,7 +2383,6 @@ export class ComputerUseGuiRuntime {
 			const evidence = await this.captureEvidenceImage({
 				appName,
 				captureMode: params.captureMode,
-				windowTitle: windowSelection?.title,
 				windowSelector: windowSelection,
 			});
 			return buildGuiResult({
@@ -2403,7 +2394,7 @@ export class ComputerUseGuiRuntime {
 				summary: "GUI text input was sent.",
 				details: {
 					action_kind: action.actionKind,
-					...(grounded ? this.targetResolutionDetails(grounded) : { grounding_method: "visual" }),
+					...(grounded ? this.targetResolutionDetails(grounded) : { grounding_method: "targetless" }),
 					...evidence.details,
 					app: appName,
 					executed_point: grounded?.point,
@@ -2429,7 +2420,6 @@ export class ComputerUseGuiRuntime {
 		const evidence = await this.captureEvidenceImage({
 			appName,
 			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
 			windowSelector: windowSelection,
 		});
 		return buildGuiResult({
@@ -2442,7 +2432,7 @@ export class ComputerUseGuiRuntime {
 				action_kind: action.actionKind,
 				...evidence.details,
 				repeat,
-				grounding_method: "visual",
+				grounding_method: "targetless",
 				confidence: 1,
 				app: appName,
 			},
@@ -2458,12 +2448,13 @@ export class ComputerUseGuiRuntime {
 		const appName = normalizeOptionalString(params.app);
 		const point = { x: Math.round(params.x), y: Math.round(params.y) };
 		const action = await performHover(appName, point, 0, { activateApp: Boolean(appName) });
+		const reportedActionKind = action.actionKind === "cg_hover" ? "cg_move" : action.actionKind;
 		return buildGuiResult({
-			text: `Moved cursor to (${point.x}, ${point.y}) via ${action.actionKind}.`,
+			text: `Moved cursor to (${point.x}, ${point.y}) via ${reportedActionKind}.`,
 			status: "action_sent",
 			summary: "GUI cursor move was sent.",
 			details: {
-				action_kind: action.actionKind,
+				action_kind: reportedActionKind,
 				grounding_method: "absolute_coordinates",
 				confidence: 1,
 				app: appName,
@@ -2491,7 +2482,6 @@ export class ComputerUseGuiRuntime {
 			locationHint: params.locationHint,
 			scope: params.scope,
 			captureMode: params.captureMode,
-			windowTitle: windowSelection?.title,
 			windowSelector: windowSelection,
 			state,
 			timeoutMs,

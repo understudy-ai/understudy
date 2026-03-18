@@ -1179,7 +1179,7 @@ describe("ComputerUseGuiRuntime", () => {
 			scroll_viewport_dimension: 300,
 			scroll_viewport_source: "window",
 			scroll_travel_fraction: 0.75,
-			grounding_method: "visual",
+			grounding_method: "targetless",
 		});
 		expect(ground).not.toHaveBeenCalled();
 		const scrollCall = mocks.execCalls.find((call) =>
@@ -1238,6 +1238,9 @@ describe("ComputerUseGuiRuntime", () => {
 		});
 
 		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			grounding_method: "targetless",
+		});
 		const typeCall = mocks.execCalls.find((call) => call.file === "osascript" && call.env.UNDERSTUDY_GUI_TEXT === "hello world");
 		expect(typeCall?.env).toMatchObject({
 			UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: "Draft",
@@ -1258,7 +1261,7 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(result.details).toMatchObject({
 			action_kind: "key_event",
 			repeat: 1,
-			grounding_method: "visual",
+			grounding_method: "targetless",
 		});
 		expect(ground).not.toHaveBeenCalled();
 	});
@@ -1276,7 +1279,7 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(result.details).toMatchObject({
 			action_kind: "key_event",
 			repeat: 2,
-			grounding_method: "visual",
+			grounding_method: "targetless",
 		});
 		expect(ground).not.toHaveBeenCalled();
 		const keyCall = mocks.execCalls.find((call) => call.file === "osascript" && call.env.UNDERSTUDY_GUI_REPEAT === "2");
@@ -1300,6 +1303,23 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(keyCall?.env).toMatchObject({
 			UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: "Draft",
 			UNDERSTUDY_GUI_KEY: "",
+		});
+	});
+
+	it("reports cursor moves with move-specific telemetry", async () => {
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.move({
+			x: 100,
+			y: 200,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.text).toContain("cg_move");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_move",
+			grounding_method: "absolute_coordinates",
+			executed_point: { x: 100, y: 200 },
 		});
 	});
 
@@ -1442,5 +1462,35 @@ describe("ComputerUseGuiRuntime", () => {
 			grounding_method: "grounding",
 			confidence: 0,
 		});
+	});
+
+	it("does not start grounding after a capture overruns the remaining wait budget", async () => {
+		const ground = vi.fn();
+		const runtime = createRuntime(ground);
+		const dateNowSpy = vi.spyOn(Date, "now");
+		const nowValues = [1000, 1025, 1025, 1025];
+		dateNowSpy.mockImplementation(() => nowValues.shift() ?? 1025);
+
+		try {
+			const result = await runtime.wait({
+				target: "Finished badge",
+				timeoutMs: 20,
+				intervalMs: 0,
+			});
+
+			expect(result.status).toEqual({
+				code: "timeout",
+				summary: "GUI wait timed out.",
+			});
+			expect(result.details).toMatchObject({
+				attempts: 1,
+				wait_confirmations_required: 2,
+				grounding_method: "grounding",
+				confidence: 0,
+			});
+			expect(ground).not.toHaveBeenCalled();
+		} finally {
+			dateNowSpy.mockRestore();
+		}
 	});
 });

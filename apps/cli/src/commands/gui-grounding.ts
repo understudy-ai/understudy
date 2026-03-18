@@ -285,11 +285,7 @@ function summarizeLastAssistantMessage(messages: unknown): string {
 function isRetryableRuntimeGroundingError(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error);
 	const normalized = message.toLowerCase();
-	return normalized.includes("forbidden") ||
-		normalized.includes("unauthorized") ||
-		normalized.includes("http 401") ||
-		normalized.includes("http 403") ||
-		normalized.includes("no assistant text") ||
+	return normalized.includes("no assistant text") ||
 		isRetryableRuntimeStageError(error);
 }
 
@@ -509,10 +505,7 @@ export async function resolveMainModelGuiGroundingProvider(
 	const thinkingLevel = resolveGuiGroundingThinkingLevel(config);
 	const reasoningEffort = toOpenAIReasoningEffort(thinkingLevel);
 	const candidates = buildGuiGroundingCandidates(options);
-	const orderedCandidates = candidates.length > 0
-		? candidates
-		: [];
-	if (orderedCandidates.length === 0) {
+	if (candidates.length === 0) {
 		const providerStatus = providerStatusResolver(config.defaultProvider);
 		if (!providerStatus.available) {
 			return undefined;
@@ -569,7 +562,7 @@ export async function resolveMainModelGuiGroundingProvider(
 			}),
 		};
 	}
-	for (const candidate of orderedCandidates) {
+	for (const candidate of candidates) {
 		if (!providerAliases(candidate.provider).includes("openai")) {
 			continue;
 		}
