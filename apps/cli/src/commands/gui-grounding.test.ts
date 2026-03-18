@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_CONFIG, type UnderstudyConfig } from "@understudy/types";
+import { DEFAULT_OPENAI_GROUNDING_MODEL } from "@understudy/tools";
 import {
+	clearOAuthGroundingProbeCacheForTest,
 	createOpenAIRuntimeGroundingProvider,
 	primeGuiGroundingForConfig,
 } from "./gui-grounding.js";
@@ -75,6 +77,7 @@ function createRuntimeGroundingSessionMock(
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+	clearOAuthGroundingProbeCacheForTest();
 	delete process.env.UNDERSTUDY_GUI_GROUNDING_PROVIDER;
 	delete process.env.UNDERSTUDY_GUI_GROUNDING_API_KEY;
 	delete process.env.UNDERSTUDY_GUI_GROUNDING_MODEL;
@@ -155,6 +158,26 @@ describe("primeGuiGroundingForConfig", () => {
 
 		expect(resolved.available).toBe(true);
 		expect(resolved.label).toBe("dedicated-grounding");
+		expect(typeof resolved.groundingProvider?.ground).toBe("function");
+		expect(authManager.findModel).not.toHaveBeenCalled();
+	});
+
+	it("uses the shared default OpenAI grounding model label when explicit env grounding omits a model", async () => {
+		process.env.UNDERSTUDY_GUI_GROUNDING_API_KEY = "grounding-key";
+		const authManager = {
+			findModel: vi.fn(),
+			getAvailableModels: vi.fn().mockReturnValue([]),
+			getApiKey: vi.fn(),
+		};
+
+		const resolved = await primeGuiGroundingForConfig(
+			createConfig(),
+			authManager as any,
+			(() => ({ available: true, provider: "openai-codex", credentialType: "api_key", source: "env" })) as any,
+		);
+
+		expect(resolved.available).toBe(true);
+		expect(resolved.label).toBe(`openai:${DEFAULT_OPENAI_GROUNDING_MODEL}`);
 		expect(typeof resolved.groundingProvider?.ground).toBe("function");
 		expect(authManager.findModel).not.toHaveBeenCalled();
 	});
@@ -288,6 +311,60 @@ describe("primeGuiGroundingForConfig", () => {
 		expect(typeof resolved.groundingProvider?.ground).toBe("function");
 		expect(authManager.findModel).toHaveBeenCalledTimes(1);
 		expect(process.env.UNDERSTUDY_GUI_GROUNDING_API_KEY).toBeUndefined();
+	});
+
+	it("re-probes oauth Responses access after a denied attempt instead of caching the failure forever", async () => {
+		const authManager = {
+			findModel: vi.fn().mockReturnValue({ provider: "openai-codex", id: "gpt-5.4", input: ["text", "image"] }),
+			getAvailableModels: vi.fn().mockReturnValue([{ provider: "openai-codex", id: "gpt-5.4", input: ["text", "image"] }]),
+			getApiKey: vi.fn().mockResolvedValue("oauth-access-token-retry"),
+		};
+		const fetchMock = vi.fn()
+			.mockResolvedValueOnce({
+				ok: false,
+				status: 403,
+				json: async () => ({
+					error: {
+						message: "Missing scopes: api.responses.write",
+					},
+				}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => ({ output_text: "ok" }),
+			});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const providerStatusResolver = (() => ({
+			available: true,
+			provider: "openai-codex",
+			credentialType: "oauth",
+			source: "primary",
+		})) as any;
+
+		const first = await primeGuiGroundingForConfig(
+			createConfig({
+				defaultProvider: "openai-codex",
+				defaultModel: "gpt-5.4",
+			}),
+			authManager as any,
+			providerStatusResolver,
+		);
+		const second = await primeGuiGroundingForConfig(
+			createConfig({
+				defaultProvider: "openai-codex",
+				defaultModel: "gpt-5.4",
+			}),
+			authManager as any,
+			providerStatusResolver,
+		);
+
+		expect(first.available).toBe(true);
+		expect(first.label).toBe("main:openai-codex/gpt-5.4:runtime");
+		expect(second.available).toBe(true);
+		expect(second.label).toBe("main:openai-codex/gpt-5.4");
+		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("remains unavailable when oauth auth cannot access Responses API and the model lacks image input", async () => {

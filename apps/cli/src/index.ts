@@ -66,7 +66,7 @@ program
 
 program
 	.command("chat")
-	.description("Start an interactive terminal chat session")
+	.description("Start a gateway-backed terminal chat session")
 	.option("-m, --model <model>", "Model to use (provider/model-id)")
 	.option("-t, --thinking <level>", "Thinking level (off|minimal|low|medium|high|xhigh)")
 	.option("-c, --cwd <dir>", "Working directory")
@@ -74,20 +74,7 @@ program
 	.option("--file <path>", "Attach a local file as prompt context", collectRepeatValue, [])
 	.option("--image <path-or-url>", "Attach an image from a local path or URL", collectRepeatValue, [])
 	.option("--config <path>", "Config file path")
-	.option("--continue", "Resume the most recent session")
-	.action(runChatCommand);
-
-program
-	.command("tui", { hidden: true })
-	.description("Start an interactive terminal chat session (alias for chat)")
-	.option("-m, --model <model>", "Model to use (provider/model-id)")
-	.option("-t, --thinking <level>", "Thinking level (off|minimal|low|medium|high|xhigh)")
-	.option("-c, --cwd <dir>", "Working directory")
-	.option("--message <text>", "Initial message to send on startup")
-	.option("--file <path>", "Attach a local file as prompt context", collectRepeatValue, [])
-	.option("--image <path-or-url>", "Attach an image from a local path or URL", collectRepeatValue, [])
-	.option("--config <path>", "Config file path")
-	.option("--continue", "Resume the most recent session")
+	.option("--continue", "Resume the existing gateway-backed session")
 	.action(runChatCommand);
 
 program
@@ -285,7 +272,7 @@ program
 	.option("-m, --model <model>", "Override the gateway session model (provider/model-id)")
 	.option("-t, --thinking <level>", "Override the gateway session thinking level (off|minimal|low|medium|high|xhigh)")
 	.option("--config <path>", "Config file path for gateway auth lookup")
-	.option("--continue", "Resume the existing gateway-backed terminal session")
+	.option("--continue", "Resume the existing gateway session")
 	.option("--timeout <ms>", "RPC timeout in ms (default: 600000)")
 	.action(runAgentCommand);
 

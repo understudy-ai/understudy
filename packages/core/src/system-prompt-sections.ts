@@ -52,8 +52,8 @@ export function buildCliSection(): string[] {
 	return [
 		"## Understudy CLI Quick Reference",
 		"Understudy is controlled via subcommands. Do not invent commands.",
-		"- understudy chat — start interactive chat session",
-		"- understudy chat --continue — resume most recent session",
+		"- understudy chat — start gateway-backed terminal chat",
+		"- understudy chat --continue — resume existing gateway-backed terminal session",
 		"- understudy gateway — start the HTTP + WebSocket gateway server",
 		"- understudy daemon --start — start background daemon",
 		"- understudy daemon --stop — stop background daemon",

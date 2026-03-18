@@ -216,4 +216,74 @@ describe("createOpenClawCronCompatibilityTool", () => {
 			status: "failed",
 		});
 	});
+
+	it("routes remove to the native remove action", async () => {
+		const { cronTool, scheduleService } = await createCronTool();
+		const addResult = await cronTool.execute("id", {
+			action: "add",
+			job: {
+				name: "cleanup",
+				schedule: {
+					kind: "cron",
+					expr: "0 * * * *",
+				},
+				payload: {
+					kind: "systemEvent",
+					text: "cleanup",
+				},
+			},
+		});
+		const addText = (addResult.content[0] as { text: string }).text;
+		const match = addText.match(/\(([A-Za-z0-9_-]+)\)/);
+		expect(match?.[1]).toBeTruthy();
+
+		const removeResult = await cronTool.execute("id", {
+			action: "remove",
+			jobId: match?.[1],
+		});
+
+		expect((removeResult.content[0] as { text: string }).text).toContain(`Removed job: ${match?.[1]}`);
+		expect(scheduleService.list({ includeDisabled: true })).toHaveLength(0);
+	});
+
+	it("preserves wake passthrough when no text injection is requested", async () => {
+		const onJobTrigger = vi.fn(async () => {});
+		const { cronTool } = await createCronTool(onJobTrigger);
+		await cronTool.execute("id", {
+			action: "add",
+			job: {
+				name: "wakeable",
+				schedule: {
+					kind: "cron",
+					expr: "0 * * * *",
+				},
+				payload: {
+					kind: "systemEvent",
+					text: "wake me",
+				},
+			},
+		});
+
+		const wakeResult = await cronTool.execute("id", {
+			action: "wake",
+		});
+
+		expect((wakeResult.content[0] as { text: string }).text).toContain("Wake complete: triggered 1 jobs.");
+		expect(onJobTrigger).toHaveBeenCalledOnce();
+	});
+
+	it("still rejects wake text injection requests", async () => {
+		const { cronTool } = await createCronTool();
+		const wakeResult = await cronTool.execute("id", {
+			action: "wake",
+			text: "ping",
+		});
+
+		expect((wakeResult.content[0] as { text: string }).text).toContain(
+			"OpenClaw cron compatibility does not support wake text injection",
+		);
+		expect(wakeResult.details).toMatchObject({
+			status: "failed",
+		});
+	});
 });

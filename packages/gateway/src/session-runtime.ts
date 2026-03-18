@@ -1,4 +1,5 @@
 import {
+	AuthManager,
 	appendPersistedWorkflowCrystallizationTurnFromRun,
 	buildTaughtTaskDraftPromptContent,
 	buildSkillsSection,
@@ -47,7 +48,7 @@ import {
 	type GuiDemonstrationRecorder,
 	type GuiDemonstrationRecordingSession,
 } from "@understudy/gui";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import { getModel, type ImageContent, type Model } from "@mariozechner/pi-ai";
 import type { TeachCapabilitySnapshot, VideoTeachAnalyzer } from "@understudy/tools";
 import { buildTeachCapabilitySnapshot, extractJsonObject, formatTeachCapabilitySnapshotForPrompt } from "@understudy/tools";
 import type { Attachment, UnderstudyConfig } from "@understudy/types";
@@ -145,6 +146,7 @@ export interface SessionSummary {
 	messageCount: number;
 	workspaceDir?: string;
 	model?: string;
+	thinkingLevel?: UnderstudyConfig["defaultThinkingLevel"];
 	runtimeProfile?: string;
 	traceId?: string;
 	lastRunId?: string;
@@ -356,6 +358,7 @@ export const buildSessionSummary = (entry: SessionSummaryInput): SessionSummary 
 		messageCount: entry.messageCount,
 		workspaceDir: entry.workspaceDir,
 		model: asString(entry.sessionMeta?.model),
+		thinkingLevel: asString(entry.sessionMeta?.thinkingLevel) as UnderstudyConfig["defaultThinkingLevel"] | undefined,
 		runtimeProfile: asString(entry.sessionMeta?.runtimeProfile),
 		traceId: entry.traceId,
 		...(latestRun ? { lastRunId: latestRun.runId, lastRunAt: latestRun.recordedAt } : {}),
@@ -731,6 +734,42 @@ type TeachClarificationPayload = {
 function trimToUndefined(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
+}
+
+function parseSessionModelRef(
+	value: string | undefined,
+): { provider: string; modelId: string } | undefined {
+	const normalized = trimToUndefined(value);
+	if (!normalized) {
+		return undefined;
+	}
+	const slashIndex = normalized.indexOf("/");
+	if (slashIndex <= 0 || slashIndex === normalized.length - 1) {
+		return undefined;
+	}
+	return {
+		provider: normalized.slice(0, slashIndex),
+		modelId: normalized.slice(slashIndex + 1),
+	};
+}
+
+function parseSessionThinkingLevel(
+	value: string | undefined,
+): UnderstudyConfig["defaultThinkingLevel"] | undefined {
+	switch (value?.trim().toLowerCase()) {
+		case undefined:
+		case "":
+			return undefined;
+		case "off":
+		case "minimal":
+		case "low":
+		case "medium":
+		case "high":
+		case "xhigh":
+			return value.trim().toLowerCase() as UnderstudyConfig["defaultThinkingLevel"];
+		default:
+			throw new Error("thinkingLevel must be one of: off|minimal|low|medium|high|xhigh");
+	}
 }
 
 function normalizeHistoryImages(value: unknown): ImageContent[] | undefined {
@@ -6080,20 +6119,52 @@ export function createGatewaySessionRuntime(
 				entry.messageCount = messageCount;
 			}
 			const patchRecord = asRecord(params);
+			const nextMeta = Object.assign({}, entry.sessionMeta);
 			if (patchRecord && "sessionName" in patchRecord) {
 				const rawSessionName =
 					typeof patchRecord.sessionName === "string"
 						? patchRecord.sessionName
 						: "";
 				const sessionName = trimToUndefined(rawSessionName);
-				const nextMeta = Object.assign({}, entry.sessionMeta);
 				if (sessionName) {
 					nextMeta.sessionName = sessionName;
 				} else {
 					delete nextMeta.sessionName;
 				}
-				entry.sessionMeta = Object.keys(nextMeta).length > 0 ? nextMeta : undefined;
 			}
+			const liveSession = entry.session as {
+				setModel?: (model: Model<any>) => Promise<void>;
+				setThinkingLevel?: (level: UnderstudyConfig["defaultThinkingLevel"]) => void;
+			};
+			if (patchRecord && "model" in patchRecord) {
+				const parsedModel = parseSessionModelRef(asString(patchRecord.model));
+				if (!parsedModel) {
+					throw new Error("model must use provider/model-id format");
+				}
+				const resolvedModel =
+					AuthManager.create().findModel(parsedModel.provider, parsedModel.modelId) ??
+					getModel(parsedModel.provider as any, parsedModel.modelId as any);
+				await liveSession.setModel?.(resolvedModel);
+				entry.configOverride = {
+					...(entry.configOverride ?? {}),
+					defaultProvider: parsedModel.provider,
+					defaultModel: parsedModel.modelId,
+				};
+				nextMeta.model = `${parsedModel.provider}/${parsedModel.modelId}`;
+			}
+			if (patchRecord && "thinkingLevel" in patchRecord) {
+				const thinkingLevel = parseSessionThinkingLevel(asString(patchRecord.thinkingLevel));
+				if (!thinkingLevel) {
+					throw new Error("thinkingLevel is required when provided");
+				}
+				liveSession.setThinkingLevel?.(thinkingLevel);
+				entry.configOverride = {
+					...(entry.configOverride ?? {}),
+					defaultThinkingLevel: thinkingLevel,
+				};
+				nextMeta.thinkingLevel = thinkingLevel;
+			}
+			entry.sessionMeta = Object.keys(nextMeta).length > 0 ? nextMeta : undefined;
 			entry.lastActiveAt = Date.now();
 			onStateChanged?.();
 			return buildSessionSummary(entry);

@@ -202,6 +202,13 @@ interface GuiCaptureMetadata {
 	cursorVisible: boolean;
 }
 
+interface GuiScriptWindowSelection {
+	title?: string;
+	titleContains?: string;
+	index?: number;
+	bounds?: GuiRect;
+}
+
 export const GUI_UNSUPPORTED_MESSAGE = "GUI tools are currently supported on macOS only.";
 
 export class GuiRuntimeError extends Error {
@@ -320,11 +327,29 @@ function describeWindowSelection(windowSelector: GuiWindowSelector | undefined):
 	return parts.length > 0 ? parts.join(", ") : undefined;
 }
 
-function buildWindowSelectionEnv(windowSelection: GuiWindowSelector | undefined): Record<string, string | undefined> {
+function buildWindowSelectionEnv(
+	windowSelection: Pick<GuiScriptWindowSelection, "title" | "titleContains" | "index"> | undefined,
+): Record<string, string | undefined> {
 	return {
 		UNDERSTUDY_GUI_WINDOW_TITLE: windowSelection?.title,
 		UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: windowSelection?.titleContains,
 		UNDERSTUDY_GUI_WINDOW_INDEX: windowSelection?.index ? String(windowSelection.index) : undefined,
+	};
+}
+
+function buildWindowBoundsEnv(bounds: GuiRect | undefined): Record<string, string | undefined> {
+	return {
+		UNDERSTUDY_GUI_WINDOW_BOUNDS_X: bounds ? String(bounds.x) : undefined,
+		UNDERSTUDY_GUI_WINDOW_BOUNDS_Y: bounds ? String(bounds.y) : undefined,
+		UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH: bounds ? String(bounds.width) : undefined,
+		UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT: bounds ? String(bounds.height) : undefined,
+	};
+}
+
+function buildScriptWindowSelectionEnv(windowSelection: GuiScriptWindowSelection | undefined): Record<string, string | undefined> {
+	return {
+		...buildWindowSelectionEnv(windowSelection),
+		...buildWindowBoundsEnv(windowSelection?.bounds),
 	};
 }
 
@@ -366,82 +391,6 @@ function parsePngDimensions(bytes: Buffer): { width: number; height: number } | 
 		width: bytes.readUInt32BE(16),
 		height: bytes.readUInt32BE(20),
 	};
-}
-
-function dimensionsMatchRect(
-	imageSize: { width: number; height: number } | undefined,
-	rect: { width: number; height: number },
-	tolerance = 4,
-): boolean {
-	if (!imageSize) {
-		return false;
-	}
-	return Math.abs(imageSize.width - rect.width) <= tolerance &&
-		Math.abs(imageSize.height - rect.height) <= tolerance;
-}
-
-async function cropWindowCaptureCanvas(params: {
-	sourcePath: string;
-	tempDir: string;
-	captureRect: GuiRect;
-	displayBounds: GuiRect;
-	imageSize: { width: number; height: number };
-}): Promise<{ filePath: string; bytes: Buffer; imageSize: { width: number; height: number } } | undefined> {
-	const displayScaleX = params.displayBounds.width > 0
-		? params.imageSize.width / params.displayBounds.width
-		: 1;
-	const displayScaleY = params.displayBounds.height > 0
-		? params.imageSize.height / params.displayBounds.height
-		: 1;
-	const rawLeft = (params.captureRect.x - params.displayBounds.x) * displayScaleX;
-	const rawTop = (params.captureRect.y - params.displayBounds.y) * displayScaleY;
-	const rawRight = (params.captureRect.x + params.captureRect.width - params.displayBounds.x) * displayScaleX;
-	const rawBottom = (params.captureRect.y + params.captureRect.height - params.displayBounds.y) * displayScaleY;
-	const captureLeft = Math.max(0, Math.floor(rawLeft));
-	const captureTop = Math.max(0, Math.floor(rawTop));
-	const captureRight = Math.min(
-		params.imageSize.width,
-		Math.max(captureLeft, Math.ceil(rawRight)),
-	);
-	const captureBottom = Math.min(
-		params.imageSize.height,
-		Math.max(captureTop, Math.ceil(rawBottom)),
-	);
-	const captureWidth = captureRight - captureLeft;
-	const captureHeight = captureBottom - captureTop;
-	if (captureWidth <= 0 || captureHeight <= 0) {
-		return undefined;
-	}
-	const outputPath = join(params.tempDir, "gui-screenshot-cropped.png");
-	try {
-		await execFileAsync("sips", [
-			"-c",
-			String(captureHeight),
-			String(captureWidth),
-			"--cropOffset",
-			String(captureTop),
-			String(captureLeft),
-			params.sourcePath,
-			"--out",
-			outputPath,
-		], {
-			timeout: DEFAULT_TIMEOUT_MS,
-			maxBuffer: 8 * 1024 * 1024,
-			encoding: "utf-8",
-		});
-		const bytes = Buffer.from(await readFile(outputPath));
-		const imageSize = parsePngDimensions(bytes);
-		if (!imageSize) {
-			return undefined;
-		}
-		return {
-			filePath: outputPath,
-			bytes,
-			imageSize,
-		};
-	} catch {
-		return undefined;
-	}
 }
 
 function parseCaptureContext(raw: string): GuiCaptureContext {
@@ -855,14 +804,31 @@ async function runNativeHelper(params: {
 }
 
 const WINDOW_SELECTION_SCRIPT_HELPERS = String.raw`
+on absoluteDifference(lhsValue, rhsValue)
+	if lhsValue >= rhsValue then return lhsValue - rhsValue
+	return rhsValue - lhsValue
+end absoluteDifference
+
 on textContains(haystack, needle)
 	if needle is "" then return true
 	ignoring case
-		return (offset of needle in haystack) is not 0
+			return (offset of needle in haystack) is not 0
 	end ignoring
 end textContains
 
-on matchingWindows(targetProc, exactTitle, titleContains)
+on windowMatchesBounds(candidateWindow, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
+	if boundsXText is "" or boundsYText is "" or boundsWidthText is "" or boundsHeightText is "" then return true
+	try
+		set {windowX, windowY} to position of candidateWindow
+		set {windowWidth, windowHeight} to size of candidateWindow
+	on error
+		return false
+	end try
+	set tolerance to 3
+	return (my absoluteDifference(windowX as integer, boundsXText as integer) is less than or equal to tolerance) and (my absoluteDifference(windowY as integer, boundsYText as integer) is less than or equal to tolerance) and (my absoluteDifference(windowWidth as integer, boundsWidthText as integer) is less than or equal to tolerance) and (my absoluteDifference(windowHeight as integer, boundsHeightText as integer) is less than or equal to tolerance)
+end windowMatchesBounds
+
+on matchingWindows(targetProc, exactTitle, titleContains, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
 	set matches to {}
 	repeat with candidateWindow in windows of targetProc
 		set windowTitle to ""
@@ -876,14 +842,15 @@ on matchingWindows(targetProc, exactTitle, titleContains)
 			end ignoring
 		end if
 		set containsMatch to my textContains(windowTitle, titleContains)
-		if exactMatch and containsMatch then set end of matches to candidateWindow
+		set boundsMatch to my windowMatchesBounds(candidateWindow, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
+		if exactMatch and containsMatch and boundsMatch then set end of matches to candidateWindow
 	end repeat
 	return matches
 end matchingWindows
 
-on focusRequestedWindow(targetProc, exactTitle, titleContains, windowIndexText)
-	if exactTitle is "" and titleContains is "" and windowIndexText is "" then return
-	set matches to my matchingWindows(targetProc, exactTitle, titleContains)
+on focusRequestedWindow(targetProc, exactTitle, titleContains, windowIndexText, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
+	if exactTitle is "" and titleContains is "" and windowIndexText is "" and boundsXText is "" and boundsYText is "" and boundsWidthText is "" and boundsHeightText is "" then return
+	set matches to my matchingWindows(targetProc, exactTitle, titleContains, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
 	if (count of matches) is 0 then error "Window not found for the requested selection."
 	set targetWindow to item 1 of matches
 	if windowIndexText is not "" then
@@ -913,6 +880,10 @@ set requestedApp to system attribute "UNDERSTUDY_GUI_APP"
 set requestedWindowTitle to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE"
 set requestedWindowTitleContains to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS"
 set requestedWindowIndex to system attribute "UNDERSTUDY_GUI_WINDOW_INDEX"
+set requestedWindowBoundsX to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_X"
+set requestedWindowBoundsY to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_Y"
+set requestedWindowBoundsWidth to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH"
+set requestedWindowBoundsHeight to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT"
 set inputText to system attribute "UNDERSTUDY_GUI_TEXT"
 set replaceText to system attribute "UNDERSTUDY_GUI_REPLACE"
 set submitText to system attribute "UNDERSTUDY_GUI_SUBMIT"
@@ -948,7 +919,7 @@ tell application "System Events"
 	else
 		set targetProc to first application process whose frontmost is true
 	end if
-	my focusRequestedWindow(targetProc, requestedWindowTitle, requestedWindowTitleContains, requestedWindowIndex)
+	my focusRequestedWindow(targetProc, requestedWindowTitle, requestedWindowTitleContains, requestedWindowIndex, requestedWindowBoundsX, requestedWindowBoundsY, requestedWindowBoundsWidth, requestedWindowBoundsHeight)
 
 	if replaceText is "1" then
 		keystroke "a" using command down
@@ -975,6 +946,10 @@ set requestedApp to system attribute "UNDERSTUDY_GUI_APP"
 set requestedWindowTitle to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE"
 set requestedWindowTitleContains to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS"
 set requestedWindowIndex to system attribute "UNDERSTUDY_GUI_WINDOW_INDEX"
+set requestedWindowBoundsX to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_X"
+set requestedWindowBoundsY to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_Y"
+set requestedWindowBoundsWidth to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH"
+set requestedWindowBoundsHeight to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT"
 set keyText to system attribute "UNDERSTUDY_GUI_KEY"
 set keyCodeText to system attribute "UNDERSTUDY_GUI_KEY_CODE"
 set modifiersText to system attribute "UNDERSTUDY_GUI_MODIFIERS"
@@ -995,7 +970,7 @@ tell application "System Events"
 	else
 		set targetProc to first application process whose frontmost is true
 	end if
-	my focusRequestedWindow(targetProc, requestedWindowTitle, requestedWindowTitleContains, requestedWindowIndex)
+	my focusRequestedWindow(targetProc, requestedWindowTitle, requestedWindowTitleContains, requestedWindowIndex, requestedWindowBoundsX, requestedWindowBoundsY, requestedWindowBoundsWidth, requestedWindowBoundsHeight)
 
 	if keyCodeText is not "" then
 		repeat repeatCount times
@@ -1045,13 +1020,50 @@ async function resolveCaptureContext(
 	return parseCaptureContext(raw);
 }
 
+function createRequestedWindowNotFoundError(
+	appName: string | undefined,
+	windowSelection: GuiWindowSelector | undefined,
+): GuiRuntimeError {
+	const requestedWindow = describeWindowSelection(windowSelection) ?? "requested window";
+	const appLabel = appName?.trim() ? ` for ${appName.trim()}` : "";
+	return new GuiRuntimeError(
+		`Could not find ${requestedWindow}${appLabel}. Check the visible window title or use captureMode "display" if the target spans multiple windows.`,
+	);
+}
+
+async function resolveScriptWindowSelection(params: {
+	appName?: string;
+	windowTitle?: string;
+	windowSelector?: GuiWindowSelector;
+}): Promise<GuiScriptWindowSelection | undefined> {
+	const windowSelection = resolveWindowSelection({
+		windowTitle: params.windowTitle,
+		windowSelector: params.windowSelector,
+	});
+	if (!windowSelection) {
+		return undefined;
+	}
+	const context = await resolveCaptureContext(params.appName, {
+		activateApp: false,
+		windowSelector: windowSelection,
+	});
+	if (!context.windowBounds) {
+		throw createRequestedWindowNotFoundError(params.appName, windowSelection);
+	}
+	const resolvedTitle = normalizeOptionalString(context.windowTitle);
+	return {
+		title: resolvedTitle ?? windowSelection.title,
+		titleContains: resolvedTitle ? undefined : windowSelection.titleContains,
+		bounds: context.windowBounds,
+	};
+}
+
 function resolveCaptureMode(params: {
 	context: GuiCaptureContext;
 	captureMode?: GuiCaptureMode;
 	includeCursor?: boolean;
 }): {
 	mode: "display" | "window";
-	source: "display" | "region";
 	captureRect: GuiRect;
 	screencaptureArgs: string[];
 } {
@@ -1060,7 +1072,6 @@ function resolveCaptureMode(params: {
 		const captureRect = normalizeRect(params.context.windowBounds);
 		return {
 			mode: "window",
-			source: "region",
 			captureRect,
 			screencaptureArgs: [
 				"-x",
@@ -1074,7 +1085,6 @@ function resolveCaptureMode(params: {
 	}
 	return {
 		mode: "display",
-		source: "display",
 		captureRect: params.context.display.bounds,
 		screencaptureArgs: [
 			"-x",
@@ -1333,13 +1343,14 @@ async function performScroll(
 }
 
 async function performType(params: GuiTypeParams): Promise<GuiNativeActionResult> {
-	const windowSelection = resolveWindowSelection({
+	const windowSelection = await resolveScriptWindowSelection({
+		appName: params.app,
 		windowTitle: params.windowTitle,
 		windowSelector: params.windowSelector,
 	});
 	const actionKind = await runAppleScript(TYPE_SCRIPT, {
 		UNDERSTUDY_GUI_APP: params.app?.trim(),
-		...buildWindowSelectionEnv(windowSelection),
+		...buildScriptWindowSelectionEnv(windowSelection),
 		UNDERSTUDY_GUI_TEXT: params.value,
 		UNDERSTUDY_GUI_REPLACE: params.replace === false ? "0" : "1",
 		UNDERSTUDY_GUI_SUBMIT: params.submit ? "1" : "0",
@@ -1351,7 +1362,8 @@ async function performHotkey(
 	params: GuiKeyParams,
 	repeat: number = 1,
 ): Promise<GuiNativeActionResult> {
-	const windowSelection = resolveWindowSelection({
+	const windowSelection = await resolveScriptWindowSelection({
+		appName: params.app,
 		windowTitle: params.windowTitle,
 		windowSelector: params.windowSelector,
 	});
@@ -1359,7 +1371,7 @@ async function performHotkey(
 	const keyCode = COMMON_KEY_CODES[normalizedKey];
 	const actionKind = await runAppleScript(HOTKEY_SCRIPT, {
 		UNDERSTUDY_GUI_APP: params.app?.trim(),
-		...buildWindowSelectionEnv(windowSelection),
+		...buildScriptWindowSelectionEnv(windowSelection),
 		UNDERSTUDY_GUI_KEY: keyCode ? "" : params.key,
 		UNDERSTUDY_GUI_KEY_CODE: keyCode ? String(keyCode) : "",
 		UNDERSTUDY_GUI_MODIFIERS: (params.modifiers ?? [])
@@ -1388,11 +1400,7 @@ async function captureScreenshotArtifact(params: {
 		windowSelector: windowSelection,
 	});
 	if (windowSelection && params.captureMode !== "display" && !context.windowBounds) {
-		const requestedWindow = describeWindowSelection(windowSelection) ?? "requested window";
-		const appLabel = params.appName?.trim() ? ` for ${params.appName.trim()}` : "";
-		throw new GuiRuntimeError(
-			`Could not find ${requestedWindow}${appLabel}. Check the visible window title or use captureMode "display" if the target spans multiple windows.`,
-		);
+		throw createRequestedWindowNotFoundError(params.appName, windowSelection);
 	}
 	const capture = resolveCaptureMode({
 		context,
@@ -1406,74 +1414,42 @@ async function captureScreenshotArtifact(params: {
 			timeout: DEFAULT_TIMEOUT_MS,
 			maxBuffer: 8 * 1024 * 1024,
 		});
-		let resolvedFilePath = filePath;
 		let bytes: Buffer = Buffer.from(await readFile(filePath));
 		let imageSize = parsePngDimensions(bytes);
 		const captureRect = normalizeRect(capture.captureRect);
-		const displayScaleX = imageSize && context.display.bounds.width > 0
-			? imageSize.width / context.display.bounds.width
-			: 1;
-		const displayScaleY = imageSize && context.display.bounds.height > 0
-			? imageSize.height / context.display.bounds.height
-			: 1;
-		const scaledCaptureRect = imageSize
-			? {
-				width: Math.round(captureRect.width * displayScaleX),
-				height: Math.round(captureRect.height * displayScaleY),
-			}
-			: undefined;
-		if (
-			capture.mode === "window" &&
-			capture.source === "display" &&
-			imageSize &&
-			Math.abs(displayScaleX - displayScaleY) <= 0.1 &&
-			!dimensionsMatchRect(imageSize, scaledCaptureRect ?? captureRect)
-		) {
-			const cropped = await cropWindowCaptureCanvas({
-				sourcePath: filePath,
-				tempDir,
-				captureRect,
-				displayBounds: context.display.bounds,
-				imageSize,
-			});
-			if (cropped) {
-				resolvedFilePath = cropped.filePath;
-				bytes = cropped.bytes;
-				imageSize = cropped.imageSize;
-			}
-		}
 		const scaleX = imageSize?.width && captureRect.width > 0
 			? imageSize.width / captureRect.width
 			: 1;
-			const scaleY = imageSize?.height && captureRect.height > 0
-				? imageSize.height / captureRect.height
-				: 1;
-			return {
-				bytes,
-				filePath: resolvedFilePath,
-				mimeType: "image/png",
-				filename: "gui-screenshot.png",
-				metadata: {
-					mode: capture.mode,
-					captureRect,
-					display: context.display,
-					imageWidth: imageSize?.width,
-					imageHeight: imageSize?.height,
-					scaleX: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
-					scaleY: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1,
-					appName: params.appName,
-					windowTitle: capture.mode === "window" ? context.windowTitle : undefined,
-					windowCount: capture.mode === "window" ? context.windowCount : undefined,
-					windowCaptureStrategy:
-						capture.mode === "window" ? context.windowCaptureStrategy : undefined,
-					cursor: context.cursor,
-					cursorVisible: Boolean(params.includeCursor),
-				},
-				cleanup: async () => {
-					await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-				},
-			};
+		const scaleY = imageSize?.height && captureRect.height > 0
+			? imageSize.height / captureRect.height
+			: 1;
+		return {
+			bytes,
+			filePath,
+			mimeType: "image/png",
+			filename: "gui-screenshot.png",
+			metadata: {
+				mode: capture.mode,
+				captureRect,
+				display: context.display,
+				imageWidth: imageSize?.width,
+				imageHeight: imageSize?.height,
+				scaleX: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
+				scaleY: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1,
+				appName: params.appName,
+				windowTitle: capture.mode === "window" ? context.windowTitle : undefined,
+				windowCount: capture.mode === "window" ? context.windowCount : undefined,
+				windowCaptureStrategy:
+					capture.mode === "window" ? context.windowCaptureStrategy : undefined,
+				cursor: context.cursor,
+				cursorVisible: Boolean(params.includeCursor),
+			},
+			cleanup: async () => {
+				await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+			},
+		};
 	} catch (error) {
+		await rm(tempDir, { recursive: true, force: true }).catch(() => {});
 		const record = error as {
 			message?: string;
 			stderr?: string;

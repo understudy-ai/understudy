@@ -87,7 +87,7 @@ The planner decides which route to use for each step. A single task might browse
 
 **GUI grounding** — dual-model architecture: the main model decides *what* to do, a separate grounding model decides *where* on screen. HiDPI-aware across Retina displays, with automatic high-res refinement for small targets and two grounding modes (simple prediction or multi-round validation with simulation overlays). Grounding benchmark: **30/30 targets resolved** — explicit labels, ambiguous targets, icon-only elements, fuzzy prompts.
 
-For implementation details (coordinate spaces, stabilization, cross-attempt feedback, capture modes), see [Product Design](./docs/Product_Design.md).
+For implementation details (coordinate spaces, stabilization, capture modes), see [Product Design](./docs/Product_Design.md).
 
 ### Layer 2 — Learn from Demonstrations
 

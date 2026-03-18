@@ -12,6 +12,7 @@ import type { UnderstudyConfig } from "@understudy/types";
 import {
 	createModelLoopGroundingProvider,
 	createOpenAIGroundingProvider,
+	DEFAULT_OPENAI_GROUNDING_MODEL,
 	type GuiGroundingProvider,
 } from "@understudy/tools";
 
@@ -56,6 +57,10 @@ type OpenAIReasoningEffort = Exclude<RuntimeThinkingLevel, "off">;
 type SharedModelLoopProviderOptions = Parameters<typeof createModelLoopGroundingProvider>[0];
 type RuntimeGuideImageImpl = SharedModelLoopProviderOptions["guideImageImpl"];
 type RuntimeSimulationImageImpl = SharedModelLoopProviderOptions["simulationImageImpl"];
+
+export function clearOAuthGroundingProbeCacheForTest(): void {
+	oauthGroundingProbeCache.clear();
+}
 
 function buildProbeCacheKey(baseUrl: string, model: string, apiKey: string): string {
 	return createHash("sha256")
@@ -118,8 +123,17 @@ async function probeOpenAIResponsesAccess(params: {
 		}
 	})();
 
-	oauthGroundingProbeCache.set(cacheKey, pending);
-	return pending;
+	const cachedPromise = pending.then((result) => {
+		if (!result.ok) {
+			oauthGroundingProbeCache.delete(cacheKey);
+		}
+		return result;
+	}, (error) => {
+		oauthGroundingProbeCache.delete(cacheKey);
+		throw error;
+	});
+	oauthGroundingProbeCache.set(cacheKey, cachedPromise);
+	return await cachedPromise;
 }
 
 function providerAliases(provider: string): string[] {
@@ -637,7 +651,7 @@ function resolveExplicitOpenAIGroundingProviderFromEnv(
 	const reasoningEffort = toOpenAIReasoningEffort(resolveGuiGroundingThinkingLevel(config));
 	const label =
 		process.env.UNDERSTUDY_GUI_GROUNDING_PROVIDER?.trim() ||
-		(model ? `openai:${model}` : "openai:gpt-5.4");
+		(model ? `openai:${model}` : `openai:${DEFAULT_OPENAI_GROUNDING_MODEL}`);
 	return {
 		available: true,
 		label,

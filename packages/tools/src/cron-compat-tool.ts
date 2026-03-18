@@ -258,10 +258,10 @@ function buildAddParams(
 		action: "create",
 		name: asString(mergedJob.name) ?? `job_${Date.now().toString(36)}`,
 		schedule: schedule.schedule,
-		scheduleOptions: schedule.scheduleOptions,
 		command,
-		enabled: asBoolean(mergedJob.enabled),
-		delivery: normalizeDelivery(asRecord(mergedJob.delivery)),
+		...(typeof mergedJob.enabled === "boolean" ? { enabled: mergedJob.enabled } : {}),
+		...(schedule.scheduleOptions ? { scheduleOptions: schedule.scheduleOptions } : {}),
+		...(normalizeDelivery(asRecord(mergedJob.delivery)) ? { delivery: normalizeDelivery(asRecord(mergedJob.delivery)) } : {}),
 	};
 }
 
@@ -269,48 +269,51 @@ function buildUpdateParams(
 	params: CronCompatibilityParams,
 	notes: string[],
 ): Record<string, unknown> {
-	const patch = asRecord(params.patch);
-	const effectivePatch = Object.keys(patch).length > 0 ? patch : {
-		name: params.name,
-		message: params.message,
-		schedule: params.schedule,
-		payload: params.payload,
-		delivery: params.delivery,
-		enabled: params.enabled,
-	};
-	const translated: Record<string, unknown> = {
-		action: "update",
-		id: asString(params.jobId) ?? asString(params.id),
-	};
-	if (!translated.id) {
+	const patch = Object.keys(asRecord(params.patch)).length > 0
+		? asRecord(params.patch)
+		: {
+			...(params.name !== undefined ? { name: params.name } : {}),
+			...(params.message !== undefined ? { message: params.message } : {}),
+			...(params.schedule !== undefined ? { schedule: params.schedule } : {}),
+			...(params.payload !== undefined ? { payload: params.payload } : {}),
+			...(params.delivery !== undefined ? { delivery: params.delivery } : {}),
+			...(params.enabled !== undefined ? { enabled: params.enabled } : {}),
+		};
+	const id = asString(params.jobId) ?? asString(params.id);
+	if (!id) {
 		throw new Error("OpenClaw cron compatibility requires jobId (or legacy id) for update");
 	}
-	if (asString(effectivePatch.name)) {
-		translated.name = asString(effectivePatch.name);
+
+	const update: Record<string, unknown> = {
+		action: "update",
+		id,
+	};
+	if (patch.name !== undefined) update.name = asString(patch.name);
+	if (patch.enabled !== undefined) update.enabled = asBoolean(patch.enabled);
+	if (patch.schedule !== undefined) {
+		const schedule = normalizeSchedule(asRecord(patch.schedule), notes);
+		update.schedule = schedule.schedule;
+		if (schedule.scheduleOptions) {
+			update.scheduleOptions = schedule.scheduleOptions;
+		}
 	}
-	if (effectivePatch.schedule) {
-		const schedule = normalizeSchedule(asRecord(effectivePatch.schedule), notes);
-		translated.schedule = schedule.schedule;
-		translated.scheduleOptions = schedule.scheduleOptions;
+	if (patch.payload !== undefined) {
+		update.command = normalizePayload(asRecord(patch.payload), notes);
+	} else if (patch.message !== undefined) {
+		update.command = asString(patch.message);
 	}
-	if (effectivePatch.payload || asString(effectivePatch.message)) {
-		const payloadInput = asRecord(effectivePatch.payload);
-		translated.command = Object.keys(payloadInput).length > 0
-			? normalizePayload(payloadInput, notes)
-			: asString(effectivePatch.message);
+	if (patch.delivery !== undefined) {
+		const delivery = normalizeDelivery(asRecord(patch.delivery));
+		if (delivery) {
+			update.delivery = delivery;
+		}
 	}
-	if (effectivePatch.enabled !== undefined) {
-		translated.enabled = asBoolean(effectivePatch.enabled);
-	}
-	if (effectivePatch.delivery) {
-		translated.delivery = normalizeDelivery(asRecord(effectivePatch.delivery));
-	}
-	if (asString(effectivePatch.sessionTarget)) {
+	if (asString(patch.sessionTarget)) {
 		notes.push(
 			"OpenClaw cron compatibility note: update.sessionTarget is ignored because Understudy schedules do not expose that routing knob.",
 		);
 	}
-	return translated;
+	return update;
 }
 
 export function createOpenClawCronCompatibilityTool(
@@ -320,48 +323,59 @@ export function createOpenClawCronCompatibilityTool(
 		name: "cron",
 		label: "cron",
 		description:
-			"OpenClaw-compatible scheduling surface backed by Understudy's native schedule tool. " +
+			"OpenClaw compatibility alias for Understudy schedule management. " +
 			"Use this for direct OpenClaw skill migration when a skill already speaks cron job objects.",
 		parameters: CronCompatibilitySchema,
-		execute: async (
-			toolCallId,
-			rawParams: CronCompatibilityParams,
-			signal,
-			onUpdate,
-		): Promise<AgentToolResult<unknown>> => {
-			const action = asString(rawParams.action)?.toLowerCase();
+		execute: async (_toolCallId, rawParams, signal, onUpdate) => {
 			const notes: string[] = [];
 			try {
-				switch (action) {
+				switch (String(rawParams.action || "").trim().toLowerCase()) {
 					case "status":
+						return prependNotes(
+							await scheduleTool.execute(
+								_toolCallId,
+								{ action: "status" },
+								signal,
+								onUpdate,
+							),
+							notes,
+						);
 					case "list":
-						return await scheduleTool.execute(toolCallId, { action }, signal, onUpdate);
-
+						return prependNotes(
+							await scheduleTool.execute(
+								_toolCallId,
+								{
+									action: "list",
+									...(typeof rawParams.limit === "number" ? { limit: rawParams.limit } : {}),
+								},
+								signal,
+								onUpdate,
+							),
+							notes,
+						);
 					case "add":
 						return prependNotes(
 							await scheduleTool.execute(
-								toolCallId,
+								_toolCallId,
 								buildAddParams(rawParams, notes),
 								signal,
 								onUpdate,
 							),
 							notes,
 						);
-
 					case "update":
 						return prependNotes(
 							await scheduleTool.execute(
-								toolCallId,
+								_toolCallId,
 								buildUpdateParams(rawParams, notes),
 								signal,
 								onUpdate,
 							),
 							notes,
 						);
-
 					case "remove":
 						return await scheduleTool.execute(
-							toolCallId,
+							_toolCallId,
 							{
 								action: "remove",
 								id: asString(rawParams.jobId) ?? asString(rawParams.id),
@@ -369,11 +383,10 @@ export function createOpenClawCronCompatibilityTool(
 							signal,
 							onUpdate,
 						);
-
 					case "run":
 						return prependNotes(
 							await scheduleTool.execute(
-								toolCallId,
+								_toolCallId,
 								{
 									action: "run",
 									id: asString(rawParams.jobId) ?? asString(rawParams.id),
@@ -381,16 +394,15 @@ export function createOpenClawCronCompatibilityTool(
 								signal,
 								onUpdate,
 							),
-							rawParams.runMode
+							typeof rawParams.runMode === "string"
 								? [
 									`OpenClaw cron compatibility note: runMode=${String(rawParams.runMode)} is ignored because Understudy's scheduler exposes a single immediate-run behavior.`,
 								]
-								: [],
+								: notes,
 						);
-
 					case "runs":
 						return await scheduleTool.execute(
-							toolCallId,
+							_toolCallId,
 							{
 								action: "runs",
 								id: asString(rawParams.jobId) ?? asString(rawParams.id),
@@ -399,24 +411,26 @@ export function createOpenClawCronCompatibilityTool(
 							signal,
 							onUpdate,
 						);
-
 					case "wake":
 						if (asString(rawParams.text)) {
 							return errorResult(
 								"OpenClaw cron compatibility does not support wake text injection in Understudy. Use a scheduled systemEvent/agentTurn job instead.",
 							);
 						}
-						return await scheduleTool.execute(toolCallId, { action: "wake" }, signal, onUpdate);
-
+						return await scheduleTool.execute(
+							_toolCallId,
+							{ action: "wake" },
+							signal,
+							onUpdate,
+						);
 					default:
 						return errorResult(`Unknown cron action: ${rawParams.action}`);
 				}
 			} catch (error) {
-				return errorResult(
-					error instanceof Error
-						? `OpenClaw cron compatibility error: ${error.message}`
-						: `OpenClaw cron compatibility error: ${String(error)}`,
-				);
+				const message = error instanceof Error
+					? `OpenClaw cron compatibility error: ${error.message}`
+					: `OpenClaw cron compatibility error: ${String(error)}`;
+				return errorResult(message);
 			}
 		},
 	};

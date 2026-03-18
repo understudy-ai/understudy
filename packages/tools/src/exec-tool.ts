@@ -1,10 +1,8 @@
 /**
- * OpenClaw-compatible exec tool for Understudy.
+ * Exec tool for Understudy.
  *
- * This is an intentional migration surface so OpenClaw skills can keep using
- * exec/process background continuation after moving to Understudy. It is not a
- * temporary shim for old Understudy behavior and should not be treated as dead
- * compatibility code during cleanup.
+ * Supports foreground execution plus background sessions that can be inspected
+ * and controlled through the companion `process` tool.
  */
 
 import { spawn } from "node:child_process";
@@ -18,7 +16,7 @@ import {
 	finalizeExecSession,
 	markExecSessionBackgrounded,
 	type ExecSessionRecord,
-} from "./openclaw-exec-sessions.js";
+} from "./exec-sessions.js";
 
 const DEFAULT_YIELD_MS = 10_000;
 const DEFAULT_TIMEOUT_SECONDS = 1_800;
@@ -40,7 +38,7 @@ const ExecToolSchema = Type.Object({
 	yieldMs: Type.Optional(
 		Type.Number({
 			description:
-				"Milliseconds to wait before returning a background session. OpenClaw defaults to 10000.",
+				"Milliseconds to wait before returning a background session. Defaults to 10000.",
 		}),
 	),
 	background: Type.Optional(
@@ -56,13 +54,13 @@ const ExecToolSchema = Type.Object({
 	elevated: Type.Optional(
 		Type.Boolean({
 			description:
-				"OpenClaw compatibility flag. Understudy keeps the field for skill portability, but this runtime does not implement elevated host execution here.",
+				"Reserved for elevated execution. This runtime does not implement elevated host execution here.",
 		}),
 	),
 	pty: Type.Optional(
 		Type.Boolean({
 			description:
-				"OpenClaw compatibility flag. Understudy keeps the field for skill portability, but this runtime currently uses piped stdio instead of a real PTY.",
+				"Reserved for PTY execution. This runtime currently uses piped stdio instead of a real PTY.",
 		}),
 	),
 });
@@ -196,7 +194,7 @@ export function createExecTool(): AgentTool<typeof ExecToolSchema> {
 		name: "exec",
 		label: "exec",
 		description:
-			"Execute shell commands with OpenClaw-compatible background continuation. " +
+			"Execute shell commands with background continuation support. " +
 			"Use process.* actions with sessionId for long-running or interactive commands.",
 		parameters: ExecToolSchema,
 		execute: async (
@@ -215,23 +213,23 @@ export function createExecTool(): AgentTool<typeof ExecToolSchema> {
 			const notes: string[] = [];
 			if (params.elevated === true) {
 				notes.push(
-					"OpenClaw exec compatibility note: elevated=true is preserved for skill portability, but this Understudy runtime executes in its normal local permission context.",
+					"Exec note: elevated=true is accepted, but this Understudy runtime executes in its normal local permission context.",
 				);
 			}
 			if (params.pty === true) {
 				notes.push(
-					"OpenClaw exec compatibility note: this Understudy runtime preserves the pty flag for skill portability, but currently executes with piped stdio instead of a real PTY.",
+					"Exec note: pty=true is accepted, but this Understudy runtime currently uses piped stdio instead of a real PTY.",
 				);
 			}
 
-				const child = spawn(resolveShellExecutable(), ["-lc", command], {
-					cwd: params.workdir?.trim() || process.cwd(),
-					env: {
-						...process.env,
-						...params.env,
-					},
-					stdio: ["pipe", "pipe", "pipe"],
-				});
+			const child = spawn(resolveShellExecutable(), ["-c", command], {
+				cwd: params.workdir?.trim() || process.cwd(),
+				env: {
+					...process.env,
+					...params.env,
+				},
+				stdio: ["pipe", "pipe", "pipe"],
+			});
 
 			const session = createExecSessionRecord({
 				command,

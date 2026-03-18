@@ -1,9 +1,8 @@
 /**
- * Shared exec-session registry for the OpenClaw migration surface.
+ * Shared exec-session registry for Understudy.
  *
- * This is intentional cross-product compatibility, not legacy cleanup debt:
- * Understudy keeps these session semantics so OpenClaw skills that depend on
- * exec/process background continuation can move over without being rewritten.
+ * Stores background exec runs so the `process` tool can inspect, poll, and
+ * control them across turns.
  */
 
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -107,22 +106,10 @@ function capPendingBuffer(buffer: string[], currentChars: number, cap: number): 
 	if (currentChars <= cap) {
 		return currentChars;
 	}
-	const last = buffer.at(-1);
-	if (last && last.length >= cap) {
-		buffer.length = 0;
-		buffer.push(last.slice(last.length - cap));
-		return cap;
-	}
-	while (buffer.length > 0 && currentChars - buffer[0]!.length >= cap) {
-		currentChars -= buffer[0]!.length;
-		buffer.shift();
-	}
-	if (buffer.length > 0 && currentChars > cap) {
-		const overflow = currentChars - cap;
-		buffer[0] = buffer[0]!.slice(overflow);
-		currentChars = cap;
-	}
-	return currentChars;
+	const combined = buffer.join("");
+	buffer.length = 0;
+	buffer.push(combined.slice(combined.length - cap));
+	return Math.min(cap, combined.length);
 }
 
 export function tailExecOutput(text: string, maxChars = 2_000): string {
@@ -191,7 +178,7 @@ export function getFinishedExecSession(id: string): FinishedExecSessionRecord | 
 }
 
 export function listRunningExecSessions(): ExecSessionRecord[] {
-	return Array.from(runningSessions.values()).filter((session) => session.backgrounded);
+	return Array.from(runningSessions.values());
 }
 
 export function listFinishedExecSessions(): FinishedExecSessionRecord[] {

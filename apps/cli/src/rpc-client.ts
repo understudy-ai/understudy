@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 
 export interface RpcClientOptions {
+	baseUrl?: string;
 	host?: string;
 	port?: number;
 	token?: string;
@@ -21,9 +22,14 @@ export class GatewayRpcClient {
 	private timeout: number;
 
 	constructor(options: RpcClientOptions = {}) {
-		const host = options.host ?? "127.0.0.1";
-		const port = options.port ?? 23333;
-		this.baseUrl = `http://${host}:${port}`;
+		const configuredBaseUrl = options.baseUrl?.trim();
+		if (configuredBaseUrl) {
+			this.baseUrl = configuredBaseUrl.replace(/\/+$/, "");
+		} else {
+			const host = options.host ?? "127.0.0.1";
+			const port = options.port ?? 23333;
+			this.baseUrl = `http://${host}:${port}`;
+		}
 		this.token = options.token ?? process.env.UNDERSTUDY_GATEWAY_TOKEN;
 		this.timeout = options.timeout ?? 30_000;
 	}

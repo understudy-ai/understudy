@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +14,10 @@ import {
 	prepareGuiGroundingBenchmarkPage,
 	type GuiGroundingBenchmarkTruth,
 } from "./__tests__/gui-benchmark-fixture.js";
-import { resolveMainModelGuiGroundingProvider } from "./gui-grounding.js";
+import {
+	clearOAuthGroundingProbeCacheForTest,
+	resolveMainModelGuiGroundingProvider,
+} from "./gui-grounding.js";
 
 const shouldRunRealGroundingTests = process.env.UNDERSTUDY_RUN_REAL_GROUNDING_TESTS === "1";
 const shouldRunResizeGroundingTests = process.env.UNDERSTUDY_RUN_REAL_GROUNDING_RESIZE_TESTS === "1";
@@ -26,6 +29,10 @@ const BENCHMARK_TIMEOUT_MS = 1_200_000;
 const DEFAULT_BENCHMARK_CONCURRENCY = 1;
 const MIN_ALLOWED_POINT_DISTANCE_PX = 24;
 const MAX_ALLOWED_POINT_DISTANCE_PX = 160;
+
+afterEach(() => {
+	clearOAuthGroundingProbeCacheForTest();
+});
 const RESIZE_STABILITY_CASE_IDS = [
 	"sidebar-downloads",
 	"hero-open-fuzzy",

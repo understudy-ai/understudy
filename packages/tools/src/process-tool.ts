@@ -1,10 +1,8 @@
 /**
  * Process management tool for Understudy.
  *
- * The session-oriented actions in this file are intentional OpenClaw migration
- * compatibility so existing skills can continue using exec/process workflows
- * after moving to Understudy. They are product surface, not removable legacy
- * support for an old Understudy release.
+ * Host process actions inspect and control local PIDs. Session-oriented actions
+ * manage background `exec` runs created by this runtime.
  */
 
 import { execSync } from "node:child_process";
@@ -19,13 +17,13 @@ import {
 	listRunningExecSessions,
 	type ExecSessionRecord,
 	type FinishedExecSessionRecord,
-} from "./openclaw-exec-sessions.js";
+} from "./exec-sessions.js";
 
 const ProcessSchema = Type.Object({
 	action: Type.String({
 		description:
 			'Action to perform. Host PID actions: "list", "info", "kill". ' +
-			'OpenClaw-compatible exec session actions: "poll", "log", "write", "send-keys", "submit", "paste", "clear", "remove".',
+			'Exec session actions: "poll", "log", "write", "send-keys", "submit", "paste", "clear", "remove".',
 	}),
 	pid: Type.Optional(
 		Type.Number({
@@ -34,7 +32,7 @@ const ProcessSchema = Type.Object({
 	),
 	sessionId: Type.Optional(
 		Type.String({
-			description: "Exec session id for OpenClaw-compatible session actions.",
+			description: "Exec session id for session-oriented actions.",
 		}),
 	),
 	signal: Type.Optional(
@@ -70,7 +68,7 @@ const ProcessSchema = Type.Object({
 	bracketed: Type.Optional(
 		Type.Boolean({
 			description:
-				"Compatibility flag from OpenClaw paste. Understudy keeps the field for portability but writes plain stdin text in this runtime.",
+				"Reserved for bracketed paste handling. This runtime writes plain stdin text.",
 		}),
 	),
 	eof: Type.Optional(
@@ -96,7 +94,7 @@ const ProcessSchema = Type.Object({
 			}),
 			Type.String({
 				description:
-					"OpenClaw-compatible string form of the poll timeout in milliseconds.",
+					"String form of the poll timeout in milliseconds.",
 			}),
 		]),
 	),
@@ -494,7 +492,7 @@ export function createProcessTool(): AgentTool<typeof ProcessSchema> {
 		name: "process",
 		label: "Process Manager",
 		description:
-			"Inspect host processes and manage OpenClaw-compatible exec sessions. " +
+			"Inspect host processes and manage background exec sessions. " +
 			'Use "list/info/kill" for host PIDs and "poll/log/write/submit/paste/remove" for exec sessionIds.',
 		parameters: ProcessSchema,
 		execute: async (_toolCallId, params: ProcessParams): Promise<AgentToolResult<unknown>> => {
