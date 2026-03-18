@@ -99,7 +99,7 @@ export function mergeKnownModels(
 	return Object.fromEntries(
 		Array.from(merged.entries())
 			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([provider, models]) => [provider, Array.from(models).sort()]),
+			.map(([provider, models]) => [provider, Array.from(models)]),
 	);
 }
 
