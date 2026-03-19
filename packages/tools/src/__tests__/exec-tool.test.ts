@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createExecTool } from "../exec-tool.js";
-import { clearExecSessionsForTest } from "../openclaw-exec-sessions.js";
+import { clearExecSessionsForTest } from "../exec-sessions.js";
 import { createProcessTool } from "../process-tool.js";
 
 const nodeBin = JSON.stringify(process.execPath);
@@ -67,7 +67,7 @@ describe("createExecTool", () => {
 			expect([aggregated, ...seenPollTexts].join("\n")).toContain("done");
 		});
 
-	it("supports OpenClaw-style session writes and submit", async () => {
+	it("supports session writes and submit for background exec runs", async () => {
 		const execTool = createExecTool();
 		const processTool = createProcessTool();
 		const started = await execTool.execute("id", {

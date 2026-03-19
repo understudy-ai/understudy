@@ -65,7 +65,23 @@ jobs:
       - name: Release check
         run: pnpm release:check
 
+      - name: Read package metadata
+        id: package_metadata
+        run: |
+          echo "name=$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check npm publish state
+        id: npm_publish_state
+        run: |
+          if npm view "${{ steps.package_metadata.outputs.name }}@${{ steps.package_metadata.outputs.version }}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.npm_publish_state.outputs.published != 'true'
         run: npm publish --access public
 
       - name: Setup Node.js for GitHub Packages
@@ -75,7 +91,19 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@understudy-ai"
 
+      - name: Check GitHub Packages publish state
+        id: github_packages_publish_state
+        run: |
+          if npm view "${{ steps.package_metadata.outputs.name }}@${{ steps.package_metadata.outputs.version }}" version --registry https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to GitHub Packages
+        if: steps.github_packages_publish_state.outputs.published != 'true'
         run: npm publish --registry https://npm.pkg.github.com
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

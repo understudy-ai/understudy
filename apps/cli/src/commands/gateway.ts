@@ -42,6 +42,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AgentProfileConfig, Attachment, ChannelAdapter, UnderstudyConfig } from "@understudy/types";
 import { loadUnderstudyPlugins } from "@understudy/plugins";
+import { createGatewayPluginRuntime } from "./gateway-plugin-runtime.js";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, cp, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -131,6 +132,7 @@ import { BUILTIN_MODELS, mergeKnownModels } from "./model-support.js";
 import {
 	createConfiguredRuntimeToolset,
 	listConfiguredRuntimeToolCatalog,
+	resolveConfiguredPlatformCapabilities,
 } from "./runtime-tooling.js";
 interface GatewayOptions {
 	port?: string;
@@ -353,6 +355,14 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 		configPath: configManager.getPath(),
 		cwd: process.cwd(),
 	});
+	const pluginRuntime = createGatewayPluginRuntime({
+		configManager,
+		pluginRegistry,
+		gatewayUrl,
+		stateRoot: join(resolveUnderstudyHomeDir(), "plugins"),
+		cwd: process.cwd(),
+	});
+	pluginRuntime.logDiagnostics();
 	const { channels, warnings } = buildChannelsFromConfig({
 		channels: config.channels ?? {},
 		host,
@@ -706,6 +716,16 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 
 	const listToolCatalog = async (): Promise<unknown> => {
 		const currentConfig = configManager.get();
+		const platformCapabilities = await resolveConfiguredPlatformCapabilities({
+			cwd: resolveGatewayWorkspaceDir(currentConfig),
+			config: currentConfig,
+			browserOptions: () => resolveConfiguredBrowserOptions(configManager.get()),
+			memoryProvider: memoryProvider ?? undefined,
+			scheduleService: scheduleService ?? undefined,
+			getChannel: () => undefined,
+			gatewayUrl,
+			platformCapabilities: pluginRegistry.getPlatformCapabilities(),
+		});
 		return {
 			...await listConfiguredRuntimeToolCatalog({
 				cwd: resolveGatewayWorkspaceDir(currentConfig),
@@ -716,8 +736,10 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 				getChannel: () => undefined,
 				gatewayUrl,
 				toolFactories: pluginRegistry.getToolFactories(),
+				platformCapabilities: pluginRegistry.getPlatformCapabilities(),
 				additionalTools: mcpTools,
 			}),
+			platformCapabilities,
 			mcpServers: mcpStatuses.map((status) => ({
 				server: status.server,
 				connected: status.connected,
@@ -2450,6 +2472,21 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 		return trace;
 	}
 
+	function buildSessionHookPayload(
+		entry: SessionEntry,
+		runId: string,
+	): Record<string, unknown> {
+		return {
+			sessionId: entry.id,
+			sessionKey: entry.id,
+			channelId: entry.channelId,
+			senderId: entry.senderId,
+			threadId: entry.threadId,
+			workspaceDir: entry.workspaceDir,
+			runId,
+		};
+	}
+
 	async function promptSession(
 		entry: SessionEntry,
 		text: string,
@@ -2490,6 +2527,11 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 				})
 				: undefined;
 		try {
+			await pluginRuntime.runHook("before_session_prompt", {
+				...buildSessionHookPayload(entry, runId),
+				prompt: text,
+				details: promptOptions ? { promptOptions } : undefined,
+			});
 			const aggregatedToolTrace: Array<Record<string, unknown>> = [];
 			const aggregatedUsage: Record<string, number> = {};
 			const attempts: Array<Record<string, unknown>> = [];
@@ -2558,6 +2600,13 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 				...(images?.length ? { images } : {}),
 				meta,
 			});
+			await pluginRuntime.runHook("after_session_prompt", {
+				...buildSessionHookPayload(entry, runId),
+				prompt: text,
+				response,
+				meta,
+				details: promptOptions ? { promptOptions } : undefined,
+			});
 			return {
 				response,
 				runId,
@@ -2566,6 +2615,12 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
+			await pluginRuntime.runHook("after_session_prompt", {
+				...buildSessionHookPayload(entry, runId),
+				prompt: text,
+				error: message,
+				details: promptOptions ? { promptOptions } : undefined,
+			});
 			runRegistry.errorRun({
 				runId,
 				sessionId: entry.id,
@@ -2652,6 +2707,7 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 				threadId: context.threadId,
 				...(context.senderId ? { senderId: context.senderId } : {}),
 				toolFactories: pluginRegistry.getToolFactories(),
+				platformCapabilities: () => pluginRegistry.getPlatformCapabilities(),
 				spawnSubagent: async (params) => {
 				if (!sessionRuntime?.sessionHandlers.spawnSubagent) {
 					throw new Error("Subagent spawning is not available yet");
@@ -2737,8 +2793,12 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 		const sessionMeta = {
 			...(result.sessionMeta as unknown as Record<string, unknown>),
 			traceId: sessionTrace.traceId,
+			thinkingLevel:
+				context.thinkingLevel ??
+				currentConfig.defaultThinkingLevel ??
+				(result.sessionMeta as { thinkingLevel?: unknown } | undefined)?.thinkingLevel,
 		};
-		return {
+		const sessionEntry = {
 			id: context.sessionKey,
 			parentId: context.parentId,
 			forkPoint: context.forkPoint,
@@ -2764,6 +2824,20 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 			sessionMeta,
 			history: [],
 		} as SessionEntry & { runtimeSession?: unknown };
+		await pluginRuntime.runHook("session_create", {
+			sessionId: sessionEntry.id,
+			sessionKey: context.sessionKey,
+			channelId: context.channelId,
+			senderId: context.senderId,
+			threadId: context.threadId,
+			workspaceDir: workspaceDir,
+			details: {
+				parentId: context.parentId,
+				executionScopeKey: context.executionScopeKey,
+				explicitWorkspace: context.explicitWorkspace === true,
+			},
+		});
+		return sessionEntry;
 	}
 
 	async function getOrCreateSession(context: {
@@ -3102,6 +3176,11 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 	}
 
 	await gateway.start();
+	await pluginRuntime.onGatewayStart({
+		host,
+		port,
+		webPort,
+	});
 
 		try {
 			browserExtensionRelay = await ensureUnderstudyChromeExtensionRelayServer({
@@ -3191,6 +3270,11 @@ export async function runGatewayCommand(opts: GatewayOptions = {}): Promise<void
 			if (memoryProvider) {
 				await memoryProvider.close().catch(() => {});
 			}
+			await pluginRuntime.onGatewayStop({
+				host,
+				port,
+				webPort,
+			});
 			configReloader.stop();
 		},
 	});

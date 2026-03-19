@@ -9,7 +9,10 @@ export { createImageTool } from "./image-tool.js";
 export { createVisionReadTool } from "./vision-read-tool.js";
 export { createPdfTool } from "./pdf-tool.js";
 export type { GuiGroundingProvider } from "@understudy/gui";
-export { createOpenAIGroundingProvider } from "./openai-grounding-provider.js";
+export {
+	createOpenAIGroundingProvider,
+	DEFAULT_OPENAI_GROUNDING_MODEL,
+} from "./openai-grounding-provider.js";
 export {
 	buildGroundingPrompt,
 	buildGroundingValidationPrompt,
@@ -77,6 +80,15 @@ export type {
 	RuntimeToolFactory,
 	RuntimeToolsetOptions,
 } from "./runtime-toolset.js";
+export {
+	formatRuntimePlatformCapabilities,
+	normalizeRuntimePlatformCapabilities,
+} from "./platform-capabilities.js";
+export type {
+	RuntimePlatformCapability,
+	RuntimePlatformCapabilitySource,
+} from "./platform-capabilities.js";
+export { createPlatformCapabilitiesTool } from "./platform-capabilities-tool.js";
 export {
 	buildTeachCapabilitySnapshot,
 	formatTeachCapabilitySnapshotForPrompt,

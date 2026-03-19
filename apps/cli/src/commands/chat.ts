@@ -17,10 +17,12 @@ import {
 	normalizeAssistantRenderableText,
 } from "@understudy/gateway";
 import { InteractiveMode, SessionManager } from "@mariozechner/pi-coding-agent";
+import { loadUnderstudyPlugins } from "@understudy/plugins";
 import { createMemoryProvider, ScheduleService } from "@understudy/tools";
 import type { Model } from "@mariozechner/pi-ai";
 import type { UnderstudyConfig } from "@understudy/types";
 import { mergeCliPromptText, prepareCliPromptInput } from "./cli-prompt-input.js";
+import { GatewayRpcClient } from "../rpc-client.js";
 import { resolveMemoryDbPath } from "./gateway-support.js";
 import { applyUnderstudyBranding } from "./chat-branding.js";
 import { resolveConfiguredBrowserOptions } from "./browser-extension.js";
@@ -28,7 +30,13 @@ import { createBrowserExtensionRelayController } from "./browser-extension-relay
 import { installInteractiveBrowserExtensionSupport } from "./chat-interactive-browser-extension.js";
 import { installInteractiveChatMediaSupport } from "./chat-interactive-media.js";
 import { installInteractiveTeachSupport } from "./chat-interactive-teach.js";
-import { CLI_MODEL_FORMAT_ERROR, parseThinkingLevel, resolveCliModel } from "./model-support.js";
+import { createGatewayBackedInteractiveSession } from "./chat-gateway-session.js";
+import {
+	buildGatewayConfigOverride,
+	CLI_MODEL_FORMAT_ERROR,
+	parseThinkingLevel,
+	resolveCliModel,
+} from "./model-support.js";
 import { createConfiguredRuntimeToolset } from "./runtime-tooling.js";
 
 interface ChatOptions {
@@ -45,6 +53,8 @@ interface ChatOptions {
 interface InteractiveChatRuntime {
 	tools: any[];
 	relayController: ReturnType<typeof createBrowserExtensionRelayController>;
+	gatewayUrl: string;
+	gatewayToken?: string;
 	attachSession(session: { runScheduledJob?: (text: string) => Promise<void> | void }): void;
 	close(): Promise<void>;
 }
@@ -161,18 +171,30 @@ async function probeGatewayHealth(gatewayUrl: string): Promise<boolean> {
 	}
 }
 
-async function resolveInteractiveGatewayUrl(config: UnderstudyConfig): Promise<string | undefined> {
+async function resolveInteractiveGatewayUrl(config: UnderstudyConfig): Promise<string> {
 	if (config.gateway?.auth?.mode === "password") {
-		return undefined;
+		throw new Error(
+			"Gateway-backed interactive chat does not support password auth. Configure token auth or disable gateway auth for local use.",
+		);
 	}
 	const explicitUrl = normalizeGatewayUrl(process.env.UNDERSTUDY_GATEWAY_URL);
 	if (explicitUrl) {
-		return await probeGatewayHealth(explicitUrl) ? explicitUrl : undefined;
+		if (await probeGatewayHealth(explicitUrl)) {
+			return explicitUrl;
+		}
+		throw new Error(
+			`Gateway-backed interactive chat requires a running Understudy gateway at ${explicitUrl}. Start the gateway or update UNDERSTUDY_GATEWAY_URL.`,
+		);
 	}
 	const host = process.env.UNDERSTUDY_GATEWAY_HOST?.trim() || config.gateway?.host || "127.0.0.1";
 	const port = process.env.UNDERSTUDY_GATEWAY_PORT?.trim() || String(config.gateway?.port ?? 23333);
 	const candidate = normalizeGatewayUrl(`http://${host}:${port}`);
-	return candidate && await probeGatewayHealth(candidate) ? candidate : undefined;
+	if (candidate && await probeGatewayHealth(candidate)) {
+		return candidate;
+	}
+	throw new Error(
+		`Gateway-backed interactive chat requires a running Understudy gateway at ${candidate ?? "the configured gateway address"}. Start it with \`understudy gateway\` or set UNDERSTUDY_GATEWAY_URL.`,
+	);
 }
 
 async function createInteractiveChatRuntime(params: {
@@ -199,6 +221,11 @@ async function createInteractiveChatRuntime(params: {
 			dbPath: resolveMemoryDbPath(params.config),
 		})
 		: null;
+	const pluginRegistry = await loadUnderstudyPlugins({
+		config: params.config,
+		configPath: params.configManager.getPath(),
+		cwd: params.cwd,
+	});
 	const gatewayUrl = await resolveInteractiveGatewayUrl(params.config);
 	let activeSession:
 		| { runScheduledJob?: (text: string) => Promise<void> | void }
@@ -221,9 +248,6 @@ async function createInteractiveChatRuntime(params: {
 	await scheduleService.start();
 	const gatewayToken = process.env.UNDERSTUDY_GATEWAY_TOKEN?.trim()
 		|| params.config.gateway?.auth?.token?.trim();
-	if (gatewayUrl && gatewayToken && !process.env.UNDERSTUDY_GATEWAY_TOKEN) {
-		process.env.UNDERSTUDY_GATEWAY_TOKEN = gatewayToken;
-	}
 	return {
 		tools: await createConfiguredRuntimeToolset({
 			cwd: params.cwd,
@@ -234,8 +258,12 @@ async function createInteractiveChatRuntime(params: {
 			scheduleService,
 			channel: "tui",
 			gatewayUrl,
+			toolFactories: pluginRegistry.getToolFactories(),
+			platformCapabilities: () => pluginRegistry.getPlatformCapabilities(),
 		}),
 		relayController,
+		gatewayUrl,
+		gatewayToken,
 		attachSession: (session) => {
 			activeSession = session;
 			resolveActiveSessionReady?.();
@@ -284,14 +312,9 @@ async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<Ret
 		model,
 	});
 
-	let sessionManager: SessionManager | undefined;
-	if (opts.continue) {
-		sessionManager = SessionManager.continueRecent(cwd);
-		console.log(`Using session: ${sessionManager.getSessionId()}`);
-	}
-
 	const initialMessageRaw = mergeCliPromptText(opts.message, promptInput);
 	const initialMessage = initialMessageRaw.trim().length > 0 ? initialMessageRaw : undefined;
+	const gatewayConfigOverride = buildGatewayConfigOverride(opts.model, opts.thinking);
 	const createdSession = await createUnderstudySession({
 		config,
 		configPath: configManager.getPath(),
@@ -300,9 +323,9 @@ async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<Ret
 		model,
 		thinkingLevel,
 		extraTools: toolRuntime.tools,
-		sessionManager,
+		sessionManager: SessionManager.inMemory(cwd),
 	} as any);
-	const session = createdSession.session as {
+	let session = createdSession.session as {
 		sendCustomMessage?: (
 			message: {
 				customType: string;
@@ -317,7 +340,25 @@ async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<Ret
 			replaceMessages?: (messages: unknown[]) => void;
 		};
 		messages?: unknown[];
+		close?: () => Promise<void>;
+		getGatewaySessionId?: () => string | undefined;
 	};
+	session = await createGatewayBackedInteractiveSession({
+		baseSession: session as any,
+		client: new GatewayRpcClient({
+			baseUrl: toolRuntime.gatewayUrl,
+			token: toolRuntime.gatewayToken,
+			timeout: 600_000,
+		}),
+		gatewayUrl: toolRuntime.gatewayUrl,
+		gatewayToken: toolRuntime.gatewayToken,
+		cwd,
+		forceNew: opts.continue !== true,
+		configOverride: gatewayConfigOverride,
+	}) as typeof session;
+	if (opts.continue) {
+		console.log(`Using gateway session: ${session.getGatewaySessionId?.() ?? "active"}`);
+	}
 
 	const restoreManagedToolDownloadPolicy = applyManagedTuiToolDownloadPolicy();
 	let interactive: InteractiveMode | undefined;
@@ -346,14 +387,18 @@ async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<Ret
 			cwd,
 			configPath: opts.config,
 		});
-			toolRuntime.attachSession({
-				runScheduledJob: async (command) => {
-					let assistantReply:
-						| {
-							text: string;
-						}
-						| undefined;
-					const scheduledTurn = await createUnderstudySession({
+		toolRuntime.attachSession({
+			runScheduledJob: async (command) => {
+				let assistantReply:
+					| {
+						text: string;
+					}
+					| undefined;
+				let scheduledTurn:
+					| Awaited<ReturnType<typeof createUnderstudySession>>
+					| undefined;
+				try {
+					scheduledTurn = await createUnderstudySession({
 						config,
 						configPath: configManager.getPath(),
 						cwd,
@@ -370,7 +415,6 @@ async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<Ret
 							},
 						},
 					} as any);
-				try {
 					const scheduledSession = scheduledTurn.session as {
 						prompt: (text: string, options?: Record<string, unknown>) => Promise<void>;
 						agent?: {
@@ -388,7 +432,7 @@ async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<Ret
 					}
 					await scheduledSession.prompt(buildScheduledJobExecutionPrompt(command));
 				} finally {
-					await scheduledTurn.runtimeSession?.close?.();
+					await scheduledTurn?.runtimeSession?.close?.();
 				}
 				const visibleText = normalizeAssistantDisplayText(
 					normalizeAssistantRenderableText(assistantReply?.text),
@@ -410,6 +454,8 @@ async function runInteractiveTuiChat(opts: ChatOptions, promptInput: Awaited<Ret
 		await interactive.run();
 	} finally {
 		restoreManagedToolDownloadPolicy();
+		await Promise.resolve(session.close?.()).catch(() => {});
+		await Promise.resolve(createdSession.runtimeSession?.close?.()).catch(() => {});
 		await toolRuntime.close();
 	}
 }
@@ -427,6 +473,10 @@ export async function runChatCommand(opts: ChatOptions = {}): Promise<void> {
 		process.exit(1);
 		return;
 	}
-
-	await runInteractiveTuiChat(opts, promptInput);
+	try {
+		await runInteractiveTuiChat(opts, promptInput);
+	} catch (error) {
+		console.error("Error:", error instanceof Error ? error.message : String(error));
+		process.exit(1);
+	}
 }

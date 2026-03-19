@@ -1113,6 +1113,68 @@ describe("createGatewaySessionRuntime reset behavior", () => {
 		});
 	});
 
+	it("updates session metadata and live runtime config through session.patch", async () => {
+		const sessionEntries = new Map<string, SessionEntry>();
+		const inFlightSessionIds = new Set<string>();
+		const setModel = vi.fn(async () => {});
+		const setThinkingLevel = vi.fn();
+		const entry = createEntry("scope-patch", {
+			session: {
+				setModel,
+				setThinkingLevel,
+			},
+			sessionMeta: {
+				model: "anthropic/claude-sonnet-4-6",
+				thinkingLevel: "medium",
+			},
+		});
+		sessionEntries.set(entry.id, entry);
+		const usageTracker = { record: vi.fn() };
+		const appendHistory = vi.fn();
+		const getOrCreateSession = vi.fn(async () => entry);
+		const createScopedSession = vi.fn();
+		const promptSession = vi.fn();
+		const abortSessionEntry = vi.fn(async () => false);
+
+		const runtime = createGatewaySessionRuntime({
+			sessionEntries,
+			inFlightSessionIds,
+			config: {
+				defaultModel: "claude-sonnet-4-6",
+				defaultProvider: "anthropic",
+				agent: { userTimezone: "Asia/Hong_Kong" },
+			} as any,
+			usageTracker: usageTracker as any,
+			estimateTokens: (text) => text.length,
+			appendHistory: appendHistory as any,
+			getOrCreateSession: getOrCreateSession as any,
+			createScopedSession: createScopedSession as any,
+			promptSession: promptSession as any,
+			abortSessionEntry: abortSessionEntry as any,
+		});
+
+		const result = await runtime.sessionHandlers.patch?.({
+			sessionId: "scope-patch",
+			sessionName: "Gateway Session",
+			model: "openai/gpt-4o",
+			thinkingLevel: "high",
+		}) as Record<string, unknown>;
+
+		expect(setModel).toHaveBeenCalledOnce();
+		expect(setThinkingLevel).toHaveBeenCalledWith("high");
+		expect(entry.configOverride).toMatchObject({
+			defaultProvider: "openai",
+			defaultModel: "gpt-4o",
+			defaultThinkingLevel: "high",
+		});
+		expect(result).toMatchObject({
+			id: "scope-patch",
+			sessionName: "Gateway Session",
+			model: "openai/gpt-4o",
+			thinkingLevel: "high",
+		});
+	});
+
 	it("passes promptSession meta through chat handler responses", async () => {
 		const sessionEntries = new Map<string, SessionEntry>();
 		const inFlightSessionIds = new Set<string>();

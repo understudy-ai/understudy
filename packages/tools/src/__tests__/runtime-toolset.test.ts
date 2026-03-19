@@ -253,4 +253,71 @@ describe("createRuntimeToolset", () => {
 		expect(names.at(-1)).toBe("plugin_workspace");
 		expect(names).toContain("plugin_workspace");
 	});
+
+	it("exposes a platform capability discovery tool when platform surfaces are registered", async () => {
+		const tools = createRuntimeToolset({
+			cwd: "/tmp/workspace",
+			platformCapabilities: [
+				{
+					id: "desktop_gui",
+					label: "Desktop GUI",
+					description: "Desktop observation and input control",
+					source: "core",
+					tags: ["gui", "desktop"],
+				},
+				{
+					id: "plugin_canvas",
+					label: "Plugin Canvas",
+					description: "Canvas rendering provided by a plugin",
+					source: "plugin",
+					tags: ["canvas"],
+				},
+			],
+		});
+		const tool = tools.find((entry) => entry.name === "platform_capabilities");
+
+		expect(tool).toBeTruthy();
+		const textResult = await tool!.execute("tool", {});
+		expect(JSON.stringify(textResult)).toContain("Desktop GUI");
+		expect(JSON.stringify(textResult)).toContain("Plugin Canvas");
+
+		const jsonResult = await tool!.execute("tool", { format: "json" });
+		const jsonText = (jsonResult as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? "";
+		expect(jsonText).toContain("\"capabilities\"");
+		expect(jsonText).toContain("\"plugin_canvas\"");
+	});
+
+	it("keeps platform capability discovery live when capabilities are provided via a getter", async () => {
+		const dynamicCapabilities: Array<{
+			id: string;
+			label: string;
+			description: string;
+			source: "plugin";
+			tags: string[];
+		}> = [];
+		const tools = createRuntimeToolset({
+			cwd: "/tmp/workspace",
+			platformCapabilities: () => dynamicCapabilities,
+		});
+		const tool = tools.find((entry) => entry.name === "platform_capabilities");
+
+		expect(tool).toBeTruthy();
+
+		const initialResult = await tool!.execute("tool", {});
+		const initialText = (initialResult as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? "";
+		expect(initialText).toContain("No platform capabilities are currently registered.");
+
+		dynamicCapabilities.push({
+			id: "plugin_canvas",
+			label: "Plugin Canvas",
+			description: "Canvas rendering provided by a plugin",
+			source: "plugin",
+			tags: ["canvas"],
+		});
+
+		const jsonResult = await tool!.execute("tool", { format: "json" });
+		const jsonText = (jsonResult as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? "";
+		expect(jsonText).toContain("\"plugin_canvas\"");
+		expect(jsonText).toContain("\"Plugin Canvas\"");
+	});
 });

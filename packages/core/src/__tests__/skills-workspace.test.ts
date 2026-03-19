@@ -191,6 +191,65 @@ describe("buildWorkspaceSkillSnapshot", () => {
 		expect(snapshot.resolvedSkills.some((skill) => skill.name === "env-required-understudy")).toBe(true);
 	});
 
+	it("reads canonical Understudy skill metadata and allowed tool names", async () => {
+		process.env.UNDERSTUDY_BUNDLED_SKILLS_DIR = path.join(os.tmpdir(), "__understudy-no-bundled-skills__");
+		const workspace = await makeTempDir("understudy-skills-understudy-metadata-");
+		const workspaceSkills = path.join(workspace, "skills");
+
+		await writeSkill(
+			workspaceSkills,
+			"understudy-native",
+			"understudy-native",
+			"native skill",
+			[
+				'metadata: { "understudy": { "skillKey": "native-key", "primaryEnv": "UNDERSTUDY_TEST_NATIVE_SKILL_ENV", "requires": { "env": ["UNDERSTUDY_TEST_NATIVE_SKILL_ENV"] }, "install": [{ "id": "python-brew", "kind": "brew", "bins": ["python3"] }] } }',
+				'allowed-tools: ["message_send", "schedule"]',
+			],
+		);
+
+		delete process.env.UNDERSTUDY_TEST_NATIVE_SKILL_ENV;
+		let snapshot = buildWorkspaceSkillSnapshot({
+			workspaceDir: workspace,
+			config: {
+				...baseConfig(),
+			} as any,
+		});
+		expect(snapshot.resolvedSkills.some((skill) => skill.name === "understudy-native")).toBe(false);
+
+		snapshot = buildWorkspaceSkillSnapshot({
+			workspaceDir: workspace,
+			config: {
+				...baseConfig(),
+				skills: {
+					entries: {
+						"native-key": {
+							apiKey: "test-api-key",
+						},
+					},
+				},
+			} as any,
+		});
+		const skill = snapshot.resolvedSkills.find((entry) => entry.name === "understudy-native");
+		const summary = snapshot.skills.find((entry) => entry.name === "understudy-native");
+
+		expect(skill).toBeDefined();
+		expect(skill?.skillKey).toBe("native-key");
+		expect(skill?.primaryEnv).toBe("UNDERSTUDY_TEST_NATIVE_SKILL_ENV");
+		expect(skill?.allowedToolNames).toEqual(
+			expect.arrayContaining(["message_send", "schedule"]),
+		);
+		expect(summary).toMatchObject({
+			name: "understudy-native",
+			skillKey: "native-key",
+			primaryEnv: "UNDERSTUDY_TEST_NATIVE_SKILL_ENV",
+			requiredEnv: ["UNDERSTUDY_TEST_NATIVE_SKILL_ENV"],
+			installCount: 1,
+		});
+		expect(summary?.allowedToolNames).toEqual(
+			expect.arrayContaining(["message_send", "schedule"]),
+		);
+	});
+
 	it("understands OpenClaw frontmatter metadata, skillKey, and allowed tool aliases", async () => {
 		process.env.UNDERSTUDY_BUNDLED_SKILLS_DIR = path.join(os.tmpdir(), "__understudy-no-bundled-skills__");
 		const workspace = await makeTempDir("understudy-skills-openclaw-compat-");

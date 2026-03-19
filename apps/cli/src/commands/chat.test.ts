@@ -16,7 +16,10 @@ const mocks = vi.hoisted(() => ({
 	installInteractiveBrowserExtensionSupport: vi.fn(),
 	installInteractiveChatMediaSupport: vi.fn(),
 	installInteractiveTeachSupport: vi.fn(),
+	createGatewayBackedInteractiveSession: vi.fn(),
 	createConfiguredRuntimeToolset: vi.fn(),
+	gatewayRpcClientCtor: vi.fn(),
+	loadUnderstudyPlugins: vi.fn(),
 	createMemoryProvider: vi.fn(),
 	scheduleServiceCtor: vi.fn(),
 	scheduleServiceStart: vi.fn(),
@@ -24,11 +27,9 @@ const mocks = vi.hoisted(() => ({
 	scheduleServiceInstances: [] as Array<{ config: { onJobTrigger: (job: any) => Promise<void> }; stop: () => void }>,
 	configReloaderStart: vi.fn(),
 	configReloaderStop: vi.fn(),
-	continueRecent: vi.fn(),
 	inMemorySessionManager: vi.fn(),
 	interactiveRun: vi.fn(),
 	interactiveCtor: vi.fn(),
-	processExit: vi.fn(),
 }));
 const modelSupportMocks = vi.hoisted(() => ({
 	resolveCliModel: vi.fn(),
@@ -60,6 +61,10 @@ vi.mock("@understudy/gateway", () => ({
 	normalizeAssistantRenderableText: (text: string) => text,
 }));
 
+vi.mock("@understudy/plugins", () => ({
+	loadUnderstudyPlugins: mocks.loadUnderstudyPlugins,
+}));
+
 vi.mock("@understudy/tools", () => ({
 	createMemoryProvider: mocks.createMemoryProvider,
 	ScheduleService: class {
@@ -88,7 +93,6 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 		}
 	},
 	SessionManager: {
-		continueRecent: mocks.continueRecent,
 		inMemory: mocks.inMemorySessionManager,
 	},
 }));
@@ -126,6 +130,22 @@ vi.mock("./chat-interactive-teach.js", () => ({
 	installInteractiveTeachSupport: mocks.installInteractiveTeachSupport,
 }));
 
+vi.mock("./chat-gateway-session.js", () => ({
+	createGatewayBackedInteractiveSession: mocks.createGatewayBackedInteractiveSession,
+}));
+
+vi.mock("../rpc-client.js", () => ({
+	GatewayRpcClient: class {
+		readonly url: string;
+		constructor(options: { baseUrl?: string; host?: string; port?: number }) {
+			this.url = options.baseUrl?.trim()
+				? options.baseUrl.trim().replace(/\/+$/, "")
+				: `http://${options.host ?? "127.0.0.1"}:${options.port ?? 23333}`;
+			mocks.gatewayRpcClientCtor(options);
+		}
+	},
+}));
+
 vi.mock("./runtime-tooling.js", () => ({
 	createConfiguredRuntimeToolset: mocks.createConfiguredRuntimeToolset,
 }));
@@ -149,17 +169,29 @@ const tempDirs: string[] = [];
 
 afterEach(async () => {
 	await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
+	delete process.env.UNDERSTUDY_GATEWAY_TOKEN;
+	delete process.env.UNDERSTUDY_GATEWAY_URL;
 	process.exitCode = 0;
 });
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	const defaultFetch = vi.fn(async () => ({
+		ok: true,
+		json: async () => ({}),
+	}));
+	vi.stubGlobal("fetch", defaultFetch as unknown as typeof fetch);
 	mocks.scheduleServiceInstances.length = 0;
 	process.exitCode = 0;
 	mocks.resolveUnderstudyHomeDir.mockReturnValue("/tmp/understudy-home");
 	mocks.resolveMemoryDbPath.mockReturnValue("/tmp/understudy-memory.db");
 	mocks.createConfiguredRuntimeToolset.mockResolvedValue([{ name: "mock-tool" }]);
+	mocks.loadUnderstudyPlugins.mockResolvedValue({
+		getToolFactories: () => [],
+		getPlatformCapabilities: () => [],
+	});
 	mocks.createMemoryProvider.mockResolvedValue({
 		close: vi.fn(async () => {}),
 	});
@@ -189,10 +221,14 @@ beforeEach(() => {
 	mocks.mergeCliPromptText.mockReturnValue("hello\n\nAttached file context");
 	mocks.createUnderstudySession.mockResolvedValue({
 		session: { id: "session-1" },
+		runtimeSession: { close: vi.fn(async () => {}) },
 	});
-	mocks.continueRecent.mockReturnValue({
-		getSessionId: () => "session-continued",
-	});
+	mocks.createGatewayBackedInteractiveSession.mockImplementation(async ({ baseSession }: { baseSession: { id?: string } }) => ({
+		...baseSession,
+		id: "gateway-session-1",
+		close: vi.fn(async () => {}),
+		getGatewaySessionId: () => "gateway-session-1",
+	}));
 	mocks.inMemorySessionManager.mockReturnValue({
 		type: "in-memory-session-manager",
 	});
@@ -272,8 +308,7 @@ describe("runChatCommand", () => {
 			text: "Attached file context",
 			images: [{ type: "input_image", image_url: "file:///tmp/screenshot.png" }],
 		});
-		expect(mocks.continueRecent).toHaveBeenCalledWith("/tmp/project");
-		expect(log.mock.calls.flat().join("\n")).toContain("Using session: session-continued");
+		expect(log.mock.calls.flat().join("\n")).toContain("Using gateway session: gateway-session-1");
 		expect(mocks.createUnderstudySession).toHaveBeenCalledWith(expect.objectContaining({
 			configPath: "/tmp/understudy/config.json5",
 			cwd: "/tmp/project",
@@ -282,11 +317,19 @@ describe("runChatCommand", () => {
 			extraTools: [{ name: "mock-tool" }],
 			sessionManager: expect.any(Object),
 		}));
+		expect(mocks.createGatewayBackedInteractiveSession).toHaveBeenCalledWith(expect.objectContaining({
+			gatewayUrl: "http://127.0.0.1:23333",
+			cwd: "/tmp/project",
+			forceNew: false,
+			configOverride: {
+				defaultThinkingLevel: "high",
+			},
+		}));
 		expect(mocks.createConfiguredRuntimeToolset).toHaveBeenCalledWith(expect.objectContaining({
 			scheduleService: expect.any(Object),
 		}));
 		expect(mocks.interactiveCtor).toHaveBeenCalledWith(
-			{ id: "session-1" },
+			expect.objectContaining({ id: "gateway-session-1" }),
 			expect.objectContaining({
 				initialMessage: "hello\n\nAttached file context",
 				initialImages: [{ type: "input_image", image_url: "file:///tmp/screenshot.png" }],
@@ -302,7 +345,7 @@ describe("runChatCommand", () => {
 		expect(mocks.configReloaderStop).toHaveBeenCalledOnce();
 	});
 
-	it("routes TUI schedule triggers back through the active local session", async () => {
+	it("routes TUI schedule triggers back through the active gateway-backed session", async () => {
 		const sendCustomMessage = vi.fn(async () => {});
 		const backgroundPrompt = vi.fn(async (_text: string) => {
 			const scheduledCall = mocks.createUnderstudySession.mock.calls[1]?.[0] as {
@@ -427,6 +470,53 @@ describe("runChatCommand", () => {
 		}));
 	});
 
+	it("preserves an explicit https gateway URL when constructing the RPC client", async () => {
+		process.env.UNDERSTUDY_GATEWAY_URL = "https://gateway.example.com/api/";
+
+		try {
+			await runChatCommand({
+				cwd: "/tmp/project",
+				message: "hello",
+			});
+		} finally {
+			delete process.env.UNDERSTUDY_GATEWAY_URL;
+		}
+
+		expect(mocks.gatewayRpcClientCtor).toHaveBeenCalledWith(expect.objectContaining({
+			baseUrl: "https://gateway.example.com/api",
+		}));
+	});
+
+	it("does not publish a config-backed gateway token into process.env", async () => {
+		delete process.env.UNDERSTUDY_GATEWAY_TOKEN;
+		mocks.loadConfig.mockResolvedValue({
+			get: () => ({
+				defaultProvider: "anthropic",
+				defaultModel: "claude-sonnet-4-6",
+				browser: { connectionMode: "managed" },
+				memory: { enabled: true },
+				gateway: {
+					auth: {
+						mode: "token",
+						token: "config-gateway-token",
+					},
+				},
+			}),
+			getPath: () => "/tmp/understudy/config.json5",
+			update: vi.fn(),
+		});
+
+		await runChatCommand({
+			cwd: "/tmp/project",
+			message: "hello",
+		});
+
+		expect(process.env.UNDERSTUDY_GATEWAY_TOKEN).toBeUndefined();
+		expect(mocks.createGatewayBackedInteractiveSession).toHaveBeenCalledWith(expect.objectContaining({
+			gatewayToken: "config-gateway-token",
+		}));
+	});
+
 	it("applies offline download policy before InteractiveMode construction", async () => {
 		const originalPath = process.env.PATH;
 		const originalOffline = process.env.PI_OFFLINE;
@@ -456,6 +546,29 @@ describe("runChatCommand", () => {
 		expect(ctorStates).toEqual(["1"]);
 		expect(log.mock.calls.flat().join("\n")).toContain("fd is not installed locally");
 		expect(process.env.PI_OFFLINE).toBe(originalOffline);
+	});
+
+	it("exits cleanly when the gateway is unavailable", async () => {
+		vi.stubGlobal("fetch", vi.fn(async () => {
+			throw new Error("gateway offline");
+		}) as unknown as typeof fetch);
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+			throw new Error(`exit:${code}`);
+		}) as any);
+
+		await expect(runChatCommand({
+			cwd: "/tmp/project",
+			message: "hello",
+		})).rejects.toThrow("exit:1");
+
+		expect(mocks.createUnderstudySession).not.toHaveBeenCalled();
+		expect(mocks.createGatewayBackedInteractiveSession).not.toHaveBeenCalled();
+		expect(error).toHaveBeenCalledWith(
+			"Error:",
+			expect.stringContaining("Gateway-backed interactive chat requires a running Understudy gateway"),
+		);
+		expect(exit).toHaveBeenCalledWith(1);
 	});
 });
 

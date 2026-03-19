@@ -247,6 +247,20 @@ npm install -g @understudy-ai/understudy
 understudy wizard    # 引导完成配置
 ```
 
+### 从 GitHub Packages 安装
+
+```bash
+cat >> ~/.npmrc <<'EOF'
+@understudy-ai:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
+EOF
+
+npm install -g @understudy-ai/understudy
+understudy wizard    # 引导完成配置
+```
+
+从 GitHub Packages 安装时，需要一个带 `read:packages` 权限的 GitHub token。内置的 `researcher` skill 默认启用，可用于带来源的多源研究和事实核查。
+
 ### 源码安装
 
 ```bash

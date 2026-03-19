@@ -11,7 +11,7 @@ Agent session runtime core for Understudy.
 - **Policy pipeline**: `beforeTool` / `afterTool` hooks for safety, trust, logging, and rate limiting
 - **Session orchestration**: agent turn execution, tool binding, trace recording
 - **Task drafts**: teach draft data model, persistence, and publish flow
-- **OpenClaw compatibility**: tool aliases for portable skill migration
+- **Runtime composition**: canonical Understudy tool registration, filtering, and prompt assembly
 
 ## Usage
 

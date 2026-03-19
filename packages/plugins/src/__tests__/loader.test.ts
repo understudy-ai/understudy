@@ -40,6 +40,8 @@ describe("@understudy/plugins", () => {
 		const gatewayHandler = vi.fn(async (params?: Record<string, unknown>) => ({
 			echo: params?.value ?? "ok",
 		}));
+		const hookHandler = vi.fn();
+		const serviceStart = vi.fn();
 		const channelId = `plugin_test_${Date.now()}`;
 
 		await registry.register({
@@ -55,6 +57,29 @@ describe("@understudy/plugins", () => {
 					}) as any);
 					api.registerGatewayMethod("plugin.echo", gatewayHandler);
 					api.registerCli(cliRegistrar);
+					api.registerHook("gateway_start", hookHandler);
+					api.registerService({
+						id: "demo-service",
+						start: serviceStart,
+					});
+					api.registerPlatformCapability({
+						id: "demo-platform",
+						label: "Demo Platform",
+						description: "Adds a platform-facing tool surface",
+						toolFactories: [() => ({
+							name: "platform_demo",
+							description: "Platform demo tool",
+							parameters: {} as any,
+							execute: async () => ({ content: [{ type: "text", text: "platform" }] }),
+						}) as any],
+					});
+					api.registerConfigSchema({
+						jsonSchema: { type: "object", properties: { enabled: { type: "boolean" } } },
+					});
+					api.registerDiagnostic({
+						level: "warn",
+						message: "demo warning",
+					});
 					api.registerChannelFactory(channelId, () => ({
 						warning: "plugin channel placeholder",
 					}));
@@ -73,12 +98,35 @@ describe("@understudy/plugins", () => {
 			echo: "pong",
 		});
 		expect(registry.getCliRegistrars()).toEqual([cliRegistrar]);
+		expect(registry.getHooks("gateway_start")).toHaveLength(1);
+		expect(registry.getHooks("gateway_start")[0]).toMatchObject({
+			pluginId: "demo-plugin",
+			hookName: "gateway_start",
+		});
+		expect(registry.getServices()).toHaveLength(1);
+		expect(registry.getServices()[0]).toMatchObject({
+			pluginId: "demo-plugin",
+		});
+		expect(registry.getPlatformCapabilities()).toContainEqual(expect.objectContaining({
+			id: "demo-platform",
+			source: "plugin",
+		}));
+		expect(registry.getConfigSchemas()).toHaveLength(1);
+		expect(registry.getDiagnostics()).toContainEqual(expect.objectContaining({
+			level: "warn",
+			message: "demo warning",
+			pluginId: "demo-plugin",
+		}));
 		expect(listChannelFactories()).toContain(channelId);
 
 		const tool = registry.getToolFactories()[0]?.({
 			cwd: "/tmp/workspace",
 		} as any) as { name?: string } | undefined;
 		expect(tool?.name).toBe("plugin_tool_workspace");
+		const platformTool = registry.getToolFactories()[1]?.({
+			cwd: "/tmp/workspace",
+		} as any) as { name?: string } | undefined;
+		expect(platformTool?.name).toBe("platform_demo");
 	});
 
 	it("loads plugin modules from config-relative paths", async () => {

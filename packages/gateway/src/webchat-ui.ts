@@ -894,7 +894,7 @@ export function buildWebChatHtml(): string {
 				<button class="mobile-menu-btn" id="mobile-menu-btn" style="background:none;border:none;font-size:20px;cursor:pointer" type="button">&#9776;</button>
 				<div>
 					<h2 id="chat-title">Overview Chat</h2>
-					<div class="header-meta" id="chat-meta">Send a message to start a fresh request or pick a saved session</div>
+					<div class="header-meta" id="chat-meta">Send a message to start a new gateway session or pick an existing session</div>
 				</div>
 			</div>
 			<div class="chat-header-actions">
@@ -907,7 +907,7 @@ export function buildWebChatHtml(): string {
 			<div class="welcome" id="welcome-view">
 				<div class="welcome-icon"><img src="${brandIconDataUrl}" alt="Understudy"></div>
 				<h3>Understudy WebChat</h3>
-				<p>Send a message to start a conversation. Type <strong>/</strong> for available commands. Pick a saved session on the left or click the model badge above to switch models.</p>
+				<p>Send a message to start a conversation. Type <strong>/</strong> for available commands. Pick a gateway session on the left or click the model badge above to switch models.</p>
 			</div>
 		</div>
 		<div class="composer">
@@ -1020,7 +1020,7 @@ const liveRunViews = new Map();
 /* Slash commands: built-in + dynamically discovered */
 const builtinCommands = [
 	{ cmd: "/new", desc: "Create a new chat session", local: true },
-	{ cmd: "/resume", desc: "Open the latest saved session or a matching session id/name", local: true },
+	{ cmd: "/resume", desc: "Open the latest gateway session or a matching session id/name", local: true },
 	{ cmd: "/reset", desc: "Reset the current session", local: true },
 	{ cmd: "/name", desc: "Show or set the current session display name", local: true },
 	{ cmd: "/session", desc: "Show details for the selected session", local: true },
@@ -1121,8 +1121,8 @@ function refreshSessionScopeButton() {
 	if (!sessionScopeBtn) return;
 	sessionScopeBtn.textContent = showAllSessions ? "All" : "Mine";
 	sessionScopeBtn.title = showAllSessions
-		? "Showing all saved sessions. Click to limit the list to this browser."
-		: "Showing only this browser WebChat scope. Click to include all saved sessions.";
+		? "Showing all gateway sessions. Click to limit the list to this browser."
+		: "Showing only this browser WebChat scope. Click to include all gateway sessions.";
 }
 
 function fmtTime(ts) {
@@ -1239,12 +1239,12 @@ function sessionSubtitle(session, sessionId) {
 	const senderLabel = sessionSenderLabel(summary);
 	return writable
 		? (sessionDisplayName(summary)
-			? "Viewing and continuing this saved session • " + sessionId
-			: "Viewing and continuing this saved session")
+			? "Viewing and continuing this gateway session • " + sessionId
+			: "Viewing and continuing this gateway session")
 		: [
 			sessionDisplayName(summary)
-				? "Viewing this saved session (read-only) • " + sessionId
-				: "Viewing this saved session (read-only)",
+				? "Viewing this gateway session (read-only) • " + sessionId
+				: "Viewing this gateway session (read-only)",
 			sessionChannelContextLabel(summary) ? "Context: " + sessionChannelContextLabel(summary) : "",
 			senderLabel ? "Sender: " + senderLabel : "",
 		].filter(Boolean).join(" • ");
@@ -2286,7 +2286,7 @@ function setChatHeader(title, meta, session) {
 function updateLiveRunStatus(text) {
 	liveRunStatusText = typeof text === "string" ? text.trim() : "";
 	if (!activeSessionId) {
-		chatMeta.textContent = liveRunStatusText || "Send a message to start a fresh request or pick a saved session";
+		chatMeta.textContent = liveRunStatusText || "Send a message to start a fresh request or pick a gateway session";
 	}
 }
 
@@ -2596,7 +2596,7 @@ async function enterLiveMode() {
 	sessionViewRequestVersion += 1;
 	activeSessionId = "";
 	liveRunStatusText = "";
-	setChatHeader("Overview Chat", "Send a fresh message or pick a saved session on the left");
+	setChatHeader("Overview Chat", "Send a fresh message or pick a gateway session on the left");
 	clearChat();
 	renderSessionList();
 	syncComposer();
@@ -2780,7 +2780,7 @@ async function handleSlash(text) {
 		if (query === "list") {
 			const matches = listSessionMatches("", 10);
 			if (!matches.length) {
-				addMsg("system", "No saved sessions are available yet.");
+				addMsg("system", "No gateway sessions are available yet.");
 				return true;
 			}
 			addMsg("system", [
@@ -2794,7 +2794,7 @@ async function handleSlash(text) {
 		if (!target) {
 			addMsg("error", query
 				? 'No session matched "' + query + '".'
-				: "No saved sessions are available yet.");
+				: "No gateway sessions are available yet.");
 			return true;
 		}
 		await selectSession(target.id);
@@ -3042,7 +3042,7 @@ async function handleSlash(text) {
 			"Type / at the start of the composer to open slash command suggestions.",
 			"Esc closes the slash command menu.",
 			"Click the Model badge in the status bar to open the model picker.",
-			"Use the session list on the left to jump between saved runs; the Mine/All toggle changes scope.",
+			"Use the session list on the left to jump between gateway sessions; the Mine/All toggle changes scope.",
 			"Teach flow: /teach start -> /teach stop -> refine in chat -> /teach confirm.",
 		].join("\\n"));
 		return true;

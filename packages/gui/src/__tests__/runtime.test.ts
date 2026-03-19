@@ -182,7 +182,9 @@ describe("ComputerUseGuiRuntime", () => {
 				return {} as any;
 			}
 			if (file === "osascript") {
-				const stdout = env.UNDERSTUDY_GUI_TEXT !== undefined
+				const argvIndex = resolvedArgs.indexOf("--");
+				const typedText = argvIndex >= 0 ? resolvedArgs[argvIndex + 1] : undefined;
+				const stdout = typedText !== undefined || env.UNDERSTUDY_GUI_TEXT !== undefined
 					? "typed\n"
 					: env.UNDERSTUDY_GUI_KEY !== undefined || env.UNDERSTUDY_GUI_KEY_CODE !== undefined
 						? "key_event\n"
@@ -268,6 +270,28 @@ describe("ComputerUseGuiRuntime", () => {
 		});
 		expect(capabilities.toolAvailability.gui_click).toMatchObject({
 			enabled: false,
+		});
+	});
+
+	it("keeps gui_move available without grounding when input is available", () => {
+		const runtime = new ComputerUseGuiRuntime({
+			environmentReadiness: {
+				status: "ready",
+				checkedAt: 1,
+				checks: [
+					{ id: "platform", label: "Platform", status: "ok", summary: "macOS GUI runtime is available on this host." },
+					{ id: "accessibility", label: "Accessibility", status: "ok", summary: "Accessibility permission is granted for native GUI input." },
+					{ id: "screen_recording", label: "Screen Recording", status: "ok", summary: "Screen Recording permission is granted for GUI screenshots." },
+					{ id: "native_helper", label: "Native GUI Helper", status: "ok", summary: "Native GUI helper is ready for capture and input execution." },
+				],
+			},
+		});
+
+		const capabilities = runtime.describeCapabilities("darwin");
+
+		expect(capabilities.groundingAvailable).toBe(false);
+		expect(capabilities.toolAvailability.gui_move).toMatchObject({
+			enabled: true,
 		});
 	});
 
@@ -402,6 +426,38 @@ describe("ComputerUseGuiRuntime", () => {
 			"png",
 			"/tmp/understudy-gui-test/gui-screenshot.png",
 		]);
+	});
+
+	it("cleans up the screenshot temp directory when capture fails", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+		const originalImpl = mocks.execFile.getMockImplementation();
+		if (!originalImpl) {
+			throw new Error("Expected execFile mock implementation");
+		}
+		mocks.execFile.mockImplementation((
+			file: string,
+			args: unknown,
+			options: unknown,
+			callback?: (...cbArgs: unknown[]) => void,
+		) => {
+			const cb = (typeof options === "function" ? options : callback) as ((...cbArgs: unknown[]) => void) | undefined;
+			if (!cb) {
+				throw new Error("Missing execFile callback");
+			}
+			if (file === "screencapture") {
+				cb(Object.assign(new Error("capture blocked"), {
+					stderr: "screen capture denied",
+				}));
+				return {} as any;
+			}
+			return originalImpl(file, args, options, callback);
+		});
+
+		await expect(runtime.observe()).rejects.toThrow("macOS screenshot capture failed");
+		expect(mocks.rm).toHaveBeenCalledWith("/tmp/understudy-gui-test", {
+			recursive: true,
+			force: true,
+		});
 	});
 
 	it("passes window selection through to the capture helper", async () => {
@@ -1226,6 +1282,11 @@ describe("ComputerUseGuiRuntime", () => {
 	});
 
 	it("passes window selection through to targetless typing", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			windowTitle: "Draft 2",
+			windowBounds: { x: 140, y: 260, width: 520, height: 360 },
+		};
 		const runtime = createRuntime(vi.fn());
 
 		const result = await runtime.type({
@@ -1241,11 +1302,45 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(result.details).toMatchObject({
 			grounding_method: "targetless",
 		});
-		const typeCall = mocks.execCalls.find((call) => call.file === "osascript" && call.env.UNDERSTUDY_GUI_TEXT === "hello world");
-		expect(typeCall?.env).toMatchObject({
+		const captureCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "capture-context",
+		);
+		expect(captureCall?.env).toMatchObject({
 			UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: "Draft",
 			UNDERSTUDY_GUI_WINDOW_INDEX: "2",
 		});
+			const typeCall = mocks.execCalls.find((call) =>
+				call.file === "osascript" &&
+				call.args.includes("--") &&
+				call.args.at(-1) === "hello world",
+			);
+			expect(typeCall?.env).toMatchObject({
+				UNDERSTUDY_GUI_WINDOW_TITLE: "Draft 2",
+				UNDERSTUDY_GUI_WINDOW_BOUNDS_X: "140",
+			UNDERSTUDY_GUI_WINDOW_BOUNDS_Y: "260",
+			UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH: "520",
+			UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT: "360",
+			});
+			expect(typeCall?.env.UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS).toBeUndefined();
+			expect(typeCall?.env.UNDERSTUDY_GUI_WINDOW_INDEX).toBeUndefined();
+			expect(typeCall?.env.UNDERSTUDY_GUI_TEXT).toBeUndefined();
+		});
+
+	it("passes non-ASCII text to osascript via argv so unicode input stays intact", async () => {
+		const runtime = createRuntime(vi.fn());
+
+		await runtime.type({
+			value: "你好，世界",
+		});
+
+		const typeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.args.includes("--") &&
+			call.args.at(-1) === "你好，世界",
+		);
+		expect(typeCall?.env.UNDERSTUDY_GUI_TEXT).toBeUndefined();
+		expect(typeCall?.args.slice(-2)).toEqual(["--", "你好，世界"]);
 	});
 
 	it("sends key actions with modifiers", async () => {
@@ -1288,6 +1383,11 @@ describe("ComputerUseGuiRuntime", () => {
 	});
 
 	it("routes selected-window special keys through key codes", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			windowTitle: "Draft 1",
+			windowBounds: { x: 120, y: 240, width: 500, height: 340 },
+		};
 		const runtime = createRuntime(vi.fn());
 
 		const result = await runtime.key({
@@ -1295,15 +1395,22 @@ describe("ComputerUseGuiRuntime", () => {
 			key: "Page Down",
 			windowSelector: {
 				titleContains: "Draft",
+				index: 1,
 			},
 		});
 
 		expect(result.status.code).toBe("action_sent");
 		const keyCall = mocks.execCalls.find((call) => call.file === "osascript" && call.env.UNDERSTUDY_GUI_KEY_CODE === "121");
 		expect(keyCall?.env).toMatchObject({
-			UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: "Draft",
+			UNDERSTUDY_GUI_WINDOW_TITLE: "Draft 1",
+			UNDERSTUDY_GUI_WINDOW_BOUNDS_X: "120",
+			UNDERSTUDY_GUI_WINDOW_BOUNDS_Y: "240",
+			UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH: "500",
+			UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT: "340",
 			UNDERSTUDY_GUI_KEY: "",
 		});
+		expect(keyCall?.env.UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS).toBeUndefined();
+		expect(keyCall?.env.UNDERSTUDY_GUI_WINDOW_INDEX).toBeUndefined();
 	});
 
 	it("reports cursor moves with move-specific telemetry", async () => {

@@ -18,6 +18,10 @@ import { createMemoryGetTool, createMemoryManageTool, createMemorySearchTool } f
 import type { MemoryProvider } from "./memory/provider.js";
 import { createMessageTool } from "./message-tool.js";
 import { createPdfTool } from "./pdf-tool.js";
+import { createPlatformCapabilitiesTool } from "./platform-capabilities-tool.js";
+import {
+	type RuntimePlatformCapability,
+} from "./platform-capabilities.js";
 import { createProcessTool } from "./process-tool.js";
 import { createRuntimeStatusTool } from "./runtime-status-tool.js";
 import { createScheduleTool } from "./schedule/schedule-tool.js";
@@ -44,6 +48,9 @@ export interface RuntimeToolsetOptions {
 	senderId?: string;
 	threadId?: string;
 	capabilities?: string[];
+	platformCapabilities?:
+		| RuntimePlatformCapability[]
+		| (() => RuntimePlatformCapability[] | undefined);
 	gatewayUrl?: string;
 	requesterSessionId?: string;
 	spawnSubagent?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -62,6 +69,7 @@ export type RuntimeToolCategory =
 	| "media"
 	| "browser"
 	| "gui"
+	| "platform"
 	| "memory"
 	| "messaging"
 	| "automation"
@@ -125,6 +133,9 @@ function categorizeRuntimeTool(name: string): RuntimeToolCategory {
 	}
 	if (name === "browser") {
 		return "browser";
+	}
+	if (name === "platform_capabilities" || name.startsWith("platform_")) {
+		return "platform";
 	}
 	if (name.startsWith("gui_")) {
 		return "gui";
@@ -203,6 +214,10 @@ export function createRuntimeToolset(options: RuntimeToolsetOptions): Array<Agen
 		createPdfTool(),
 		createBrowserTool(options.browserOptions),
 	];
+
+	if (options.platformCapabilities !== undefined) {
+		tools.push(createPlatformCapabilitiesTool(options.platformCapabilities));
+	}
 
 	if (options.guiRuntime) {
 		tools.push(...createGuiToolset(options.guiRuntime));

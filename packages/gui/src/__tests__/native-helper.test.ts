@@ -36,6 +36,9 @@ describe("resolveNativeGuiHelperBinary", () => {
 
 	it("shares one in-flight compile across concurrent callers and caches the result", async () => {
 		let compileCalls = 0;
+		mocks.access
+			.mockRejectedValueOnce(new Error("missing helper"))
+			.mockResolvedValue(undefined);
 		mocks.execFileAsync.mockImplementation(async () => {
 			compileCalls += 1;
 			await new Promise((resolve) => setTimeout(resolve, 10));
@@ -54,6 +57,27 @@ describe("resolveNativeGuiHelperBinary", () => {
 		expect(first).toBe(second);
 		expect(second).toBe(third);
 		expect(third).toBe(cached);
+	});
+
+	it("rebuilds the helper when the cached binary path no longer exists", async () => {
+		let compileCalls = 0;
+		mocks.access
+			.mockRejectedValueOnce(new Error("missing helper"))
+			.mockRejectedValueOnce(new Error("cached helper removed"))
+			.mockRejectedValueOnce(new Error("missing helper"))
+			.mockResolvedValue(undefined);
+		mocks.execFileAsync.mockImplementation(async () => {
+			compileCalls += 1;
+			return { stdout: "", stderr: "" };
+		});
+
+		const { resolveNativeGuiHelperBinary } = await import("../native-helper.js");
+
+		const first = await resolveNativeGuiHelperBinary();
+		const second = await resolveNativeGuiHelperBinary();
+
+		expect(first).toBe(second);
+		expect(compileCalls).toBe(2);
 	});
 
 	it("clears the shared promise after compile failures so later calls can retry", async () => {

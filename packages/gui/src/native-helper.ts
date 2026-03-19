@@ -307,8 +307,9 @@ func selectedWindow(
 		return nil
 	}
 	let hasExplicitSelection = normalizedText(exactTitle) != nil || normalizedText(titleContains) != nil || index != nil
-	if let index, index > 0, index <= matches.count {
-		let window = matches[index - 1]
+	let ranked = rankWindows(matches)
+	if let index, index > 0, index <= ranked.count {
+		let window = ranked[index - 1]
 		return WindowSelection(
 			primary: window,
 			captureBounds: window.bounds.integral,
@@ -316,7 +317,6 @@ func selectedWindow(
 			captureStrategy: "selected_window"
 		)
 	}
-	let ranked = rankWindows(matches)
 	guard let primary = ranked.first else {
 		return nil
 	}
@@ -562,7 +562,12 @@ export async function resolveNativeGuiHelperBinary(): Promise<string> {
 		return overridePath;
 	}
 	if (helperBinaryPath) {
-		return helperBinaryPath;
+		try {
+			await access(helperBinaryPath);
+			return helperBinaryPath;
+		} catch {
+			helperBinaryPath = undefined;
+		}
 	}
 	if (helperBinaryPromise) {
 		return await helperBinaryPromise;
@@ -580,6 +585,7 @@ export async function resolveNativeGuiHelperBinary(): Promise<string> {
 		try {
 			await access(binaryPath);
 			helperBinaryPath = binaryPath;
+			helperBinaryPromise = undefined;
 			return binaryPath;
 		} catch {
 			// Fall through to compile a fresh helper binary.
@@ -601,6 +607,7 @@ export async function resolveNativeGuiHelperBinary(): Promise<string> {
 		}
 
 		helperBinaryPath = binaryPath;
+		helperBinaryPromise = undefined;
 		return binaryPath;
 	})().catch((error) => {
 		helperBinaryPromise = undefined;

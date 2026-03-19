@@ -5,7 +5,7 @@ import {
 } from "./response-grounding-provider.js";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1/responses";
-const DEFAULT_OPENAI_MODEL = "gpt-5.4";
+export const DEFAULT_OPENAI_GROUNDING_MODEL = "gpt-5.4";
 
 export interface OpenAIGroundingProviderOptions extends Omit<ResponsesApiGroundingProviderOptions, "baseUrl" | "model" | "providerName"> {
 	baseUrl?: string;
@@ -16,7 +16,7 @@ export interface OpenAIGroundingProviderOptions extends Omit<ResponsesApiGroundi
 export function createOpenAIGroundingProvider(
 	options: OpenAIGroundingProviderOptions = {},
 ): GuiGroundingProvider {
-	const model = options.model?.trim() || DEFAULT_OPENAI_MODEL;
+	const model = options.model?.trim() || DEFAULT_OPENAI_GROUNDING_MODEL;
 	return createResponsesApiGroundingProvider({
 		...options,
 		baseUrl: options.baseUrl?.trim() || DEFAULT_OPENAI_BASE_URL,

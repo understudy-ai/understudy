@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+	UnderstudyPluginRegistry,
+	type UnderstudyPluginHookEvent,
+	type UnderstudyPluginLogger,
+	type UnderstudyPluginServiceContext,
+} from "@understudy/plugins";
 import { DEFAULT_CONFIG, type UnderstudyConfig } from "@understudy/types";
 import {
 	buildChannelsFromConfig,
@@ -10,9 +16,11 @@ import {
 	resolveGatewayWorkspaceDir,
 	resolveMemoryDbPath,
 } from "./gateway.js";
+import { createGatewayPluginRuntime } from "./gateway-plugin-runtime.js";
 import { extractLatestAssistantUsage } from "./gateway-usage.js";
 
 const originalUnderstudyHome = process.env.UNDERSTUDY_HOME;
+const tempDirs: string[] = [];
 
 function createConfig(overrides: Partial<UnderstudyConfig> = {}): UnderstudyConfig {
 	return {
@@ -48,6 +56,9 @@ afterEach(() => {
 		delete process.env.UNDERSTUDY_HOME;
 	} else {
 		process.env.UNDERSTUDY_HOME = originalUnderstudyHome;
+	}
+	for (const dir of tempDirs.splice(0)) {
+		rmSync(dir, { recursive: true, force: true });
 	}
 });
 
@@ -379,5 +390,109 @@ describe("deliverScheduledJobResult", () => {
 
 		expect(result).toBeUndefined();
 		expect(sendMessage).toHaveBeenCalledOnce();
+	});
+});
+
+describe("createGatewayPluginRuntime", () => {
+	it("runs plugin services and gateway hooks with gateway lifecycle context", async () => {
+		const stateRoot = mkdtempSync(join(tmpdir(), "understudy-gateway-plugin-runtime-"));
+		tempDirs.push(stateRoot);
+
+		const events: string[] = [];
+		const gatewayUrl = "http://127.0.0.1:23333";
+		const details = {
+			host: "127.0.0.1",
+			port: 23333,
+			webPort: 23334,
+		};
+		const config = createConfig({
+			plugins: {
+				modules: ["./demo-plugin.mjs"],
+			},
+		});
+		const start = vi.fn(async (context: UnderstudyPluginServiceContext) => {
+			events.push("service:start");
+			expect(context.config).toBe(config);
+			expect(context.gatewayUrl).toBe(gatewayUrl);
+			expect(context.cwd).toBe("/tmp/understudy-workspace");
+			expect(context.stateDir).toBe(join(stateRoot, "demo-plugin", "demo-service"));
+		});
+		const stop = vi.fn(async (context: UnderstudyPluginServiceContext) => {
+			events.push("service:stop");
+			expect(context.gatewayUrl).toBe(gatewayUrl);
+			expect(context.stateDir).toBe(join(stateRoot, "demo-plugin", "demo-service"));
+		});
+		const onGatewayStart = vi.fn(async (event: UnderstudyPluginHookEvent) => {
+			events.push("hook:gateway_start");
+			expect(event).toMatchObject({
+				name: "gateway_start",
+				config,
+				gatewayUrl,
+				details,
+			});
+		});
+		const onGatewayStop = vi.fn(async (event: UnderstudyPluginHookEvent) => {
+			events.push("hook:gateway_stop");
+			expect(event).toMatchObject({
+				name: "gateway_stop",
+				config,
+				gatewayUrl,
+				details,
+			});
+		});
+		const logger: UnderstudyPluginLogger = {
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			debug: vi.fn(),
+		};
+		const registry = new UnderstudyPluginRegistry();
+		await registry.register({
+			source: "./demo-plugin.mjs",
+			module: {
+				id: "demo-plugin",
+				register(api) {
+					api.registerDiagnostic({
+						level: "warn",
+						message: "demo warning",
+					});
+					api.registerService({
+						id: "demo-service",
+						start,
+						stop,
+					});
+					api.registerHook("gateway_start", onGatewayStart);
+					api.registerHook("gateway_stop", onGatewayStop);
+				},
+			},
+		});
+
+		const runtime = createGatewayPluginRuntime({
+			configManager: {
+				get: () => config,
+			},
+			pluginRegistry: registry,
+			gatewayUrl,
+			stateRoot,
+			cwd: "/tmp/understudy-workspace",
+			logger,
+		});
+
+		runtime.logDiagnostics();
+		expect(logger.warn).toHaveBeenCalledWith("[plugins:demo-plugin] demo warning");
+
+		await runtime.onGatewayStart(details);
+		expect(events).toEqual(["service:start", "hook:gateway_start"]);
+		expect(existsSync(join(stateRoot, "demo-plugin", "demo-service"))).toBe(true);
+
+		await runtime.onGatewayStop(details);
+		expect(events).toEqual([
+			"service:start",
+			"hook:gateway_start",
+			"hook:gateway_stop",
+			"service:stop",
+		]);
+		expect(start).toHaveBeenCalledTimes(1);
+		expect(stop).toHaveBeenCalledTimes(1);
 	});
 });

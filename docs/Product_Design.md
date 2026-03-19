@@ -75,8 +75,6 @@ Main model: "Click the Submit button"
 - `single` — predict and return, for unambiguous targets
 - `complex` — after prediction, generate a simulation overlay; a validator model (same model, different prompt) confirms; rejected candidates are marked in a guide image, retried up to 3 rounds
 
-**Cross-attempt feedback:** The runtime maintains a `groundingFeedback` Map in memory, keyed by `[app, scope, action, target]`, retaining up to 2 failure records for 2 minutes. The next grounding request for the same target carries these failures so the model avoids repeating mistakes. Records are cleared on success.
-
 **Debounced wait:** `gui_wait`'s `probeForTarget()` requires 2 consecutive consistent positive or negative grounding results before declaring the condition met, preventing single spurious results from causing false positives.
 
 Each verification returns structured status: `observed`, `resolved`, `action_sent`, `condition_met`, `not_found`, or `timeout`. This signal drives learning — a `condition_met` trace enables Layer 3 crystallization; a `not_found` triggers retry, fallback, or user handoff.

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { resolveUnderstudyHomeDir } from "./runtime-paths.js";
 import { asNumber, asRecord, asString } from "./value-helpers.js";
@@ -2492,11 +2492,13 @@ async function persistTaughtTaskDraftLedger(
 ): Promise<void> {
 	const ledgerPath = buildTaskDraftLedgerPath(ledger.workspaceDir, learningDir);
 	await mkdir(join(resolveLearningDir(learningDir), "task-drafts"), { recursive: true });
+	const tempLedgerPath = `${ledgerPath}.${process.pid}.${Date.now()}.tmp`;
 	await writeFile(
-		ledgerPath,
+		tempLedgerPath,
 		JSON.stringify(ledger, null, 2),
 		"utf8",
 	);
+	await rename(tempLedgerPath, ledgerPath);
 }
 
 export async function loadPersistedTaughtTaskDraftLedger(

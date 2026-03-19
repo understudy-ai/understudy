@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	execSync: vi.fn(),
@@ -9,10 +9,19 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { createProcessTool } from "../process-tool.js";
+import {
+	addExecSession,
+	clearExecSessionsForTest,
+	createExecSessionRecord,
+} from "../exec-sessions.js";
 
 describe("createProcessTool", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		clearExecSessionsForTest();
 	});
 
 	it("creates a tool with correct metadata", () => {
@@ -47,6 +56,36 @@ describe("createProcessTool", () => {
 
 		expect((result.content[0] as any).text).toContain("Error listing processes: ps unavailable");
 		expect(result.details).toEqual({ error: true });
+	});
+
+	it("lists running exec sessions even before they are backgrounded", async () => {
+		const session = createExecSessionRecord({
+			command: "node server.js",
+			cwd: "/tmp/workspace",
+		});
+		session.pid = 4321;
+		session.tail = "still running";
+		addExecSession(session);
+
+		const tool = createProcessTool();
+		const result = await tool.execute("id", { action: "list" });
+		const text = (result.content[0] as any).text;
+
+		expect(mocks.execSync).not.toHaveBeenCalled();
+		expect(text).toContain(session.id);
+		expect(text).toContain("running");
+		expect(text).toContain("node server.js");
+		expect(result.details).toMatchObject({
+			status: "completed",
+			sessions: [
+				expect.objectContaining({
+					sessionId: session.id,
+					status: "running",
+					pid: 4321,
+					command: "node server.js",
+				}),
+			],
+		});
 	});
 
 	it("returns error for unknown action", async () => {

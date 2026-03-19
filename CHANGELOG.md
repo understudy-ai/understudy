@@ -6,11 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 0.1.5 — 2026-03-18
 
-Sync workspace/runtime version reporting to the published package version and align release metadata across the CLI, gateway, MCP client, and Chrome relay extension.
+Sync workspace/runtime version reporting to the published package version, make dual-registry releases rerun-safe, and align release metadata across the CLI, gateway, MCP client, and Chrome relay extension.
 
 ## 0.1.4 — 2026-03-18
 
-Tighten the macOS GUI runtime and grounding stack, remove stale GUI tool-count docs, and clean up release-facing telemetry and teach/tool metadata.
+Add the bundled `researcher` skill, publish releases to GitHub Packages alongside npm, tighten the macOS GUI runtime and grounding stack, remove stale GUI tool-count docs, and clean up release-facing telemetry and teach/tool metadata.
 
 ## 0.1.3 — 2026-03-13
 

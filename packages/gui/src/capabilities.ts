@@ -41,6 +41,7 @@ const GUI_TOOL_NAMES: GuiToolName[] = [
 
 const GUI_TOOLS_ALWAYS_AVAILABLE: GuiToolName[] = [
 	"gui_key",
+	"gui_move",
 ];
 
 const GUI_TOOLS_TARGETLESS_WITHOUT_GROUNDING: GuiToolName[] = [
