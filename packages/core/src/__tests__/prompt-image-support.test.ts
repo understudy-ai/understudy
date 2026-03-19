@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	buildPromptImageModeGuidance,
 	extractReferencedImageSources,
@@ -20,6 +20,10 @@ async function createTestImage(name = "shot.png"): Promise<string> {
 }
 
 describe("prompt image support", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	it("detects prompt image support mode from model input", () => {
 		expect(resolvePromptImageSupportMode({ input: ["text", "image"] } as any)).toBe("native");
 		expect(resolvePromptImageSupportMode({ input: ["text"] } as any)).toBe("sidecar");
@@ -58,6 +62,36 @@ describe("prompt image support", () => {
 			mimeType: "image/png",
 		});
 		expect(prepared.text).not.toContain("does not accept image input directly");
+	});
+
+	it("passes a timeout signal when auto-loading HTTP image references", async () => {
+		const imageBytes = Buffer.from(ONE_BY_ONE_PNG_BASE64, "base64");
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			headers: new Headers({
+				"content-type": "image/png",
+			}),
+			arrayBuffer: async () =>
+				imageBytes.buffer.slice(
+					imageBytes.byteOffset,
+					imageBytes.byteOffset + imageBytes.byteLength,
+				),
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const prepared = await preparePromptImageSupport({
+			text: "Please inspect https://example.com/screenshot.png",
+			cwd: "/tmp",
+			model: { input: ["text", "image"] } as any,
+		});
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"https://example.com/screenshot.png",
+			expect.objectContaining({
+				signal: expect.any(AbortSignal),
+			}),
+		);
+		expect(prepared.autoLoadedImages).toHaveLength(1);
 	});
 
 	it("suppresses direct prompt images and appends guidance for sidecar models", async () => {

@@ -50,12 +50,12 @@ function mergeCapabilityMetadata(
 	}
 	const mergedMetadata = preferIncoming
 		? {
-			...(existing?.metadata ?? {}),
-			...(metadata ?? {}),
+			...existing?.metadata,
+			...metadata,
 		}
 		: {
-			...(metadata ?? {}),
-			...(existing?.metadata ?? {}),
+			...metadata,
+			...existing?.metadata,
 		};
 	return Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@understudy-ai/understudy",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Local-first teachable GUI agent runtime with gateway, web UI, channels, and tools",
   "keywords": [
     "agent",

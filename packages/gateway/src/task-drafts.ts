@@ -7,7 +7,7 @@ import {
 	persistTaughtTaskDraft,
 	publishTaughtTaskDraft,
 	resolveUnderstudyHomeDir,
-	updateTaughtTaskDraft,
+	updatePersistedTaughtTaskDraft,
 	type TaughtTaskDraft,
 } from "@understudy/core";
 import {
@@ -483,7 +483,7 @@ export function createGatewayTaskDraftHandlers(
 			const patch = (params?.patch && typeof params.patch === "object")
 				? params.patch as Record<string, unknown>
 				: params ?? {};
-				return await updateTaughtTaskDraft({
+				return await updatePersistedTaughtTaskDraft({
 					workspaceDir,
 					draftId,
 					patch: {

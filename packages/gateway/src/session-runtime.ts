@@ -6146,7 +6146,7 @@ export function createGatewaySessionRuntime(
 					getModel(parsedModel.provider as any, parsedModel.modelId as any);
 				await liveSession.setModel?.(resolvedModel);
 				entry.configOverride = {
-					...(entry.configOverride ?? {}),
+					...entry.configOverride,
 					defaultProvider: parsedModel.provider,
 					defaultModel: parsedModel.modelId,
 				};
@@ -6159,7 +6159,7 @@ export function createGatewaySessionRuntime(
 				}
 				liveSession.setThinkingLevel?.(thinkingLevel);
 				entry.configOverride = {
-					...(entry.configOverride ?? {}),
+					...entry.configOverride,
 					defaultThinkingLevel: thinkingLevel,
 				};
 				nextMeta.thinkingLevel = thinkingLevel;

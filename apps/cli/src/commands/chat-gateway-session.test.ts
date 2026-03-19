@@ -135,7 +135,7 @@ function createClient(params: {
 					sessionId: params.sessionId,
 					status: "ok",
 					response: "",
-					...(params.sendResult ?? {}),
+					...params.sendResult,
 				};
 			}
 			throw new Error(`unexpected RPC method: ${method}`);

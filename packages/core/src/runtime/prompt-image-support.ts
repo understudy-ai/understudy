@@ -258,7 +258,7 @@ async function readImageFromReference(source: string, cwd: string): Promise<Imag
 	let filePath: string | undefined;
 
 	if (isHttpUrl(source)) {
-		const response = await fetch(source);
+		const response = await fetch(source, { signal: AbortSignal.timeout(15_000) });
 		if (!response.ok) {
 			return null;
 		}

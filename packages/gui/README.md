@@ -20,7 +20,7 @@ Native GUI runtime for Understudy — screenshot-grounded desktop automation.
 | Window enumeration | Yes | Planned | Planned |
 | Demonstration recording | Yes | Planned | Planned |
 
-The type-level abstractions (`GuiAction`, `GuiObservation`, `GuiGroundingProvider`) are platform-agnostic. Only the native execution backend is macOS-specific today.
+The type-level abstractions (`GuiActionResult`, `GuiObservation`, `GuiGroundingProvider`) are platform-agnostic. Only the native execution backend is macOS-specific today.
 
 ## Key Files
 

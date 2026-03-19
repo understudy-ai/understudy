@@ -4,11 +4,14 @@ import type { UnderstudyConfig } from "@understudy/types";
 import type { ImageContent, Model } from "@mariozechner/pi-ai";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import type { GatewayRpcClient } from "../rpc-client.js";
+import {
+	CHAT_GATEWAY_CHANNEL_ID,
+	CHAT_GATEWAY_SENDER_ID,
+	GATEWAY_COMPACT_KEEP,
+	GATEWAY_MESSAGE_API,
+	GATEWAY_SESSION_PATH_PREFIX,
+} from "./chat-constants.js";
 import { parseModelRef, resolveCliModel } from "./model-support.js";
-
-const CHAT_GATEWAY_CHANNEL_ID = "terminal";
-const CHAT_GATEWAY_SENDER_ID = "understudy-chat";
-const GATEWAY_SESSION_PATH_PREFIX = "understudy-gateway-session://";
 
 type InteractiveSessionLike = {
 	agent: {
@@ -266,7 +269,7 @@ function buildAssistantMessage(params?: {
 	return {
 		role: "assistant",
 		content,
-		api: "openai-codex-responses",
+		api: GATEWAY_MESSAGE_API,
 		provider: params?.model?.provider ?? "understudy-gateway",
 		model: params?.model?.id ?? "gateway-history",
 		usage: zeroUsage(),
@@ -1112,11 +1115,11 @@ export async function createGatewayBackedInteractiveSession(
 						const tokensBefore = Math.max(1, Math.ceil(beforeText.trim().length / 4));
 						const result = await options.client.call<Record<string, unknown>>("session.compact", {
 							sessionId: gatewayState.sessionId,
-							keep: 20,
+							keep: GATEWAY_COMPACT_KEEP,
 						});
 						await syncHistory();
 						return {
-							summary: "Compacted the gateway session by keeping the most recent 20 history items.",
+							summary: `Compacted the gateway session by keeping the most recent ${GATEWAY_COMPACT_KEEP} history items.`,
 							tokensBefore,
 							...result,
 						};

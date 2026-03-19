@@ -1252,6 +1252,28 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(scrollCall?.env.UNDERSTUDY_GUI_SCROLL_Y).toBe("-225");
 	});
 
+	it("activates the requested app for targetless scrolls", async () => {
+		const ground = vi.fn();
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.scroll({
+			app: "Safari",
+			direction: "down",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(ground).not.toHaveBeenCalled();
+		const scrollCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "scroll",
+		);
+		expect(scrollCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "Safari",
+			UNDERSTUDY_GUI_ACTIVATE_APP: "1",
+		});
+	});
+
 	it("focuses a grounded target before typing", async () => {
 		const ground = vi.fn()
 			.mockResolvedValueOnce(groundedTarget("Composer", { x: 300, y: 500 }));

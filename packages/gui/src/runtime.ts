@@ -2273,7 +2273,7 @@ export class ComputerUseGuiRuntime {
 				direction: params.direction,
 				plan: scrollPlan,
 			}, {
-				activateApp: !grounded && !context,
+				activateApp: !grounded,
 			});
 			const direction = params.direction ?? "down";
 			const evidence = await this.captureEvidenceImage({
@@ -2431,8 +2431,8 @@ export class ComputerUseGuiRuntime {
 
 		const appName = normalizeOptionalString(params.app);
 		const point = { x: Math.round(params.x), y: Math.round(params.y) };
-		const action = await performHover(appName, point, 0, { activateApp: Boolean(appName) });
-		const reportedActionKind = action.actionKind === "cg_hover" ? "cg_move" : action.actionKind;
+		await performHover(appName, point, 0, { activateApp: Boolean(appName) });
+		const reportedActionKind = "cg_move";
 		return buildGuiResult({
 			text: `Moved cursor to (${point.x}, ${point.y}) via ${reportedActionKind}.`,
 			status: "action_sent",

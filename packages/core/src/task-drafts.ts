@@ -2764,6 +2764,9 @@ export async function updatePersistedTaughtTaskDraft(
 	return updated;
 }
 
+/**
+ * @deprecated Use updatePersistedTaughtTaskDraft instead.
+ */
 export async function updateTaughtTaskDraft(
 	options: UpdatePersistedTaughtTaskDraftOptions,
 ): Promise<TaughtTaskDraft> {
