@@ -1,9 +1,7 @@
-import { createHash } from "node:crypto";
 import { createAgentSession } from "@mariozechner/pi-coding-agent";
 import type { Model, ThinkingLevel } from "@mariozechner/pi-ai";
 import {
 	asRecord,
-	asString,
 	AuthManager,
 	inspectProviderAuthStatus,
 	type RuntimeResolvedModelCandidate,
@@ -11,8 +9,6 @@ import {
 import type { UnderstudyConfig } from "@understudy/types";
 import {
 	createModelLoopGroundingProvider,
-	createOpenAIGroundingProvider,
-	DEFAULT_OPENAI_GROUNDING_MODEL,
 	type GuiGroundingProvider,
 } from "@understudy/tools";
 
@@ -30,14 +26,11 @@ export interface GuiGroundingModelSelectionOptions {
 	modelCandidates?: RuntimeResolvedModelCandidate[];
 }
 
-const DEFAULT_OPENAI_RESPONSES_BASE_URL = "https://api.openai.com/v1/responses";
-const OAUTH_GROUNDING_PROBE_TIMEOUT_MS = 5_000;
 const DEFAULT_RUNTIME_GROUNDING_TIMEOUT_MS = 25_000;
 const RUNTIME_GROUNDING_MAX_ATTEMPTS = 4;
 const RUNTIME_GROUNDING_STAGE_MAX_ATTEMPTS = 3;
-const oauthGroundingProbeCache = new Map<string, Promise<{ ok: true } | { ok: false; reason: string }>>();
-const OPENAI_RUNTIME_GROUNDING_SYSTEM_PROMPT = [
-	"You are Understudy's OpenAI GUI grounding sidecar.",
+const RUNTIME_GROUNDING_SYSTEM_PROMPT = [
+	"You are a GUI grounding sidecar.",
 	"You receive exactly one screenshot image and one structured grounding request.",
 	"Return strict JSON only and never include markdown fences, commentary, or tool calls.",
 ].join("\n");
@@ -53,88 +46,9 @@ type RuntimeCreateAgentSessionImpl = typeof createAgentSession;
 type RuntimeCreatedSession = Awaited<ReturnType<RuntimeCreateAgentSessionImpl>>;
 type RuntimeAgentSession = RuntimeCreatedSession["session"];
 type RuntimeThinkingLevel = ThinkingLevel | "off";
-type OpenAIReasoningEffort = Exclude<RuntimeThinkingLevel, "off">;
 type SharedModelLoopProviderOptions = Parameters<typeof createModelLoopGroundingProvider>[0];
 type RuntimeGuideImageImpl = SharedModelLoopProviderOptions["guideImageImpl"];
 type RuntimeSimulationImageImpl = SharedModelLoopProviderOptions["simulationImageImpl"];
-
-export function clearOAuthGroundingProbeCacheForTest(): void {
-	oauthGroundingProbeCache.clear();
-}
-
-function buildProbeCacheKey(baseUrl: string, model: string, apiKey: string): string {
-	return createHash("sha256")
-		.update(`${baseUrl}\u0000${model}\u0000${apiKey}`)
-		.digest("hex");
-}
-
-async function probeOpenAIResponsesAccess(params: {
-	apiKey: string;
-	baseUrl?: string;
-	model: string;
-	fetchImpl?: typeof fetch;
-}): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const baseUrl = params.baseUrl?.trim() || DEFAULT_OPENAI_RESPONSES_BASE_URL;
-	const cacheKey = buildProbeCacheKey(baseUrl, params.model, params.apiKey);
-	const cached = oauthGroundingProbeCache.get(cacheKey);
-	if (cached) {
-		return cached;
-	}
-
-	const fetchImpl = params.fetchImpl ?? fetch;
-	const pending = (async (): Promise<{ ok: true } | { ok: false; reason: string }> => {
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), OAUTH_GROUNDING_PROBE_TIMEOUT_MS);
-		try {
-			const response = await fetchImpl(baseUrl, {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${params.apiKey}`,
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					model: params.model,
-					max_output_tokens: 1,
-					input: [
-						{
-							role: "user",
-							content: [{ type: "input_text", text: "Return ok." }],
-						},
-					],
-				}),
-				signal: controller.signal,
-			});
-			if (response.ok) {
-				return { ok: true };
-			}
-			const payload = await response.json().catch(() => ({}));
-			const message = asString(asRecord(asRecord(payload)?.error)?.message);
-			return {
-				ok: false,
-				reason: message || `OpenAI Responses API probe failed with HTTP ${response.status}.`,
-			};
-		} catch (error) {
-			return {
-				ok: false,
-				reason: error instanceof Error ? error.message : String(error),
-			};
-		} finally {
-			clearTimeout(timeout);
-		}
-	})();
-
-	const cachedPromise = pending.then((result) => {
-		if (!result.ok) {
-			oauthGroundingProbeCache.delete(cacheKey);
-		}
-		return result;
-	}, (error) => {
-		oauthGroundingProbeCache.delete(cacheKey);
-		throw error;
-	});
-	oauthGroundingProbeCache.set(cacheKey, cachedPromise);
-	return await cachedPromise;
-}
 
 function providerAliases(provider: string): string[] {
 	const normalized = provider.trim().toLowerCase();
@@ -154,10 +68,6 @@ function providerAliases(provider: string): string[] {
 
 function resolveGuiGroundingThinkingLevel(config: UnderstudyConfig): RuntimeThinkingLevel {
 	return config.agent.guiGroundingThinkingLevel ?? "medium";
-}
-
-function toOpenAIReasoningEffort(level: RuntimeThinkingLevel): OpenAIReasoningEffort | undefined {
-	return level === "off" ? undefined : level;
 }
 
 async function resolveProviderApiKey(params: {
@@ -359,7 +269,7 @@ async function promptRuntimeGroundingRound(params: {
 				await params.session.newSession();
 				attemptTrace.resetMs = Math.round(performance.now() - resetStart);
 			}
-			params.session.agent.setSystemPrompt(OPENAI_RUNTIME_GROUNDING_SYSTEM_PROMPT);
+			params.session.agent.setSystemPrompt(RUNTIME_GROUNDING_SYSTEM_PROMPT);
 			const promptStart = performance.now();
 			await Promise.race([
 				params.session.prompt(params.prompt, { images: params.images }),
@@ -401,7 +311,11 @@ async function promptRuntimeGroundingRound(params: {
 	throw lastError ?? new Error(`${params.providerName} runtime grounding failed.`);
 }
 
-export function createOpenAIRuntimeGroundingProvider(options: {
+/**
+ * Create a runtime-backed grounding provider that uses an agent session
+ * with the given model. Works with any provider that supports image input.
+ */
+export function createRuntimeGroundingProvider(options: {
 	authManager: AuthManager;
 	model: Model<any>;
 	providerName: string;
@@ -510,6 +424,12 @@ export function createOpenAIRuntimeGroundingProvider(options: {
 	};
 }
 
+/**
+ * Resolve a GUI grounding provider from the main model configuration.
+ *
+ * Uses the runtime-backed approach (agent session) for any provider whose
+ * model supports image input. No provider-specific filtering is applied.
+ */
 export async function resolveMainModelGuiGroundingProvider(
 	config: UnderstudyConfig,
 	authManager: AuthManager = AuthManager.create(),
@@ -517,7 +437,6 @@ export async function resolveMainModelGuiGroundingProvider(
 	options?: GuiGroundingModelSelectionOptions,
 ): Promise<ResolvedGuiGroundingProvider | undefined> {
 	const thinkingLevel = resolveGuiGroundingThinkingLevel(config);
-	const reasoningEffort = toOpenAIReasoningEffort(thinkingLevel);
 	const candidates = buildGuiGroundingCandidates(options);
 	if (candidates.length === 0) {
 		const providerStatus = providerStatusResolver(config.defaultProvider);
@@ -529,57 +448,30 @@ export async function resolveMainModelGuiGroundingProvider(
 			provider: config.defaultProvider,
 			modelId: config.defaultModel,
 		});
-		if (!resolved || !providerAliases(resolved.provider).includes("openai")) {
+		if (!resolved) {
 			return undefined;
 		}
-		const model = process.env.UNDERSTUDY_GUI_GROUNDING_MODEL?.trim() || resolved.modelId;
 		const label = `main:${resolved.provider}/${resolved.modelId}`;
-		if (providerStatus.credentialType === "oauth") {
-			const probe = await probeOpenAIResponsesAccess({
-				apiKey: resolved.apiKey,
-				model,
-				baseUrl: process.env.UNDERSTUDY_GUI_GROUNDING_BASE_URL?.trim(),
-			});
-			if (!probe.ok) {
-				const runtimeLabel = `${label}:runtime`;
-				const runtimeProvider = createOpenAIRuntimeGroundingProvider({
-					authManager,
-					model: resolved.model,
-					providerName: runtimeLabel,
-					thinkingLevel,
-				});
-				if (runtimeProvider) {
-					return {
-						available: true,
-						label: runtimeLabel,
-						groundingProvider: runtimeProvider,
-					};
-				}
-				return {
-					available: false,
-					label,
-					unavailableReason:
-						`Main-model OAuth credentials cannot access the OpenAI Responses API for GUI grounding, and the runtime fallback is unavailable. ${probe.reason} ` +
-						"Configure a dedicated grounding sidecar instead.",
-				};
-			}
+		const runtimeProvider = createRuntimeGroundingProvider({
+			authManager,
+			model: resolved.model,
+			providerName: label,
+			thinkingLevel,
+		});
+		if (runtimeProvider) {
+			return {
+				available: true,
+				label,
+				groundingProvider: runtimeProvider,
+			};
 		}
 		return {
-			available: true,
+			available: false,
 			label,
-			groundingProvider: createOpenAIGroundingProvider({
-				apiKey: resolved.apiKey,
-				model,
-				baseUrl: process.env.UNDERSTUDY_GUI_GROUNDING_BASE_URL?.trim(),
-				providerName: label,
-				reasoningEffort,
-			}),
+			unavailableReason: "The main model does not support image input required for GUI grounding.",
 		};
 	}
 	for (const candidate of candidates) {
-		if (!providerAliases(candidate.provider).includes("openai")) {
-			continue;
-		}
 		const providerStatus = providerStatusResolver(candidate.provider);
 		if (!providerStatus.available) {
 			continue;
@@ -591,83 +483,30 @@ export async function resolveMainModelGuiGroundingProvider(
 		if (!resolved) {
 			continue;
 		}
-		const model = process.env.UNDERSTUDY_GUI_GROUNDING_MODEL?.trim() || resolved.modelId;
 		const label = `main:${resolved.provider}/${resolved.modelId}`;
-		if (providerStatus.credentialType === "oauth") {
-			const probe = await probeOpenAIResponsesAccess({
-				apiKey: resolved.apiKey,
-				model,
-				baseUrl: process.env.UNDERSTUDY_GUI_GROUNDING_BASE_URL?.trim(),
-			});
-			if (!probe.ok) {
-				const runtimeLabel = `${label}:runtime`;
-				const runtimeProvider = createOpenAIRuntimeGroundingProvider({
-					authManager,
-					model: resolved.model,
-					providerName: runtimeLabel,
-					thinkingLevel,
-				});
-				if (runtimeProvider) {
-					return {
-						available: true,
-						label: runtimeLabel,
-						groundingProvider: runtimeProvider,
-					};
-				}
-				return {
-					available: false,
-					label,
-					unavailableReason:
-						`Main-model OAuth credentials cannot access the OpenAI Responses API for GUI grounding, and the runtime fallback is unavailable. ${probe.reason} ` +
-						"Configure a dedicated grounding sidecar instead.",
-				};
-			}
+		const runtimeProvider = createRuntimeGroundingProvider({
+			authManager,
+			model: resolved.model,
+			providerName: label,
+			thinkingLevel,
+		});
+		if (runtimeProvider) {
+			return {
+				available: true,
+				label,
+				groundingProvider: runtimeProvider,
+			};
 		}
-		return {
-			available: true,
-			label,
-			groundingProvider: createOpenAIGroundingProvider({
-				apiKey: resolved.apiKey,
-				model,
-				baseUrl: process.env.UNDERSTUDY_GUI_GROUNDING_BASE_URL?.trim(),
-				providerName: label,
-				reasoningEffort,
-			}),
-		};
 	}
 
 	return undefined;
 }
 
-function resolveExplicitOpenAIGroundingProviderFromEnv(
-	config: UnderstudyConfig,
-): ResolvedGuiGroundingProvider | undefined {
-	const apiKey = process.env.UNDERSTUDY_GUI_GROUNDING_API_KEY?.trim();
-	if (!apiKey) {
-		return undefined;
-	}
-
-	const model = process.env.UNDERSTUDY_GUI_GROUNDING_MODEL?.trim();
-	const reasoningEffort = toOpenAIReasoningEffort(resolveGuiGroundingThinkingLevel(config));
-	const label =
-		process.env.UNDERSTUDY_GUI_GROUNDING_PROVIDER?.trim() ||
-		(model ? `openai:${model}` : `openai:${DEFAULT_OPENAI_GROUNDING_MODEL}`);
-	return {
-		available: true,
-		label,
-		groundingProvider: createOpenAIGroundingProvider({
-			apiKey,
-			model,
-			baseUrl: process.env.UNDERSTUDY_GUI_GROUNDING_BASE_URL?.trim(),
-			providerName: label,
-			reasoningEffort,
-		}),
-	};
-}
-
 /**
- * Resolve the GUI grounding sidecar for the current runtime without publishing
- * credentials through process-wide env mutation.
+ * Resolve the GUI grounding provider for the current runtime.
+ *
+ * Uses the main LLM configuration — whatever the main model supports,
+ * grounding supports as well.
  */
 export async function primeGuiGroundingForConfig(
 	config: UnderstudyConfig,
@@ -675,11 +514,6 @@ export async function primeGuiGroundingForConfig(
 	providerStatusResolver: ProviderStatusResolver = inspectProviderAuthStatus,
 	options?: GuiGroundingModelSelectionOptions,
 ): Promise<ResolvedGuiGroundingProvider> {
-	const explicitOpenAI = resolveExplicitOpenAIGroundingProviderFromEnv(config);
-	if (explicitOpenAI) {
-		return explicitOpenAI;
-	}
-
 	const mainProvider = await resolveMainModelGuiGroundingProvider(
 		config,
 		authManager,

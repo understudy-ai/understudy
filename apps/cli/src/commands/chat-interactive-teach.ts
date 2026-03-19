@@ -1,10 +1,13 @@
 import { asRecord, asString } from "@understudy/core";
 import { createRpcClient, type GatewayRpcClient } from "../rpc-client.js";
+import {
+	CHAT_GATEWAY_CHANNEL_ID,
+	CHAT_GATEWAY_SENDER_ID,
+	GATEWAY_MESSAGE_API,
+} from "./chat-constants.js";
 import { resolveGatewayBrowserToken } from "./gateway-browser-auth.js";
 
 const TEACH_COMMAND_RE = /^\/teach(?:\s+(start|stop|confirm|validate|publish))?(?:\s+[\s\S]*)?$/i;
-const CHAT_GATEWAY_CHANNEL_ID = "terminal";
-const CHAT_GATEWAY_SENDER_ID = "understudy-chat";
 const TEACH_GATEWAY_TIMEOUT_MS = 600_000;
 
 interface InteractiveEditorLike {
@@ -107,7 +110,7 @@ function renderTeachTranscriptMessage(
 		interactive.addMessageToChat({
 			role: "assistant",
 			content: [{ type: "text", text: trimmed }],
-			api: "openai-codex-responses",
+			api: GATEWAY_MESSAGE_API,
 			provider: "understudy-gateway",
 			model: "teach-clarification",
 			usage: createZeroUsage(),

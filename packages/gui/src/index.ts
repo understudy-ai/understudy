@@ -25,6 +25,9 @@ export {
 } from "./types.js";
 export type {
 	GuiActionResult,
+	GuiActionStatus,
+	GuiObservation,
+	GuiResolution,
 	GuiCaptureMode,
 	GuiClickParams,
 	GuiGroundingCoordinateSpace,

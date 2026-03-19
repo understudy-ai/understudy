@@ -15,7 +15,6 @@ import {
 	type GuiGroundingBenchmarkTruth,
 } from "./__tests__/gui-benchmark-fixture.js";
 import {
-	clearOAuthGroundingProbeCacheForTest,
 	resolveMainModelGuiGroundingProvider,
 } from "./gui-grounding.js";
 
@@ -29,10 +28,6 @@ const BENCHMARK_TIMEOUT_MS = 1_200_000;
 const DEFAULT_BENCHMARK_CONCURRENCY = 1;
 const MIN_ALLOWED_POINT_DISTANCE_PX = 24;
 const MAX_ALLOWED_POINT_DISTANCE_PX = 160;
-
-afterEach(() => {
-	clearOAuthGroundingProbeCacheForTest();
-});
 const RESIZE_STABILITY_CASE_IDS = [
 	"sidebar-downloads",
 	"hero-open-fuzzy",
