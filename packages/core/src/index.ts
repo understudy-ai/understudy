@@ -22,7 +22,6 @@ export type { UnderstudyPromptReport, UnderstudySessionMeta } from "./prompt-rep
 export {
 	buildTaughtTaskDraftFromRun,
 	createTaughtTaskDraft,
-	createTaughtTaskDraftFromVideo,
 	listTaughtTaskDrafts,
 	loadTaughtTaskDraft,
 	persistTaughtTaskDraft,
@@ -38,7 +37,6 @@ export {
 export type {
 	BuildTaughtTaskDraftFromRunOptions,
 	CreateTaughtTaskDraftOptions,
-	CreateTaughtTaskDraftFromVideoOptions,
 	CreateTaughtTaskDraftRunLike,
 	ListTaughtTaskDraftsOptions,
 	LoadPersistedTaughtTaskDraftLedgerOptions,
@@ -50,6 +48,7 @@ export type {
 	TaughtTaskDraftLedger,
 	TaughtTaskCard,
 	TaughtTaskDraftParameter,
+	TaughtTaskDraftChildArtifact,
 	TaughtTaskDraftPublishedSkill,
 	TaughtTaskDraftLintIssue,
 	TaughtTaskKind,
@@ -58,14 +57,69 @@ export type {
 	TaughtTaskProcedureStep,
 	TaughtTaskDraftRevision,
 	TaughtTaskSkillDependency,
+	TaughtTaskPlaybookStage,
+	TaughtTaskPlaybookStageKind,
 	TaughtTaskStepRouteOption,
 	TaughtTaskDraftStep,
+	TaughtTaskWorkerBudget,
+	TaughtTaskWorkerContract,
 	TaughtTaskToolArgumentObject,
 	TaughtTaskToolArgumentPrimitive,
 	TaughtTaskToolArgumentValue,
 	TaughtTaskToolArguments,
 	UpdatePersistedTaughtTaskDraftOptions,
 } from "./task-drafts.js";
+export {
+	createPlaybookRun,
+	ensurePlaybookRunDirs,
+	listPlaybookRuns,
+	loadPlaybookRun,
+	persistPlaybookRun,
+	resolvePlaybookRunArtifactsDir,
+	resolvePlaybookRunDir,
+	resolvePlaybookRunPath,
+	resolvePlaybookRunsDir,
+	updatePlaybookRun,
+} from "./playbook-runs.js";
+export type {
+	CreatePlaybookRunOptions,
+	PersistPlaybookRunOptions,
+	PlaybookRunApproval,
+	PlaybookRunApprovalState,
+	PlaybookRunArtifactState,
+	PlaybookRunBudgetState,
+	PlaybookRunChildSessionState,
+	PlaybookRunInputValue,
+	PlaybookRunRecord,
+	PlaybookRunStageState,
+	PlaybookRunStatus,
+	UpdatePlaybookRunOptions,
+} from "./playbook-runs.js";
+export {
+	createPlaybookRunFromPlaybook,
+	loadWorkspaceArtifactByName,
+	loadWorkspaceArtifactFromFile,
+	resolveWorkspaceArtifactPath,
+} from "./workspace-artifacts.js";
+export type {
+	CreatePlaybookRunFromPlaybookOptions,
+	CreatePlaybookRunFromPlaybookResult,
+	WorkspaceArtifactBaseDefinition,
+	WorkspaceArtifactDefinition,
+	WorkspacePlaybookArtifactDefinition,
+	WorkspacePlaybookStage,
+	WorkspaceSkillArtifactDefinition,
+	WorkspaceWorkerArtifactDefinition,
+} from "./workspace-artifacts.js";
+export {
+	normalizeWorkspacePlaybookApprovalGate,
+} from "./workspace-artifact-types.js";
+export type {
+	WorkspaceArtifactChildRef,
+	WorkspaceArtifactKind,
+	WorkspacePlaybookApprovalGate,
+	WorkspacePlaybookStageKind,
+} from "./workspace-artifact-types.js";
 export {
 	appendPersistedWorkflowCrystallizationTurnFromRun,
 	buildWorkflowCrystallizationTurnFromRun,

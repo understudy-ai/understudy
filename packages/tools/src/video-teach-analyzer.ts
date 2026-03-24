@@ -1,15 +1,20 @@
 import {
 	ConfigManager,
 	createUnderstudySession,
+	type TaughtTaskDraftChildArtifact,
 	type TaughtTaskCard,
 	type TaughtTaskExecutionPolicy,
 	type TaughtTaskExecutionRoute,
 	type TaughtTaskKind,
+	type TaughtTaskPlaybookStage,
 	type TaughtTaskProcedureStep,
 	type TaughtTaskSkillDependency,
 	type TaughtTaskStepRouteOption,
 	type TaughtTaskToolArguments,
+	type TaughtTaskWorkerContract,
+	type WorkspaceArtifactKind,
 	extractTaughtTaskToolArgumentsFromRecord,
+	normalizeWorkspacePlaybookApprovalGate,
 	normalizeTaughtTaskToolArguments,
 } from "@understudy/core";
 import type { UnderstudyConfig } from "@understudy/types";
@@ -160,6 +165,7 @@ export interface VideoTeachAnalysis {
 	title: string;
 	objective: string;
 	summary?: string;
+	artifactKind?: WorkspaceArtifactKind;
 	taskKind: TaughtTaskKind;
 	parameterSlots: VideoTeachParameterSlot[];
 	successCriteria: string[];
@@ -171,6 +177,9 @@ export interface VideoTeachAnalysis {
 	replayPreconditions: string[];
 	resetSignals: string[];
 	skillDependencies: TaughtTaskSkillDependency[];
+	childArtifacts?: TaughtTaskDraftChildArtifact[];
+	playbookStages?: TaughtTaskPlaybookStage[];
+	workerContract?: TaughtTaskWorkerContract;
 	steps: VideoTeachStep[];
 	provider: string;
 	model: string;
@@ -861,6 +870,124 @@ function normalizeSkillDependencies(value: unknown): TaughtTaskSkillDependency[]
 		});
 	}
 	return dependencies.slice(0, 12);
+}
+
+function normalizeArtifactKind(value: unknown): WorkspaceArtifactKind | undefined {
+	switch (asString(value)?.toLowerCase()) {
+		case "skill":
+			return "skill";
+		case "worker":
+			return "worker";
+		case "playbook":
+			return "playbook";
+		default:
+			return undefined;
+	}
+}
+
+function normalizeChildArtifacts(value: unknown): TaughtTaskDraftChildArtifact[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	const artifacts: TaughtTaskDraftChildArtifact[] = [];
+	for (const [index, entry] of value.entries()) {
+		const record = asRecord(entry);
+		const name = asString(record?.name);
+		const objective = asString(record?.objective);
+		const artifactKind = normalizeArtifactKind(record?.artifactKind);
+		if (!name || !objective || !artifactKind || artifactKind === "playbook") {
+			continue;
+		}
+		artifacts.push({
+			id: asString(record?.id) ?? `child-artifact-${index + 1}`,
+			name,
+			artifactKind,
+			objective,
+			required: record?.required !== false,
+			...(asString(record?.reason) ? { reason: asString(record?.reason) } : {}),
+		});
+	}
+	return artifacts.slice(0, 16);
+}
+
+function normalizePlaybookStages(value: unknown): TaughtTaskPlaybookStage[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	const stages: TaughtTaskPlaybookStage[] = [];
+	for (const [index, entry] of value.entries()) {
+		const record = asRecord(entry);
+		const kind = asString(record?.kind);
+		const normalizedKind =
+			kind === "skill" ||
+			kind === "worker" ||
+			kind === "inline" ||
+			kind === "approval"
+				? kind
+				: undefined;
+		const name = asString(record?.name);
+		const objective = asString(record?.objective);
+		if (!normalizedKind || !name || !objective) {
+			continue;
+		}
+		const refName = asString(record?.refName);
+		if ((normalizedKind === "skill" || normalizedKind === "worker") && !refName) {
+			continue;
+		}
+		const retryPolicy = asString(record?.retryPolicy);
+		const approvalGate = normalizeWorkspacePlaybookApprovalGate(record?.approvalGate);
+		stages.push({
+			id: asString(record?.id) ?? `playbook-stage-${index + 1}`,
+			name,
+			kind: normalizedKind,
+			...(refName ? { refName } : {}),
+			objective,
+			inputs: normalizeLineList(record?.inputs),
+			outputs: normalizeLineList(record?.outputs),
+			budgetNotes: normalizeLineList(record?.budgetNotes),
+			...(retryPolicy === "retry_once" || retryPolicy === "skip_with_note" || retryPolicy === "pause_for_human"
+				? { retryPolicy }
+				: {}),
+			...(approvalGate ? { approvalGate } : {}),
+		});
+	}
+	return stages.slice(0, 24);
+}
+
+function normalizeWorkerContract(value: unknown): TaughtTaskWorkerContract | undefined {
+	const record = asRecord(value);
+	const goal = asString(record?.goal);
+	if (!goal) {
+		return undefined;
+	}
+	const budget = asRecord(record?.budget);
+	const asFiniteInt = (input: unknown): number | undefined =>
+		typeof input === "number" && Number.isFinite(input) && input >= 0
+			? Math.floor(input)
+			: undefined;
+	return {
+		goal,
+		...(asString(record?.scope) ? { scope: asString(record?.scope) } : {}),
+		inputs: normalizeLineList(record?.inputs),
+		outputs: normalizeLineList(record?.outputs),
+		allowedRoutes: (Array.isArray(record?.allowedRoutes) ? record.allowedRoutes : [])
+			.map((entry) => asString(entry))
+			.filter((entry): entry is TaughtTaskExecutionRoute =>
+				entry === "skill" || entry === "browser" || entry === "shell" || entry === "gui"),
+		allowedSurfaces: normalizeLineList(record?.allowedSurfaces),
+		...(budget
+			? {
+				budget: {
+					...(asFiniteInt(budget.maxMinutes) !== undefined ? { maxMinutes: asFiniteInt(budget.maxMinutes) } : {}),
+					...(asFiniteInt(budget.maxActions) !== undefined ? { maxActions: asFiniteInt(budget.maxActions) } : {}),
+					...(asFiniteInt(budget.maxScreenshots) !== undefined ? { maxScreenshots: asFiniteInt(budget.maxScreenshots) } : {}),
+				},
+			}
+			: {}),
+		escalationPolicy: normalizeLineList(record?.escalationPolicy),
+		stopConditions: normalizeLineList(record?.stopConditions),
+		decisionHeuristics: normalizeLineList(record?.decisionHeuristics),
+	};
 }
 
 function formatTimestampMs(value: number | undefined): string {
@@ -1808,6 +1935,10 @@ function buildPrompt(params: {
 			"For gui_key, use key names like Enter, Tab, Escape, Space, Delete, ArrowDown. For modifier combos, also use gui_key.",
 			"Preserve exact replay-only tool parameters such as button, clicks, holdMs, windowSelector, fromTarget/toTarget, wait state, repeat, and modifiers inside steps[].toolArgs instead of dropping them.",
 			"",
+			"Choose artifactKind explicitly when the demo is clearly a higher-level reusable artifact: default to skill, use playbook for a staged production pipeline, and use worker only for goal-driven open-ended work.",
+			"If artifactKind is worker, include workerContract with goal, inputs, outputs, allowed routes/surfaces, budget, escalation policy, stop conditions, and decision heuristics.",
+			"If artifactKind is playbook, include childArtifacts and playbookStages. childArtifacts may reference skill or worker children. playbookStages should be an ordered linear stage plan.",
+			"If a playbook stage needs approval, use approvalGate as a short reusable gate name such as delivery_preview, publish_preview, payment_review, or legal_review. Use none only when the approval stage does not need a named gate.",
 			"Your first decision is taskKind. Choose exactly one: fixed_demo, parameterized_workflow, or batch_workflow.",
 			"If taskKind is fixed_demo, parameterSlots must be empty and taskCard.inputs must be empty. Keep the exact demonstrated objective rather than inventing reusable parameters.",
 			"If taskKind is parameterized_workflow, do not hard-code the demo's literal value as the only supported input. Use parameterSlots and semantic procedure wording instead.",
@@ -1820,7 +1951,7 @@ function buildPrompt(params: {
 			"Use preference=preferred for the best route, fallback for a backup route, and observed for what the demo literally showed.",
 			"Remove recording-control noise such as returning to Understudy, typing `/teach stop`, or handling Ctrl+C unless the user hint explicitly says those actions are part of the task.",
 			"When possible, output a reusable task card, a semantic high-level procedure, replay preconditions, reset signals, and references to existing workspace skill dependencies rather than only low-level UI steps.",
-			'Schema: {"title":"...","objective":"...","summary":"...","taskKind":"fixed_demo|parameterized_workflow|batch_workflow","parameterSlots":[{"name":"...","label":"...","sampleValue":"...","required":true,"notes":"..."}],"successCriteria":["..."],"openQuestions":["..."],"replayPreconditions":["..."],"resetSignals":["..."],"taskCard":{"goal":"...","scope":"...","loopOver":"...","inputs":["..."],"extract":["..."],"formula":"...","filter":"...","output":"..."},"procedure":[{"instruction":"...","kind":"navigate|extract|transform|filter|output|skill|check","skillName":"optional-skill-name","notes":"...","uncertain":false}],"executionPolicy":{"toolBinding":"adaptive|fixed","preferredRoutes":["skill","browser","shell","gui"],"stepInterpretation":"evidence|fallback_replay|strict_contract","notes":["..."]},"stepRouteOptions":[{"procedureStepId":"procedure-1","route":"skill|browser|shell|gui","preference":"preferred|fallback|observed","instruction":"...","toolName":"exact-available-tool-name","skillName":"optional-skill-name","when":"...","notes":"..."}],"skillDependencies":[{"name":"...","reason":"...","required":true}],"steps":[{"route":"gui|browser|shell|web|workspace|memory|messaging|automation|system|custom","toolName":"exact-available-tool-name","instruction":"...","summary":"...","target":"...","app":"...","scope":"...","locationHint":"...","windowTitle":"...","captureMode":"window|display","groundingMode":"single|complex","inputs":{"key":"value"},"toolArgs":{"button":"right","windowSelector":{"titleContains":"Draft"}},"verificationSummary":"...","uncertain":false}]}',
+			'Schema: {"title":"...","objective":"...","summary":"...","artifactKind":"skill|worker|playbook","taskKind":"fixed_demo|parameterized_workflow|batch_workflow","parameterSlots":[{"name":"...","label":"...","sampleValue":"...","required":true,"notes":"..."}],"successCriteria":["..."],"openQuestions":["..."],"replayPreconditions":["..."],"resetSignals":["..."],"taskCard":{"goal":"...","scope":"...","loopOver":"...","inputs":["..."],"extract":["..."],"formula":"...","filter":"...","output":"..."},"procedure":[{"instruction":"...","kind":"navigate|extract|transform|filter|output|skill|check","skillName":"optional-skill-name","notes":"...","uncertain":false}],"executionPolicy":{"toolBinding":"adaptive|fixed","preferredRoutes":["skill","browser","shell","gui"],"stepInterpretation":"evidence|fallback_replay|strict_contract","notes":["..."]},"stepRouteOptions":[{"procedureStepId":"procedure-1","route":"skill|browser|shell|gui","preference":"preferred|fallback|observed","instruction":"...","toolName":"exact-available-tool-name","skillName":"optional-skill-name","when":"...","notes":"..."}],"skillDependencies":[{"name":"...","reason":"...","required":true}],"childArtifacts":[{"id":"child-1","name":"...","artifactKind":"skill|worker","objective":"...","required":true,"reason":"..."}],"playbookStages":[{"id":"stage-1","name":"...","kind":"skill|worker|inline|approval","refName":"optional-child-name","objective":"...","inputs":["..."],"outputs":["..."],"budgetNotes":["..."],"retryPolicy":"retry_once|skip_with_note|pause_for_human","approvalGate":"none|delivery_preview|publish_preview|payment_review"}],"workerContract":{"goal":"...","scope":"...","inputs":["..."],"outputs":["..."],"allowedRoutes":["skill","browser","shell","gui"],"allowedSurfaces":["..."],"budget":{"maxMinutes":12,"maxActions":60,"maxScreenshots":12},"escalationPolicy":["..."],"stopConditions":["..."],"decisionHeuristics":["..."]},"steps":[{"route":"gui|browser|shell|web|workspace|memory|messaging|automation|system|custom","toolName":"exact-available-tool-name","instruction":"...","summary":"...","target":"...","app":"...","scope":"...","locationHint":"...","windowTitle":"...","captureMode":"window|display","groundingMode":"single|complex","inputs":{"key":"value"},"toolArgs":{"button":"right","windowSelector":{"titleContains":"Draft"}},"verificationSummary":"...","uncertain":false}]}',
 			"If the demonstration leaves gaps, record them in openQuestions and mark the affected step uncertain=true.",
 		].join("\n");
 	}
@@ -1913,6 +2044,16 @@ function parseAnalysis(params: {
 		parameterSlots: effectiveParameterSlots,
 	});
 	const skillDependencies = normalizeSkillDependencies(params.payload.skillDependencies);
+	const artifactKind = normalizeArtifactKind(params.payload.artifactKind);
+	const childArtifacts = artifactKind === "playbook"
+		? normalizeChildArtifacts(params.payload.childArtifacts)
+		: [];
+	const playbookStages = artifactKind === "playbook"
+		? normalizePlaybookStages(params.payload.playbookStages)
+		: [];
+	const workerContract = artifactKind === "worker"
+		? normalizeWorkerContract(params.payload.workerContract)
+		: undefined;
 	const resolvedProcedure = procedure.length > 0
 		? procedure
 		: steps.map((step, index) => ({
@@ -1935,6 +2076,7 @@ function parseAnalysis(params: {
 		title,
 		objective,
 		summary: asString(params.payload.summary),
+		...(artifactKind ? { artifactKind } : {}),
 		taskKind,
 		parameterSlots: effectiveParameterSlots,
 		successCriteria: normalizeLineList(params.payload.successCriteria),
@@ -1946,6 +2088,9 @@ function parseAnalysis(params: {
 		replayPreconditions: normalizeReplayHints(params.payload.replayPreconditions),
 		resetSignals: normalizeReplayHints(params.payload.resetSignals),
 		skillDependencies,
+		...(childArtifacts.length > 0 ? { childArtifacts } : {}),
+		...(playbookStages.length > 0 ? { playbookStages } : {}),
+		...(workerContract ? { workerContract } : {}),
 		steps,
 		provider: params.provider,
 		model: params.model,
