@@ -64,6 +64,20 @@ async function resolveGatewayAuthToken(options?: {
 	}
 }
 
+async function resolveGatewayAuthMode(): Promise<string> {
+	const envMode = asString(process.env.UNDERSTUDY_GATEWAY_AUTH_MODE)?.toLowerCase();
+	if (envMode) {
+		return envMode;
+	}
+
+	try {
+		const config = await ConfigManager.load();
+		return asString(config.get().gateway?.auth?.mode)?.toLowerCase() ?? "none";
+	} catch {
+		return "none";
+	}
+}
+
 function deriveRelayAuthToken(gatewayToken: string, port: number): string {
 	return createHmac("sha256", gatewayToken)
 		.update(`${UNDERSTUDY_EXTENSION_RELAY_TOKEN_CONTEXT}:${port}`)
@@ -78,6 +92,10 @@ export async function resolveUnderstudyRelayAcceptedTokensForPort(
 ): Promise<string[]> {
 	const gatewayToken = await resolveGatewayAuthToken(options);
 	if (!gatewayToken) {
+		const authMode = await resolveGatewayAuthMode();
+		if (authMode === "none") {
+			return [];
+		}
 		throw new Error(
 			"Browser extension relay requires gateway auth token. Set gateway.auth.token or UNDERSTUDY_GATEWAY_TOKEN.",
 		);
@@ -95,7 +113,7 @@ export async function resolveUnderstudyRelayAuthTokenForPort(
 		gatewayToken?: string;
 	},
 ): Promise<string> {
-	return (await resolveUnderstudyRelayAcceptedTokensForPort(port, options))[0];
+	return (await resolveUnderstudyRelayAcceptedTokensForPort(port, options))[0] ?? "";
 }
 
 export async function getUnderstudyChromeExtensionRelayAuthHeaders(
@@ -108,8 +126,12 @@ export async function getUnderstudyChromeExtensionRelayAuthHeaders(
 	if (!port) {
 		return {};
 	}
+	const relayToken = await resolveUnderstudyRelayAuthTokenForPort(port, options);
+	if (!relayToken) {
+		return {};
+	}
 	return {
-		[UNDERSTUDY_EXTENSION_RELAY_HEADER]: await resolveUnderstudyRelayAuthTokenForPort(port, options),
+		[UNDERSTUDY_EXTENSION_RELAY_HEADER]: relayToken,
 	};
 }
 

@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { createBrowserTool } from "../browser/browser-tool.js";
 
@@ -165,6 +168,15 @@ describe("createBrowserTool", () => {
 		expect(manager.close).toHaveBeenCalled();
 	});
 
+	it("does not crash when evaluate resolves to undefined", async () => {
+		const { manager, page } = createManager();
+		(page.evaluate as any).mockResolvedValueOnce(undefined);
+		const tool = createBrowserTool(manager as any);
+
+		const evaluate = await tool.execute("id", { action: "evaluate", fn: "() => {}" });
+		expect((evaluate.content[0] as any).text).toBe("undefined");
+	});
+
 	it("executes start/tabs/open/focus/press/wait/pdf/stop actions", async () => {
 		const { manager, page } = createManager();
 		const tool = createBrowserTool(manager as any);
@@ -266,6 +278,26 @@ describe("createBrowserTool", () => {
 		expect(image.mimeType).toBe("image/png");
 		expect(typeof image.data).toBe("string");
 		expect(result.details).toMatchObject({ action: "screenshot", mimeType: "image/png" });
+	});
+
+	it("writes screenshot bytes to disk when path is provided", async () => {
+		const { manager } = createManager();
+		const tool = createBrowserTool(manager as any);
+		const tempDir = mkdtempSync(join(tmpdir(), "browser-tool-screenshot-"));
+		const outputPath = join(tempDir, "captures", "shot.png");
+
+		try {
+			const result = await tool.execute("id", { action: "screenshot", path: outputPath });
+
+			expect(readFileSync(outputPath).equals(Buffer.from("page-png-bytes"))).toBe(true);
+			expect(result.details).toMatchObject({
+				action: "screenshot",
+				mimeType: "image/png",
+				path: resolve(outputPath),
+			});
+		} finally {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
 	});
 
 	it("adds a clear hint for empty managed tabs", async () => {

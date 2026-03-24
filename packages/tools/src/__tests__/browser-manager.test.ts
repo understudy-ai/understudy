@@ -73,6 +73,7 @@ describe("BrowserManager", () => {
 
 	it("lazy-initializes a managed browser and reuses the first page", async () => {
 		const manager = new BrowserManager({
+			browserConnectionMode: "managed",
 			headless: false,
 			viewport: { width: 800, height: 600 },
 			timeout: 1234,
@@ -90,6 +91,20 @@ describe("BrowserManager", () => {
 		expect(mocks.setDefaultTimeout).toHaveBeenCalledWith(1234);
 		expect(mocks.setViewportSize).toHaveBeenCalledWith({ width: 800, height: 600 });
 		expect(manager.isRunning()).toBe(true);
+	});
+
+	it("defaults to auto mode and uses the extension relay when it is available", async () => {
+		const manager = new BrowserManager();
+
+		await manager.start();
+
+		expect(manager.getConfiguredConnectionMode()).toBe("auto");
+		expect(manager.getResolvedConnectionMode()).toBe("extension");
+		expect(mocks.connectOverCDP).toHaveBeenCalledWith("http://127.0.0.1:23336", {
+			timeout: 30000,
+			headers: { "x-understudy-relay-token": "relay-token" },
+		});
+		expect(mocks.launch).not.toHaveBeenCalled();
 	});
 
 	it("connects through the extension relay with auth headers", async () => {

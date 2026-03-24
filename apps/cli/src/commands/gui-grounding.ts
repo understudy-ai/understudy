@@ -194,7 +194,7 @@ function isRetryableRuntimeStageError(error: unknown): boolean {
 		normalized.includes("server_error") ||
 		normalized.includes("temporarily unavailable") ||
 		normalized.includes("overloaded") ||
-		(normalized.includes("stopreason") && normalized.includes("\"error\""));
+		normalized.includes("stopreason\\\":\\\"error");
 }
 
 async function promptRuntimeGroundingRound(params: {

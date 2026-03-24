@@ -60,7 +60,7 @@ describe("wizard helpers", () => {
 		expect(summary).toContain("Understudy setup completed.");
 		expect(summary).toContain("Config saved: /tmp/understudy-config.json5");
 		expect(summary).toContain("Default model: google/gemini-3.1-flash-lite-preview");
-		expect(summary).toContain("Browser: mode=managed");
+		expect(summary).toContain("Browser: mode=auto");
 		expect(summary).toContain("Memory: enabled");
 		expect(summary).toContain("Enabled channels: telegram, web");
 		expect(summary).toContain("Notices:");

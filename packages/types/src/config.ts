@@ -337,7 +337,7 @@ export const DEFAULT_CONFIG: UnderstudyConfig = {
 		enabled: false,
 	},
 	browser: {
-		connectionMode: "managed",
+		connectionMode: "auto",
 		cdpUrl: DEFAULT_BROWSER_EXTENSION_CDP_URL,
 	},
 	gateway: {
