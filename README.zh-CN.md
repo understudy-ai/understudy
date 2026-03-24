@@ -116,6 +116,32 @@ Planner 决定每一步使用哪条路线。一个任务可能浏览网站、运
 
 完整的 teach 管线、证据包构建和验证细节见 [产品设计](./docs/Product_Design.zh-CN.md)。
 
+### 新的通用工作流原语
+
+**状态：** 这个分支已经实现。Understudy 不再把所有发布产物都看成“单一 skill”。现在 workspace artifact 和 teach draft 支持三种可复用产物类型：
+
+| 产物 | 作用 |
+|------|------|
+| `skill` | 可复用的工作流或能力 |
+| `worker` | 带显式输入、输出、预算、允许操作面的目标驱动契约 |
+| `playbook` | 可以串联 skill、worker、inline stage 和 approval gate 的阶段化流水线 |
+
+相比 `main` 新增的通用能力：
+
+- Teach 和 draft 分析现在可以产出可复用的 `worker` / `playbook`，而不只是单段 skill。
+- Workspace 加载、task-draft 发布、gateway runtime 都理解阶段化 playbook 和契约化 worker。
+- Playbook run 会持久化阶段状态、artifact 根目录、approval 状态和 child session 关联，让长流程可以真实恢复，而不是“从头猜”。
+- Stage 完成时会校验声明的输出文件是否真的落盘，避免流程在产物没生成出来时也声称成功。
+- 浏览器自动化默认使用 `browserConnectionMode: "auto"`：能接 Chrome extension relay 就接，接不上再回退到托管 Playwright。
+- GUI 输入现在支持多种 native / System Events 策略，以及基于 secret 的输入源，让登录和安全字段自动化更可靠，也避免把明文塞进命令参数。
+- handwritten playbook example 和共享 playbook e2e harness 是通用示例，不是 iPhone review 专用基础设施。
+
+为什么这是升级而不是特化：
+
+- 现有的单-skill teach 和普通 session 流程仍然可用。
+- 新的 artifact 类型和 runtime 是增量式扩展，不是用 demo 特化逻辑替换原来的模型。
+- 后续 demo skill 完全建立在这些原语之上，说明核心包本身保持了泛化和可复用性。
+
 ### Layer 3 — 日用渐深
 
 **状态：** 部分实现。现在已经有一条可工作的 workflow crystallization 链路，但提升策略和自动路线升级还处在早期阶段。

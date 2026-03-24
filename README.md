@@ -116,6 +116,32 @@ A real published output example is available at [examples/published-skills/taugh
 
 For the full teach pipeline, evidence pack construction, and validation details, see [Product Design](./docs/Product_Design.md).
 
+### New Generic Workflow Primitives
+
+**Status:** implemented in this branch. Understudy no longer treats every published output as only a single skill. Workspace artifacts and teach drafts now support three reusable artifact kinds:
+
+| Artifact | Purpose |
+|----------|---------|
+| `skill` | A reusable workflow or capability |
+| `worker` | A goal-driven contract with explicit inputs, outputs, budgets, and allowed surfaces |
+| `playbook` | A staged pipeline that can sequence skills, workers, inline stages, and approval gates |
+
+What this adds on top of `main`:
+
+- Teach and draft analysis can now shape reusable `worker` and `playbook` artifacts instead of only one-off skill-like outputs.
+- Workspace loading, task-draft publishing, and gateway runtime all understand staged playbooks and contract-driven workers.
+- Playbook runs persist stage state, artifact roots, approvals, and child-session linkage so long-running workflows can resume truthfully.
+- Stage completion now validates declared outputs on disk, which prevents a run from claiming success when expected artifacts were never produced.
+- Browser automation defaults to `browserConnectionMode: "auto"`: attach to the Chrome extension relay when possible, otherwise fall back to managed Playwright.
+- GUI typing now supports multiple native and System Events strategies plus secret-backed input, which makes login and secure-field automation more reliable without leaking literals into command arguments.
+- The handwritten playbook example and shared playbook e2e harness are generic examples, not iPhone-review-only infrastructure.
+
+Why this is an upgrade rather than a specialization:
+
+- Existing single-skill teach and session flows continue to work.
+- The new artifact kinds and runtimes are additive; they generalize the execution model instead of replacing it with demo-specific code.
+- Demo-specific skills can be built entirely on top of these primitives, which keeps the core packages broadly reusable.
+
 ### Layer 3 — Remember What Worked
 
 **Status:** partially implemented. Understudy now has a working workflow crystallization loop for repeated day-to-day use, but promotion policy and automatic route upgrading are still early.
