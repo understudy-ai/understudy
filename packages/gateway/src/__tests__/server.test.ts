@@ -166,6 +166,7 @@ describe("GatewayServer", () => {
 		const dashboardHtml = await dashboardRes.text();
 		expect(dashboardHtml).toContain("Understudy Dashboard");
 		expect(dashboardHtml).toContain("Overview");
+		expect(dashboardHtml).toContain("Runs");
 		expect(dashboardHtml).toContain("Configuration");
 		expect(dashboardHtml).toContain("Runtime Readiness");
 		expect(dashboardHtml).toContain("Channel Operations");

@@ -3,6 +3,7 @@ import {
 	asNumber as asCanonicalNumber,
 	asRecord as asCanonicalRecord,
 	asString,
+	type PlaybookRunInputValue,
 } from "@understudy/core";
 
 export { asString };
@@ -40,4 +41,11 @@ export function asBoolean(value: unknown): boolean | undefined {
 export function sanitizePathSegment(value: string | undefined, fallback: string): string {
 	const normalized = value?.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 	return normalized || fallback;
+}
+
+export function formatInputValue(value: PlaybookRunInputValue | undefined): string {
+	if (typeof value === "boolean") {
+		return value ? "true" : "false";
+	}
+	return typeof value === "number" ? String(value) : (value ?? "");
 }
