@@ -45,14 +45,7 @@ is visible.
 Record the iPhone Mirroring window bounds from the latest GUI tool result and
 reuse them for all screenshots in this stage.
 
-Bounds rule:
-
-- Treat the latest GUI tool result `capture_rect` (or `pre_action_capture.capture_rect`) as the authoritative iPhone Mirroring window bounds.
-- Persist that `{x,y,width,height}` tuple mentally and reuse it for every later `screencapture -R...` call in this stage.
-- If the GUI tool text does not expose numeric bounds you can directly reuse, use a deterministic CoreGraphics fallback via `swift` to enumerate on-screen windows and extract the bounds for `iPhone Mirroring` / `iPhone镜像`.
-- Prefer a short inline `swift` script with `CGWindowListCopyWindowInfo`; do **not** rely on Python `Quartz` bindings here.
-- Do **not** query `iPhone Mirroring` window bounds with AppleScript such as `tell application "iPhone Mirroring" to get bounds of front window`; that path is flaky.
-- If GUI observation alone is insufficient, the only approved shell fallback is the CoreGraphics `swift` lookup above.
+Bounds rule: use the **Screenshot Capture** section in `iphone-mirroring-basics` for window bounds discovery and the CoreGraphics Swift fallback.
 
 Long-press the selected app icon, choose the remove/delete flow, and confirm the
 final delete dialog.
@@ -76,88 +69,9 @@ Practical capture rule:
 - If the latest successful `gui_observe`, `gui_click`, or `gui_type` result already includes `capture_rect`, reuse it directly.
 - Do not stop to rediscover bounds before the final screenshot if the GUI result already exposed them.
 - Capture to a temporary raw file first, then crop to the final path in one deterministic local shell step.
-- Prefer a real temporary file outside the artifacts tree, for example `RAW="$(mktemp /tmp/cleanup-raw-XXXXXX).png"`, instead of a hidden placeholder under `topic/screenshots/`.
-- Prefer a short `python3` + Pillow crop. If Pillow is unavailable, use `sips --cropToHeightWidth` as the fallback.
-- Use proportional crop insets based on the raw capture size so the stage can finish without another visual-inspection round:
-  - left inset = `round(width * 0.0253)`
-  - top inset = `round(height * 0.0532)`
-  - right inset = `round(width * 0.0190)`
-  - bottom inset = `round(height * 0.0129)`
-- If a shell variable will later be read from `os.environ`, export it on its own
-  line before any fallible command that might short-circuit the shell block.
-  Do not hide `export ROOT_DIR`, `export FINAL`, or `export BOUNDS_JSON` behind
-  a trailing `&&`.
-- If the crop step reads shell variables such as `BOUNDS_JSON`, `RAW`, `FINAL`, `X`, `Y`, `W`, or `H` from Python, export them before invoking `python3`.
-- If you derive `X`, `Y`, `W`, or `H` from a JSON shell variable such as `BOUNDS_JSON`, export `BOUNDS_JSON` first in the same shell block before calling `python3`.
-- Safe pattern:
-
-```bash
-ROOT_DIR="<resolved root dir>"
-FINAL="$ROOT_DIR/topic/screenshots/99-Clean-Home-Screen.png"
-export ROOT_DIR FINAL
-BOUNDS_JSON="$(swift ...)"
-export BOUNDS_JSON
-X="$(python3 - <<'PY'
-import json, os
-print(json.loads(os.environ['BOUNDS_JSON'])['x'])
-PY
-)"
-```
-- Preferred CoreGraphics fallback template:
-
-```bash
-BOUNDS_JSON="$(swift - <<'SWIFT'
-import Cocoa
-import CoreGraphics
-import Foundation
-
-let options = CGWindowListOption(arrayLiteral: [.optionOnScreenOnly, .excludeDesktopElements])
-let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
-
-func windowTitle(_ info: [String: Any]) -> String {
-    (info[kCGWindowName as String] as? String) ?? ""
-}
-
-func ownerName(_ info: [String: Any]) -> String {
-    (info[kCGWindowOwnerName as String] as? String) ?? ""
-}
-
-func windowBounds(_ info: [String: Any]) -> CGRect? {
-    guard let dict = info[kCGWindowBounds as String] as? NSDictionary else { return nil }
-    return CGRect(dictionaryRepresentation: dict)
-}
-
-func area(_ rect: CGRect) -> CGFloat { rect.width * rect.height }
-
-let chosen = windows.compactMap { info -> CGRect? in
-    let title = windowTitle(info)
-    let owner = ownerName(info)
-    guard title.contains("iPhone Mirroring")
-        || title.contains("iPhone镜像")
-        || owner.contains("iPhone Mirroring")
-        || owner.contains("iPhone镜像")
-    else { return nil }
-    guard let rect = windowBounds(info), rect.width > 100, rect.height > 100 else { return nil }
-    return rect
-}.sorted { area($0) > area($1) }.first
-
-guard let rect = chosen else {
-    fputs("No iPhone Mirroring window found\n", stderr)
-    exit(1)
-}
-
-let result: [String: Int] = [
-    "x": Int(rect.origin.x.rounded()),
-    "y": Int(rect.origin.y.rounded()),
-    "width": Int(rect.width.rounded()),
-    "height": Int(rect.height.rounded()),
-]
-let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
-print(String(data: data, encoding: .utf8)!)
-SWIFT
-)"
-export BOUNDS_JSON
-```
+- Use the **Screenshot Capture** section in `iphone-mirroring-basics` for the crop insets, the CoreGraphics Swift window bounds template, and the preferred Pillow crop pattern.
+- Capture to a real temporary file outside the artifacts tree first, then crop to the final path.
+- Export all shell variables before invoking any `python3` block that reads from `os.environ`.
 - Save the cropped result to `topic/screenshots/99-Clean-Home-Screen.png`, verify the file exists, and print its final dimensions.
 - After that verification passes, do **not** call the `image` tool on the final PNG. Continue immediately to Step 4.
 
