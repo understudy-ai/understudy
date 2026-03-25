@@ -256,7 +256,7 @@ describe("workspace artifacts", () => {
 		expect(result.run).toMatchObject({
 			id: "run_playbook",
 			playbookName: "review-playbook",
-			status: "running",
+			status: "queued",
 			inputs: {
 				targetName: "Arc Search",
 			},

@@ -149,7 +149,7 @@ function normalizeStageSlug(value: string): string {
 		|| "stage";
 }
 
-function parsePipeSeparatedList(value: string | undefined): string[] {
+function parseCommaSeparatedList(value: string | undefined): string[] {
 	return (value ?? "")
 		.split(",")
 		.map((entry) => trimToUndefined(entry))
@@ -185,13 +185,13 @@ function parsePlaybookStageLine(line: string, index: number): WorkspacePlaybookS
 		kind,
 		...(kind === "skill" || kind === "worker" ? (refName ? { refName } : {}) : {}),
 		objective,
-		inputs: parsePipeSeparatedList(modifierMap.get("inputs")),
-		outputs: parsePipeSeparatedList(modifierMap.get("outputs")),
+		inputs: parseCommaSeparatedList(modifierMap.get("inputs")),
+		outputs: parseCommaSeparatedList(modifierMap.get("outputs")),
 		...(retryPolicyValue === "retry_once" || retryPolicyValue === "skip_with_note" || retryPolicyValue === "pause_for_human"
 			? { retryPolicy: retryPolicyValue }
 			: {}),
 		...(approvalGateValue ? { approvalGate: approvalGateValue } : {}),
-		budgetNotes: parsePipeSeparatedList(modifierMap.get("budget")),
+		budgetNotes: parseCommaSeparatedList(modifierMap.get("budget")),
 	};
 }
 
@@ -322,7 +322,7 @@ export async function createPlaybookRunFromPlaybook(
 		runId: run.id,
 		now: options.now,
 		patch: {
-			status: artifact.stages.length > 0 ? "running" : "queued",
+			status: "queued",
 			notesSummary: artifact.goal,
 			stages: artifact.stages.map((stage) => ({
 				id: stage.id,

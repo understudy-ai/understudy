@@ -117,7 +117,7 @@ function globPatternToRegex(pattern: string): RegExp {
 			regex += "[^/]";
 			continue;
 		}
-		if ("\\.^$+{}()|[]".includes(char)) {
+		if ("\\.^$+{}()|[]-".includes(char)) {
 			regex += `\\${char}`;
 			continue;
 		}
@@ -328,10 +328,12 @@ export async function startPlaybookRun(
 		runId: options.runId,
 		now: options.now,
 	});
+	const { currentStage, nextStage } = resolveStageFromRun(created.run, created.playbook);
 	return {
 		run: created.run,
 		playbook: created.playbook,
-		nextStage: created.playbook.stages[0],
+		...(currentStage ? { currentStage } : {}),
+		...(nextStage ? { nextStage } : {}),
 	};
 }
 
