@@ -5,13 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	buildTaughtTaskDraftFromRun,
 	buildTaughtTaskDraftPromptContent,
-	createTaughtTaskDraftFromVideo,
 	loadPersistedTaughtTaskDraftLedger,
 	persistTaughtTaskDraft,
 	publishTaughtTaskDraft,
 	updatePersistedTaughtTaskDraft,
+	type TaughtTaskDraft,
 } from "../task-drafts.js";
 import { buildWorkspaceSkillSnapshot } from "../skills/workspace.js";
+import { loadWorkspaceArtifactByName } from "../workspace-artifacts.js";
 
 const cleanupPaths: string[] = [];
 
@@ -429,119 +430,26 @@ describe("teach drafts", () => {
 		expect(prompt).toContain("toolArgs: key=Page Down, modifiers=shift, repeat=2");
 	});
 
-	it("builds a teach draft from video analysis output", () => {
-		const draft = createTaughtTaskDraftFromVideo({
-			workspaceDir: "/repo/app",
-			sourceLabel: "demo.mp4",
-			title: "Publish the reviewed dashboard",
-			objective: "Publish the reviewed dashboard from the moderation queue.",
-			parameterSlots: [
-				{ name: "dashboard_name", label: "Dashboard Name", sampleValue: "Q1 dashboard", required: true },
-			],
-			successCriteria: ["Published confirmation is visible."],
-			openQuestions: ["Confirm whether the owner should be notified."],
-			taskCard: {
-				goal: "Publish the reviewed dashboard from the moderation queue.",
-				scope: "Single reviewed dashboard publish flow.",
-				loopOver: "The current dashboard review item.",
-				inputs: ["Dashboard Name"],
-				extract: ["Published confirmation state"],
-				output: "The reviewed dashboard is published.",
-			},
-			procedure: [
-				{
-					instruction: "Click the Publish button in the moderation panel.",
-					kind: "output",
-				},
-			],
-			skillDependencies: [
-				{ name: "publish-dashboard", reason: "Prefer the existing publish workflow skill when available.", required: false },
-			],
-			steps: [
-				{
-					route: "gui",
-					toolName: "gui_click",
-					instruction: "Click the Publish button in the moderation panel.",
-					target: "Publish button",
-					toolArgs: {
-						button: "right",
-						windowSelector: {
-							titleContains: "Review",
-						},
-					},
-				},
-			],
-			sourceDetails: {
-				analyzerProvider: "ark:doubao-seed-2-0-lite-260215",
-				analysisMode: "event_guided_evidence_pack",
-				keyframeCount: 8,
-			},
-		});
-
-		expect(draft).toMatchObject({
-			sourceKind: "video",
-			sourceLabel: "demo.mp4",
-			objective: "Publish the reviewed dashboard from the moderation queue.",
-		});
-		expect(draft.runId.startsWith("video-")).toBe(true);
-		expect(draft.validation).toMatchObject({
-			state: "unvalidated",
-			mode: "replay",
-		});
-		expect(draft.revisions[0]).toMatchObject({
-			action: "created",
-			actor: "system",
-			summary: "Created teach draft from demo video demo.mp4.",
-		});
-		expect(draft.parameterSlots).toContainEqual(
-			expect.objectContaining({ name: "dashboard_name", sampleValue: "Q1 dashboard" }),
-		);
-		expect(draft.steps).toContainEqual(
-			expect.objectContaining({
-				toolName: "gui_click",
-				target: "Publish button",
-				toolArgs: {
-					button: "right",
-					windowSelector: {
-						titleContains: "Review",
-					},
-				},
-			}),
-		);
-		expect(draft.taskCard).toMatchObject({
-			goal: "Publish the reviewed dashboard from the moderation queue.",
-		});
-		expect(draft.procedure).toContainEqual(
-			expect.objectContaining({ instruction: "Click the Publish button in the moderation panel." }),
-		);
-		expect(draft.executionPolicy).toMatchObject({
-			toolBinding: "adaptive",
-			preferredRoutes: ["skill", "browser", "shell", "gui"],
-			stepInterpretation: "fallback_replay",
-		});
-		expect(draft.stepRouteOptions).toContainEqual(
-			expect.objectContaining({
-				procedureStepId: "procedure-1",
-				route: "gui",
-				preference: "observed",
-				toolName: "gui_click",
-			}),
-		);
-		expect(draft.skillDependencies).toContainEqual(
-			expect.objectContaining({ name: "publish-dashboard", required: false }),
-		);
-	});
-
 	it("keeps GUI reference paths concise while preserving detailed replay hints", async () => {
 		const learningDir = createTempDir("understudy-task-draft-publish-tighten-");
 		const repoRoot = createTempDir("understudy-task-draft-publish-tighten-repo-");
 		const workspaceDir = join(repoRoot, "app");
-		const draft = createTaughtTaskDraftFromVideo({
+		const baseDraft = buildTaughtTaskDraftFromRun({
 			workspaceDir,
 			repoRoot,
-			sourceLabel: "tencent.mov",
+			runId: "run-tencent",
+			promptPreview: "Open Tencent Meeting to the verification-code login screen with a provided phone number entered.",
 			title: "Tencent Meeting verification-code login",
 			objective: "Open Tencent Meeting to the verification-code login screen with a provided phone number entered.",
+			toolTrace: [
+				{ type: "toolCall", id: "t1", name: "exec", arguments: { command: 'open -a "腾讯会议"' } },
+				{ type: "toolResult", id: "t1", name: "exec", route: "shell", textPreview: "Launched" },
+				{ type: "toolCall", id: "t2", name: "gui_click", arguments: { target: "the link labeled \"验证码登录\"" } },
+				{ type: "toolResult", id: "t2", name: "gui_click", route: "gui", textPreview: "Clicked" },
+			],
+		});
+		const draft = {
+			...baseDraft,
 			parameterSlots: [
 				{ name: "phoneNumber", label: "Phone Number", sampleValue: "13800138000", required: true },
 			],
@@ -549,31 +457,31 @@ describe("teach drafts", () => {
 				goal: "Open Tencent Meeting and stop at the verification-code login screen with the correct phone number already entered.",
 				scope: "macOS desktop app navigation inside the Tencent Meeting login UI.",
 				inputs: ["phoneNumber"],
-				extract: [],
+				extract: [] as string[],
 				output: "Tencent Meeting positioned at the visible verification-code login screen with the provided phone number filled in.",
 			},
 			procedure: [
-				{ instruction: "Launch Tencent Meeting directly when possible.", kind: "navigate" },
-				{ instruction: "Click the link labeled \"验证码登录\" on the phone login page.", kind: "output" },
+				{ id: "procedure-1", index: 1, instruction: "Launch Tencent Meeting directly when possible.", kind: "navigate" as const },
+				{ id: "procedure-2", index: 2, instruction: "Click the link labeled \"验证码登录\" on the phone login page.", kind: "output" as const },
 			],
 			executionPolicy: {
-				toolBinding: "adaptive",
-				preferredRoutes: ["shell", "gui"],
-				stepInterpretation: "fallback_replay",
+				toolBinding: "adaptive" as const,
+				preferredRoutes: ["shell", "gui"] as const,
+				stepInterpretation: "fallback_replay" as const,
 				notes: ["Prefer direct launch but keep GUI as a fallback reference."],
 			},
 			stepRouteOptions: [
 				{
 					procedureStepId: "procedure-1",
 					route: "shell",
-					preference: "preferred",
+					preference: "preferred" as const,
 					instruction: "Launch Tencent Meeting directly from macOS by opening the installed app bundle.",
 					toolName: "exec",
 				},
 				{
 					procedureStepId: "procedure-1",
 					route: "gui",
-					preference: "observed",
+					preference: "observed" as const,
 					instruction: "Open a macOS launcher/search surface, search for \"腾讯会议\", and open the Tencent Meeting app result.",
 					toolName: "gui_type",
 					when: "Replaying the demonstrated launcher path.",
@@ -581,13 +489,15 @@ describe("teach drafts", () => {
 				{
 					procedureStepId: "procedure-2",
 					route: "gui",
-					preference: "preferred",
+					preference: "preferred" as const,
 					instruction: "Click the link labeled \"验证码登录\" on the phone login page.",
 					toolName: "gui_click",
 				},
 			],
 			steps: [
 				{
+					id: "exec-1",
+					index: 1,
 					route: "shell",
 					toolName: "exec",
 					instruction: "Launch Tencent Meeting directly when possible.",
@@ -595,6 +505,8 @@ describe("teach drafts", () => {
 					inputs: { command: 'open -a "腾讯会议"' },
 				},
 				{
+					id: "gui_click-2",
+					index: 2,
 					route: "gui",
 					toolName: "gui_click",
 					instruction: "Click the link labeled \"验证码登录\" on the phone login page.",
@@ -605,7 +517,7 @@ describe("teach drafts", () => {
 					windowTitle: "腾讯会议",
 				},
 			],
-		});
+		} as unknown as TaughtTaskDraft;
 
 		await persistTaughtTaskDraft(draft, { learningDir });
 		const published = await publishTaughtTaskDraft({
@@ -707,4 +619,209 @@ describe("teach drafts", () => {
 		expect(updated.validation?.runId).toBeUndefined();
 		expect(updated.validation?.responsePreview).toBeUndefined();
 	});
+
+		it("publishes playbook drafts as playbook artifacts", async () => {
+			const learningDir = createTempDir("understudy-playbook-draft-learning-");
+			const repoRoot = createTempDir("understudy-playbook-draft-repo-");
+			const workspaceDir = join(repoRoot, "app");
+			const baseDraft = buildTaughtTaskDraftFromRun({
+				workspaceDir,
+				repoRoot,
+				sessionId: "session-playbook",
+				runId: "run-playbook",
+				promptPreview: "Produce a publishable first-pass research brief.",
+				title: "Produce a research brief",
+				objective: "Produce a publishable first-pass research brief.",
+				toolTrace: [
+					{ type: "toolCall", id: "t1", name: "gui_click", arguments: { target: 'row containing "Arc Search"' } },
+					{ type: "toolResult", id: "t1", name: "gui_click", route: "gui", textPreview: "Clicked" },
+				],
+			});
+			const draft = {
+				...baseDraft,
+				artifactKind: "playbook" as const,
+				taskKind: "parameterized_workflow" as const,
+				parameterSlots: [
+					{ name: "target_name", label: "Target name", sampleValue: "Arc Search", required: true },
+					{ name: "brief_angle", label: "Brief angle", sampleValue: "First-run productivity", required: true },
+				],
+				successCriteria: ["Draft video and publish preview are ready for human approval."],
+				taskCard: {
+					goal: "Produce a publishable first-pass research brief.",
+					scope: "Single reusable research production flow.",
+					inputs: ["Target name", "Brief angle"],
+					extract: ["Highlights", "Limitations"],
+					output: "A publish preview is ready for human approval.",
+				},
+				childArtifacts: [
+					{
+						id: "child-1",
+						name: "collect-target-context",
+						artifactKind: "skill" as const,
+						objective: "Collect baseline target context into the artifacts root.",
+						required: true,
+					},
+					{
+						id: "child-2",
+						name: "explore-target",
+						artifactKind: "worker" as const,
+						objective: "Explore the unfamiliar target and capture evidence.",
+						required: true,
+						reason: "This stage is open-ended and should stay agentic.",
+					},
+				],
+				playbookStages: [
+					{
+						id: "stage-1",
+						name: "Collect Baseline",
+						kind: "skill" as const,
+						refName: "collect-target-context",
+						objective: "Collect baseline target context into the artifacts root.",
+						inputs: ["target_name", "artifacts_root_dir"],
+						outputs: ["context.md"],
+						retryPolicy: "retry_once" as const,
+					},
+					{
+						id: "stage-2",
+						name: "Explore Target",
+						kind: "worker" as const,
+						refName: "explore-target",
+						objective: "Explore the unfamiliar target and capture evidence.",
+						inputs: ["target_name", "artifacts_root_dir", "brief_angle"],
+						outputs: ["findings.md", "highlights.json", "limitations.json"],
+						retryPolicy: "pause_for_human" as const,
+					},
+					{
+						id: "stage-3",
+						name: "Publish Preview",
+						kind: "approval" as const,
+						objective: "Wait for human approval before publishing.",
+						outputs: ["approval.state"],
+						approvalGate: "delivery_preview" as const,
+					},
+				],
+			} as unknown as TaughtTaskDraft;
+
+			await persistTaughtTaskDraft(draft, { learningDir });
+			const published = await publishTaughtTaskDraft({
+				workspaceDir,
+				draftId: draft.id,
+				learningDir,
+				name: "research-playbook",
+			});
+
+		expect(published.skill.artifactKind).toBe("playbook");
+		const skillMarkdown = published.skill.skillPath
+			? readFileSync(published.skill.skillPath, "utf8")
+			: "";
+			expect(skillMarkdown).toContain('artifactKind: "playbook"');
+			expect(skillMarkdown).toContain("## Child Artifacts");
+			expect(skillMarkdown).toContain("## Stage Plan");
+			expect(skillMarkdown).toContain("[worker] explore-target");
+			expect(skillMarkdown).toContain("approval: delivery_preview");
+
+		const loadedArtifact = await loadWorkspaceArtifactByName({
+			workspaceDir,
+			name: published.skill.name,
+		});
+		expect(loadedArtifact?.artifactKind).toBe("playbook");
+		if (!loadedArtifact || loadedArtifact.artifactKind !== "playbook") {
+			throw new Error("Expected published playbook artifact");
+		}
+			expect(loadedArtifact.childArtifacts).toContainEqual(
+				expect.objectContaining({
+					name: "explore-target",
+					artifactKind: "worker",
+				}),
+			);
+			expect(loadedArtifact.stages).toHaveLength(3);
+			expect(loadedArtifact.stages[1]).toMatchObject({
+				kind: "worker",
+				refName: "explore-target",
+				retryPolicy: "pause_for_human",
+			});
+		});
+
+	it("publishes worker drafts as worker artifacts", async () => {
+		const learningDir = createTempDir("understudy-worker-draft-learning-");
+		const repoRoot = createTempDir("understudy-worker-draft-repo-");
+		const workspaceDir = join(repoRoot, "app");
+		const baseDraft = buildTaughtTaskDraftFromRun({
+			workspaceDir,
+			repoRoot,
+			sessionId: "session-worker",
+			runId: "run-worker",
+			promptPreview: "Explore the unfamiliar target and capture a reusable evidence dossier.",
+			title: "Explore an unfamiliar target",
+			objective: "Explore the unfamiliar target and capture a reusable evidence dossier.",
+			toolTrace: [
+				{ type: "toolCall", id: "t1", name: "gui_click", arguments: { target: 'row containing "Arc Search"' } },
+				{ type: "toolResult", id: "t1", name: "gui_click", route: "gui", textPreview: "Clicked" },
+			],
+		});
+		const draft = {
+			...baseDraft,
+			artifactKind: "worker" as const,
+			taskKind: "parameterized_workflow" as const,
+			parameterSlots: [
+				{ name: "target_name", label: "Target name", sampleValue: "Arc Search", required: true },
+				{ name: "brief_angle", label: "Brief angle", sampleValue: "First-run productivity", required: true },
+			],
+			successCriteria: [
+				"Enough evidence exists for 2-3 highlights and 1 limitation.",
+				"Worker summary is written to the dossier.",
+			],
+			taskCard: {
+				goal: "Explore the unfamiliar target and capture a reusable evidence dossier.",
+				scope: "Open-ended target exploration worker.",
+				inputs: ["Target name", "Brief angle"],
+				extract: ["Highlights", "Limitations"],
+				output: "Worker summary is written to the artifacts root.",
+			},
+			workerContract: {
+				goal: "Explore the unfamiliar target currently assigned to the worker.",
+				scope: "Capture enough evidence for a short research brief.",
+				inputs: ["targetName", "artifactsRootDir", "briefAngle"],
+				outputs: ["findings.md", "worker-summary.json", "evidence/*", "highlights.json", "limitations.json"],
+				allowedRoutes: ["gui", "browser"] as const,
+				allowedSurfaces: ["Only the assigned target surfaces", "Supporting desktop windows only when required"],
+				budget: {
+					maxMinutes: 12,
+					maxActions: 60,
+					maxScreenshots: 12,
+				},
+				escalationPolicy: ["Payment is required.", "Authentication is required."],
+				stopConditions: ["Enough evidence for 2-3 highlights and 1 limitation.", "Budget exhausted."],
+				decisionHeuristics: ["Prefer evidence-producing actions over exhaustive blind traversal."],
+			},
+		} as unknown as TaughtTaskDraft;
+
+			await persistTaughtTaskDraft(draft, { learningDir });
+			const published = await publishTaughtTaskDraft({
+				workspaceDir,
+				draftId: draft.id,
+				learningDir,
+				name: "explore-target",
+			});
+
+		expect(published.skill.artifactKind).toBe("worker");
+		const markdown = readFileSync(published.skill.skillPath, "utf8");
+		expect(markdown).toContain('artifactKind: "worker"');
+		expect(markdown).toContain("## Operating Contract");
+		expect(markdown).toContain("## Budget");
+		expect(markdown).toContain("## Stop Conditions");
+		expect(markdown).toContain("maxMinutes=12");
+
+		const loadedArtifact = await loadWorkspaceArtifactByName({
+			workspaceDir,
+			name: published.skill.name,
+		});
+		expect(loadedArtifact?.artifactKind).toBe("worker");
+		if (!loadedArtifact || loadedArtifact.artifactKind !== "worker") {
+			throw new Error("Expected worker artifact");
+		}
+			expect(loadedArtifact.outputs).toContain("worker-summary.json");
+			expect(loadedArtifact.budget).toContain("maxMinutes=12");
+			expect(loadedArtifact.allowedSurfaces).toContain("Only the assigned target surfaces");
+		});
 });

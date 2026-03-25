@@ -12,6 +12,7 @@ vi.mock("@understudy/core", async () => {
 	return {
 		...actual,
 		createUnderstudySession: coreMocks.createUnderstudySession,
+		normalizeWorkspacePlaybookApprovalGate: actual.normalizeWorkspacePlaybookApprovalGate,
 	};
 });
 
@@ -508,6 +509,234 @@ copyFileSync(fixturePath, outputPath);
 
 		expect(fetchImpl).toHaveBeenCalledTimes(2);
 		expect(analysis.title).toBe("Publish the dashboard review");
+	});
+
+	it("parses playbook artifact fields from the analysis response", async () => {
+		const dir = await createTempDir("understudy-video-teach-playbook-");
+		const frameA = join(dir, "frame-a.png");
+		await writeFile(frameA, Buffer.from(TINY_PNG, "base64"));
+
+		const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+			output_text: JSON.stringify({
+				title: "Produce a reusable target brief",
+				objective: "Produce a publishable first-pass target brief.",
+				artifactKind: "playbook",
+				taskKind: "parameterized_workflow",
+				parameterSlots: [
+					{ name: "target_name", sampleValue: "Northwind Portal", required: true },
+				],
+				successCriteria: ["Delivery preview is ready for human approval."],
+				childArtifacts: [
+					{
+						id: "child-1",
+						name: "collect-target-context",
+						artifactKind: "skill",
+						objective: "Collect baseline target context into the artifacts root.",
+						required: true,
+					},
+					{
+						id: "child-2",
+						name: "explore-unfamiliar-target",
+						artifactKind: "worker",
+						objective: "Explore the unfamiliar target and capture evidence.",
+						required: true,
+					},
+				],
+				playbookStages: [
+					{
+						id: "stage-1",
+						name: "Collect Baseline",
+						kind: "skill",
+						refName: "collect-target-context",
+						objective: "Collect baseline target context into the artifacts root.",
+						inputs: ["target_name", "artifacts_root_dir"],
+						outputs: ["target.json", "context.md"],
+						retryPolicy: "retry_once",
+					},
+					{
+						id: "stage-2",
+						name: "Explore Target",
+						kind: "worker",
+						refName: "explore-unfamiliar-target",
+						objective: "Explore the unfamiliar target and capture evidence.",
+						inputs: ["target_name", "artifacts_root_dir"],
+						outputs: ["findings.md", "highlights.json"],
+						retryPolicy: "pause_for_human",
+					},
+					{
+						id: "stage-3",
+						name: "Delivery Preview",
+						kind: "approval",
+						objective: "Wait for human approval before delivery.",
+						outputs: ["approval.state"],
+						approvalGate: "delivery_preview",
+					},
+				],
+				steps: [
+					{
+						route: "gui",
+						toolName: "gui_click",
+						instruction: 'Open the result for "Northwind Portal".',
+						target: 'row containing "Northwind Portal"',
+						captureMode: "window",
+					},
+				],
+			}),
+		}), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		}));
+
+		const analyzer = createResponsesApiVideoTeachAnalyzer({
+			apiKey: "ark-key",
+			baseUrl: "https://example.com/responses",
+			model: "doubao-seed-2-0-lite-260215",
+			providerName: "ark:doubao-seed-2-0-lite-260215",
+			fetchImpl: fetchImpl as unknown as typeof fetch,
+			evidenceBuilder: async () => ({
+				videoPath: "/tmp/demo.mp4",
+				sourceLabel: "demo.mp4",
+				durationMs: 12_000,
+				analysisMode: "event_guided_evidence_pack",
+				events: [],
+				episodes: [
+					{
+						id: "episode-01",
+						startMs: 600,
+						endMs: 2_500,
+						centerMs: 1_000,
+						label: "Target list: Northwind Portal",
+						triggerTypes: ["mouse_up"],
+						source: "event",
+						app: "Target Browser",
+						keyframes: [
+							{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+						],
+					},
+				],
+				keyframes: [
+					{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+				],
+				summary: "Built event-guided evidence pack, 1 episode, 1 keyframe from demo.mp4.",
+				tempDir: dir,
+			}),
+		});
+
+		const analysis = await analyzer.analyze({
+			videoPath: "/tmp/demo.mp4",
+			sourceLabel: "demo.mp4",
+		});
+
+		expect(analysis.artifactKind).toBe("playbook");
+		expect(analysis.childArtifacts).toHaveLength(2);
+		expect(analysis.playbookStages).toHaveLength(3);
+		expect(analysis.playbookStages?.[1]).toMatchObject({
+			kind: "worker",
+			refName: "explore-unfamiliar-target",
+			retryPolicy: "pause_for_human",
+		});
+		expect(analysis.playbookStages?.[2]).toMatchObject({
+			kind: "approval",
+			approvalGate: "delivery_preview",
+		});
+	});
+
+	it("parses worker contract fields from the analysis response", async () => {
+		const dir = await createTempDir("understudy-video-teach-worker-");
+		const frameA = join(dir, "frame-a.png");
+		await writeFile(frameA, Buffer.from(TINY_PNG, "base64"));
+
+		const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+			output_text: JSON.stringify({
+				title: "Explore an unfamiliar target",
+				objective: "Explore the unfamiliar target and capture a reusable evidence bundle.",
+				artifactKind: "worker",
+				taskKind: "parameterized_workflow",
+				parameterSlots: [
+					{ name: "target_name", sampleValue: "Northwind Portal", required: true },
+				],
+				successCriteria: ["Worker summary is written to the artifacts root."],
+				workerContract: {
+					goal: "Explore the unfamiliar target currently assigned to the run.",
+					scope: "Capture enough evidence for a short evidence brief.",
+					inputs: ["targetName", "artifactsRootDir", "analysisFocus"],
+					outputs: ["findings.md", "worker-summary.json"],
+					allowedRoutes: ["gui", "browser"],
+					allowedSurfaces: ["Only the assigned target surfaces"],
+					budget: {
+						maxMinutes: 12,
+						maxActions: 60,
+						maxScreenshots: 12,
+					},
+					escalationPolicy: ["Payment is required."],
+					stopConditions: ["Enough evidence exists for highlights and limitations."],
+					decisionHeuristics: ["Prefer user-visible features over settings-only screens."],
+				},
+				steps: [
+					{
+						route: "gui",
+						toolName: "gui_click",
+						instruction: 'Open the result for "Northwind Portal".',
+						target: 'row containing "Northwind Portal"',
+						captureMode: "window",
+					},
+				],
+			}),
+		}), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		}));
+
+		const analyzer = createResponsesApiVideoTeachAnalyzer({
+			apiKey: "ark-key",
+			baseUrl: "https://example.com/responses",
+			model: "doubao-seed-2-0-lite-260215",
+			providerName: "ark:doubao-seed-2-0-lite-260215",
+			fetchImpl: fetchImpl as unknown as typeof fetch,
+			evidenceBuilder: async () => ({
+				videoPath: "/tmp/demo.mp4",
+				sourceLabel: "demo.mp4",
+				durationMs: 12_000,
+				analysisMode: "event_guided_evidence_pack",
+				events: [],
+				episodes: [
+					{
+						id: "episode-01",
+						startMs: 600,
+						endMs: 2_500,
+						centerMs: 1_000,
+						label: "Target list: Northwind Portal",
+						triggerTypes: ["mouse_up"],
+						source: "event",
+						app: "Target Browser",
+						keyframes: [
+							{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+						],
+					},
+				],
+				keyframes: [
+					{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+				],
+				summary: "Built event-guided evidence pack, 1 episode, 1 keyframe from demo.mp4.",
+				tempDir: dir,
+			}),
+		});
+
+		const analysis = await analyzer.analyze({
+			videoPath: "/tmp/demo.mp4",
+			sourceLabel: "demo.mp4",
+		});
+
+		expect(analysis.artifactKind).toBe("worker");
+		expect(analysis.workerContract).toMatchObject({
+			goal: "Explore the unfamiliar target currently assigned to the run.",
+			allowedRoutes: ["gui", "browser"],
+		});
+		expect(analysis.workerContract?.budget).toMatchObject({
+			maxMinutes: 12,
+			maxActions: 60,
+			maxScreenshots: 12,
+		});
 	});
 
 	it("retries transient video teach request failures up to three attempts", async () => {

@@ -68,6 +68,8 @@ describe("createSessionTraceLifecycleHooks", () => {
 				target: "Subject field",
 				value: "A".repeat(400),
 				apiKey: "secret-token",
+				secretEnvVar: "UNDERSTUDY_APPLE_ID_PASSWORD",
+				secretCommandEnvVar: "UNDERSTUDY_APPLE_ID_PASSWORD_CMD",
 			},
 			result: {
 				route: "gui",
@@ -138,6 +140,8 @@ describe("createSessionTraceLifecycleHooks", () => {
 		expect(lines[1].event.params.target).toBe("Subject field");
 		expect(lines[1].event.params.value.endsWith("...")).toBe(true);
 		expect(lines[1].event.params.apiKey).toBe("[REDACTED:12]");
+		expect(lines[1].event.params.secretEnvVar).toMatch(/^\[REDACTED:\d+\]$/);
+		expect(lines[1].event.params.secretCommandEnvVar).toMatch(/^\[REDACTED:\d+\]$/);
 		expect(lines[2]).toMatchObject({
 			type: "session_closed",
 			traceId: "test-session",
