@@ -157,7 +157,16 @@ const GuiTypeSchema = Type.Object({
 		Type.Literal("display"),
 	], { description: GUI_CAPTURE_MODE_DESCRIPTION })),
 	...GuiWindowSelectionFields,
-	value: Type.String({ description: "Text to type into the target GUI control." }),
+	value: Type.Optional(Type.String({ description: "Literal text to type into the target GUI control. Provide exactly one of `value`, `secretEnvVar`, or `secretCommandEnvVar`." })),
+	secretEnvVar: Type.Optional(Type.String({ description: "Environment variable name whose value should be typed into the target GUI control without exposing the secret in tool traces. Provide exactly one of `value`, `secretEnvVar`, or `secretCommandEnvVar`." })),
+	secretCommandEnvVar: Type.Optional(Type.String({ description: "Environment variable name containing a local shell command that prints the text to type. The command runs locally and its output is typed without exposing the secret in tool traces. Provide exactly one of `value`, `secretEnvVar`, or `secretCommandEnvVar`." })),
+	typeStrategy: Type.Optional(Type.Union([
+		Type.Literal("physical_keys"),
+		Type.Literal("clipboard_paste"),
+		Type.Literal("system_events_paste"),
+		Type.Literal("system_events_keystroke"),
+		Type.Literal("system_events_keystroke_chars"),
+	], { description: "Text entry strategy. `physical_keys` sends individual key events (best for remote/mirrored surfaces that intercept physical input). `clipboard_paste` uses the native helper to paste from the clipboard (handles non-ASCII). `system_events_paste` uses macOS System Events paste while keeping secret text in environment variables instead of process arguments. `system_events_keystroke` uses macOS System Events to type the full string directly, which can be more reliable on mirrored text fields that ignore paste shortcuts. `system_events_keystroke_chars` types one character at a time with a short delay, which is useful for finicky secure fields that can drop characters from a single full-string keystroke. When omitted, the default AppleScript paste path is used." })),
 	replace: Type.Optional(Type.Boolean({ description: "Whether to replace the existing field value before typing. Default: true." })),
 	submit: Type.Optional(Type.Boolean({ description: "Whether to press Return after typing." })),
 });
@@ -657,6 +666,8 @@ const GUI_TOOL_FACTORIES: GuiToolFactoryEntry[] = [
 		label: "GUI Type",
 		description:
 			"Type text into a visually grounded editable GUI field such as an input field or search box. " +
+			"Supports literal text, secret env var, or secret command input sources. " +
+			"Use `typeStrategy` when the target surface requires physical key events or clipboard paste instead of the default AppleScript path. " +
 			"Name the editable field itself in `target`. " +
 			"Use `replace=false` only when appending is intentional.",
 		parameters: GuiTypeSchema,

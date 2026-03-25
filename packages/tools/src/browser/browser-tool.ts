@@ -7,6 +7,8 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { DEFAULT_BROWSER_EXTENSION_CDP_URL } from "@understudy/types";
 import { BrowserManager, type BrowserManagerOptions } from "./browser-manager.js";
 import { inspectAuthenticatedUnderstudyRelay } from "./extension-relay-auth.js";
@@ -53,7 +55,7 @@ const BrowserSchema = Type.Object({
 	waitMs: Type.Optional(Type.Number({ description: "Wait duration in ms." })),
 	timeoutMs: Type.Optional(Type.Number({ description: "Timeout for waits and network capture." })),
 	fn: Type.Optional(Type.String({ description: "JavaScript expression/code or function source." })),
-	path: Type.Optional(Type.String({ description: "Output path for pdf action or single upload path." })),
+	path: Type.Optional(Type.String({ description: "Output path for screenshot or pdf action, or single upload path." })),
 	paths: Type.Optional(Type.Array(Type.String({ description: "File paths for upload action." }))),
 	limit: Type.Optional(Type.Number({ description: "Max entries/nodes to return." })),
 	accept: Type.Optional(Type.Boolean({ description: "Whether to accept the next dialog." })),
@@ -250,7 +252,7 @@ export function createBrowserTool(
 		return {
 			browserConnectionMode: normalizeConnectionMode(resolvedDefaults?.browserConnectionMode)
 				?? normalizeConnectionMode(process.env.UNDERSTUDY_BROWSER_CONNECTION_MODE)
-				?? "managed",
+				?? "auto",
 			browserCdpUrl: trimToUndefined(resolvedDefaults?.browserCdpUrl)
 				?? trimToUndefined(process.env.UNDERSTUDY_BROWSER_CDP_URL)
 				?? DEFAULT_BROWSER_EXTENSION_CDP_URL,
@@ -261,7 +263,7 @@ export function createBrowserTool(
 		const configuredOptions = resolveConfiguredManagerOptions();
 		const browserConnectionMode = normalizeConnectionMode(params.browserConnectionMode)
 			?? configuredOptions.browserConnectionMode
-			?? "managed";
+			?? "auto";
 		const browserCdpUrl = trimToUndefined(params.browserCdpUrl)
 			?? trimToUndefined(configuredOptions.browserCdpUrl)
 			?? DEFAULT_BROWSER_EXTENSION_CDP_URL;
@@ -272,7 +274,7 @@ export function createBrowserTool(
 	};
 
 	const managerSignatureFromOptions = (options: BrowserManagerOptions): string => JSON.stringify({
-		browserConnectionMode: options.browserConnectionMode ?? "managed",
+		browserConnectionMode: options.browserConnectionMode ?? "auto",
 		browserCdpUrl: options.browserConnectionMode === "extension" || options.browserConnectionMode === "auto"
 			? options.browserCdpUrl ?? DEFAULT_BROWSER_EXTENSION_CDP_URL
 			: null,
@@ -298,7 +300,7 @@ export function createBrowserTool(
 				// Ignore malformed signatures and fall back to requested params/env.
 			}
 		}
-		return resolveRequestedManagerOptions(params).browserConnectionMode ?? "managed";
+		return resolveRequestedManagerOptions(params).browserConnectionMode ?? "auto";
 	};
 
 	const blankManagedTabHint = (url: string, params: BrowserParams): string | undefined => {
@@ -558,19 +560,34 @@ export function createBrowserTool(
 		title: await page.title?.(),
 	});
 
-	const truncateText = (value: string, maxChars: number | undefined): string => {
-		if (!Number.isFinite(maxChars) || !maxChars || value.length <= maxChars) {
-			return value;
+	const truncateText = (value: string | undefined | null, maxChars: number | undefined): string => {
+		const text = typeof value === "string"
+			? value
+			: value == null
+				? ""
+				: String(value);
+		if (!Number.isFinite(maxChars) || !maxChars || text.length <= maxChars) {
+			return text;
 		}
-		return `${value.slice(0, Math.max(0, maxChars - 1))}…`;
+		return `${text.slice(0, Math.max(0, maxChars - 1))}…`;
 	};
 
 	const parseMaybeJson = (value: unknown): string => {
+		if (value === undefined) {
+			return "undefined";
+		}
 		if (typeof value === "string") {
 			return value;
 		}
+		if (typeof value === "function") {
+			return `[Function ${value.name || "anonymous"}]`;
+		}
 		try {
-			return JSON.stringify(value, null, 2);
+			const serialized = JSON.stringify(value, null, 2);
+			if (typeof serialized === "string") {
+				return serialized;
+			}
+			return String(value);
 		} catch {
 			return String(value);
 		}
@@ -1243,11 +1260,19 @@ export function createBrowserTool(
 								type,
 								fullPage: Boolean(params.fullPage),
 							});
-						return mediaResult(buffer.toString("base64"), mediaNameForType(type), mimeForType(type), {
+						const outputPath = trimToUndefined(params.path);
+						const details: Record<string, unknown> = {
 							action: "screenshot",
 							targetId: activeBrowserManager.getTabId(page),
 							...(locatorInfo ? { target: locatorInfo.description } : {}),
-						});
+						};
+						if (outputPath) {
+							const resolvedPath = resolve(outputPath);
+							await mkdir(dirname(resolvedPath), { recursive: true });
+							await writeFile(resolvedPath, buffer);
+							details.path = resolvedPath;
+						}
+						return mediaResult(buffer.toString("base64"), mediaNameForType(type), mimeForType(type), details);
 					}
 
 					case "click": {

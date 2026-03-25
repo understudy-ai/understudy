@@ -12,6 +12,7 @@ import Foundation
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Carbon.HIToolbox
 
 enum HelperError: Error, CustomStringConvertible {
 	case invalidCommand(String)
@@ -413,6 +414,174 @@ func leftUp(at point: CGPoint, clickState: Int64 = 1) throws {
 	post(event)
 }
 
+func postKeyboardEvent(keyCode: CGKeyCode, keyDown: Bool, flags: CGEventFlags = []) throws {
+	guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: keyDown) else {
+		throw HelperError.eventCreationFailed("keyboard_\(keyCode)_\(keyDown ? "down" : "up")")
+	}
+	event.flags = flags
+	post(event)
+}
+
+let shiftKeyCode: CGKeyCode = 56
+let controlKeyCode: CGKeyCode = 59
+let optionKeyCode: CGKeyCode = 58
+let commandKeyCode: CGKeyCode = 55
+
+func modifierKeySequence(for flags: CGEventFlags) -> [(keyCode: CGKeyCode, mask: CGEventFlags)] {
+	var sequence: [(keyCode: CGKeyCode, mask: CGEventFlags)] = []
+	if flags.contains(.maskControl) {
+		sequence.append((controlKeyCode, .maskControl))
+	}
+	if flags.contains(.maskAlternate) {
+		sequence.append((optionKeyCode, .maskAlternate))
+	}
+	if flags.contains(.maskCommand) {
+		sequence.append((commandKeyCode, .maskCommand))
+	}
+	if flags.contains(.maskShift) {
+		sequence.append((shiftKeyCode, .maskShift))
+	}
+	return sequence
+}
+
+func pressKeyCode(_ keyCode: CGKeyCode, flags: CGEventFlags = []) throws {
+	let modifierSequence = modifierKeySequence(for: flags)
+	var activeFlags: CGEventFlags = []
+	for modifier in modifierSequence {
+		activeFlags.formUnion(modifier.mask)
+		try postKeyboardEvent(keyCode: modifier.keyCode, keyDown: true, flags: activeFlags)
+		usleep(20_000)
+	}
+	try postKeyboardEvent(keyCode: keyCode, keyDown: true, flags: flags)
+	usleep(20_000)
+	try postKeyboardEvent(keyCode: keyCode, keyDown: false, flags: flags)
+	for modifier in modifierSequence.reversed() {
+		activeFlags.subtract(modifier.mask)
+		try postKeyboardEvent(
+			keyCode: modifier.keyCode,
+			keyDown: false,
+			flags: activeFlags.union(modifier.mask)
+		)
+		usleep(20_000)
+	}
+	usleep(20_000)
+}
+
+func pressKeyCodeRepeated(_ keyCode: CGKeyCode, count: Int, flags: CGEventFlags = []) throws {
+	let repeatCount = max(0, count)
+	for _ in 0..<repeatCount {
+		try pressKeyCode(keyCode, flags: flags)
+	}
+}
+
+let preferredPhysicalTypingInputSourceIDs = [
+	"com.apple.keylayout.ABC",
+	"com.apple.keylayout.US"
+]
+
+func findInputSource(by id: String) -> TISInputSource? {
+	let properties = [kTISPropertyInputSourceID as String: id] as CFDictionary
+	guard let listRef = TISCreateInputSourceList(properties, false)?.takeRetainedValue() else {
+		return nil
+	}
+	let sources = listRef as NSArray
+	return sources.firstObject as! TISInputSource?
+}
+
+func selectPhysicalTypingInputSource() -> TISInputSource? {
+	let previous = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue()
+	for sourceID in preferredPhysicalTypingInputSourceIDs {
+		guard let source = findInputSource(by: sourceID) else {
+			continue
+		}
+		if TISSelectInputSource(source) == noErr {
+			usleep(250_000)
+			break
+		}
+	}
+	return previous
+}
+
+func restoreInputSource(_ source: TISInputSource?) {
+	guard let source else { return }
+	_ = TISSelectInputSource(source)
+	usleep(250_000)
+}
+
+let baseKeyCodes: [Character: CGKeyCode] = [
+	"a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9,
+	"b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19,
+	"3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26, "-": 27, "8": 28,
+	"0": 29, "]": 30, "o": 31, "u": 32, "[": 33, "i": 34, "p": 35, "l": 37, "j": 38,
+	"'": 39, "k": 40, ";": 41, "\\": 42, ",": 43, "/": 44, "n": 45, "m": 46, ".": 47,
+	" ": 49
+]
+
+let shiftedKeyCodes: [Character: CGKeyCode] = [
+	"A": 0, "S": 1, "D": 2, "F": 3, "H": 4, "G": 5, "Z": 6, "X": 7, "C": 8, "V": 9,
+	"B": 11, "Q": 12, "W": 13, "E": 14, "R": 15, "Y": 16, "T": 17, "!": 18, "@": 19,
+	"#": 20, "$": 21, "^": 22, "%": 23, "+": 24, "(": 25, "&": 26, "_": 27, "*": 28,
+	")": 29, "}": 30, "O": 31, "U": 32, "{": 33, "I": 34, "P": 35, "L": 37, "J": 38,
+	"\"": 39, "K": 40, ":": 41, "|": 42, "<": 43, "?": 44, "N": 45, "M": 46, ">": 47
+]
+
+func keyPressForCharacter(_ character: Character) throws -> (keyCode: CGKeyCode, flags: CGEventFlags) {
+	if let keyCode = baseKeyCodes[character] {
+		return (keyCode, [])
+	}
+	if let keyCode = shiftedKeyCodes[character] {
+		return (keyCode, .maskShift)
+	}
+	throw HelperError.eventCreationFailed("unsupported_physical_key_\(character)")
+}
+
+func typeUnicodeText(_ text: String) throws {
+	let utf16 = Array(text.utf16)
+	guard !utf16.isEmpty else {
+		return
+	}
+	guard
+		let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+		let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
+	else {
+		throw HelperError.eventCreationFailed("unicode_text")
+	}
+	keyDown.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+	keyUp.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+	post(keyDown)
+	usleep(30_000)
+	post(keyUp)
+	usleep(30_000)
+}
+
+func typePhysicalKeyText(_ text: String) throws {
+	let previousInputSource = selectPhysicalTypingInputSource()
+	defer {
+		restoreInputSource(previousInputSource)
+	}
+	for character in text {
+		let keyPress = try keyPressForCharacter(character)
+		try pressKeyCode(keyPress.keyCode, flags: keyPress.flags)
+		usleep(90_000)
+	}
+}
+
+func pasteText(_ text: String) throws {
+	let pasteboard = NSPasteboard.general
+	let previousString = pasteboard.string(forType: .string)
+	pasteboard.clearContents()
+	guard pasteboard.setString(text, forType: .string) else {
+		throw HelperError.eventCreationFailed("pasteboard_set")
+	}
+	usleep(100_000)
+	try pressKeyCode(9, flags: .maskCommand)
+	usleep(150_000)
+	pasteboard.clearContents()
+	if let previousString {
+		_ = pasteboard.setString(previousString, forType: .string)
+	}
+}
+
 func rightDown(at point: CGPoint, clickState: Int64 = 1) throws {
 	let event = try makeMouseEvent(.rightMouseDown, point: point, button: .right)
 	event.setIntegerValueField(.mouseEventClickState, value: clickState)
@@ -516,6 +685,32 @@ func handleEvent() throws {
 		}
 		post(event)
 		print("cg_scroll")
+	case "type_text":
+		let rawText = env("UNDERSTUDY_GUI_TEXT")
+		let shouldReplace = env("UNDERSTUDY_GUI_REPLACE") != "0"
+		let shouldSubmit = env("UNDERSTUDY_GUI_SUBMIT") == "1"
+		let typeStrategy = trimmedEnv("UNDERSTUDY_GUI_TYPE_STRATEGY") ?? "unicode"
+		let clearRepeat = max(0, optionalInt("UNDERSTUDY_GUI_CLEAR_REPEAT") ?? (typeStrategy == "clipboard_paste" ? 48 : 0))
+		if shouldReplace {
+			if typeStrategy == "clipboard_paste" {
+				try pressKeyCodeRepeated(51, count: clearRepeat)
+			} else if typeStrategy == "physical_keys" {
+				try pressKeyCodeRepeated(51, count: clearRepeat)
+			} else {
+				try pressKeyCode(0, flags: .maskCommand)
+			}
+		}
+		if typeStrategy == "clipboard_paste" {
+			try pasteText(rawText)
+		} else if typeStrategy == "physical_keys" {
+			try typePhysicalKeyText(rawText)
+		} else {
+			try typeUnicodeText(rawText)
+		}
+		if shouldSubmit {
+			try pressKeyCode(36)
+		}
+		print("cg_type_text")
 	default:
 		throw HelperError.missingEnv("UNDERSTUDY_GUI_EVENT_MODE")
 	}

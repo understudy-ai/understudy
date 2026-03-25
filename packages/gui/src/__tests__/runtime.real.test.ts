@@ -63,9 +63,12 @@ async function createRealOpenAIGroundedRuntime(): Promise<ComputerUseGuiRuntime>
 		process.env.UNDERSTUDY_REAL_GUI_GROUNDING_MODEL?.trim() ||
 		process.env.UNDERSTUDY_GUI_GROUNDING_MODEL?.trim() ||
 		"gpt-5.4";
+	const provider =
+		process.env.UNDERSTUDY_REAL_GUI_GROUNDING_PROVIDER?.trim() ||
+		"openai-codex";
 	const resolved = await guiGroundingModule.primeGuiGroundingForConfig({
 		...configModule.DEFAULT_CONFIG,
-		defaultProvider: "openai-codex",
+		defaultProvider: provider,
 		defaultModel: model,
 		agent: {
 			...configModule.DEFAULT_CONFIG.agent,
@@ -2364,12 +2367,17 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 					id: "drag_reorder_list",
 					family: "dual_point",
 					run: async () => {
+						await page.$eval("#reorder-draft", (node: Element) =>
+							node.scrollIntoView({ block: "center", inline: "center" }),
+						);
+						await page.waitForTimeout(150);
 						const result = await runtime.drag({
 							app: browserAppName,
 							fromTarget: "Draft card",
 							toTarget: "Released card",
 							fromScope: "Workspace panel",
 							toScope: "Workspace panel",
+							captureMode: "display",
 							durationMs: 450,
 						});
 						expect(result.status.code).toBe("action_sent");

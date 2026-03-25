@@ -224,10 +224,22 @@ describe("gui tool wrappers", () => {
 
 		const typeResult = await typeTool.execute("tool-6", { target: "Subject field", value: "Quarterly update" });
 		expect((typeResult.content[0] as any).text).toContain("Typed into Subject field");
+		expect(runtime.type).toHaveBeenCalledWith({ target: "Subject field", value: "Quarterly update" }, undefined);
 			expect(typeResult.details).toMatchObject({
 				status: expect.objectContaining({ code: "action_sent" }),
 				confidence: 0.88,
 			});
+
+		runtime.type.mockClear();
+		const secretTypeResult = await typeTool.execute("tool-6b", {
+			target: "Password field",
+			secretEnvVar: "UNDERSTUDY_APPLE_ID_PASSWORD",
+		});
+		expect((secretTypeResult.content[0] as any).text).toContain("Typed into Subject field");
+		expect(runtime.type).toHaveBeenCalledWith({
+			target: "Password field",
+			secretEnvVar: "UNDERSTUDY_APPLE_ID_PASSWORD",
+		}, undefined);
 
 		// gui_key — single key press
 		const keyResult = await keyTool.execute("tool-7", { key: "Enter" });

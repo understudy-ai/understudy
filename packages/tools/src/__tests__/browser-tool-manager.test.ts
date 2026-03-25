@@ -97,6 +97,20 @@ describe("createBrowserTool manager reuse", () => {
 		expect(mocks.instances).toHaveLength(1);
 	});
 
+	it("defaults to auto for unmanaged browser config", async () => {
+		const tool = createBrowserTool();
+
+		const status = await tool.execute("id-auto", { action: "status" });
+
+		expect((status.content[0] as any).text).toContain("Configured route: auto");
+		expect((status.content[0] as any).text).toContain("Extension relay: unreachable");
+		expect(mocks.instances).toHaveLength(1);
+		expect(mocks.instances[0]?.options).toMatchObject({
+			browserConnectionMode: "auto",
+			browserCdpUrl: "http://127.0.0.1:23336",
+		});
+	});
+
 	it("refreshes default manager options after config changes while the browser is stopped", async () => {
 		const config: {
 			browserConnectionMode: "managed" | "auto";
