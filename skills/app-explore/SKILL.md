@@ -1,8 +1,9 @@
 ---
 name: app-explore
 description: >-
-  Stage 2: Launch the installed app from the iPhone home screen, explore enough
-  of it to produce a believable review package, and return to the home screen.
+  Stage 4: Launch the installed app from the iPhone home screen, explore it
+  deeply enough to support a believable walkthrough-style review, and return to
+  the home screen.
 metadata:
   understudy:
     emoji: "🧭"
@@ -20,51 +21,61 @@ metadata:
 4. Verify every mutating GUI action with a follow-up observation.
 5. Use the active run root: prefer `artifactsRootDir`, otherwise `EPISODE_DIR`.
 6. Exploration should be category-aware. A creator tool, utility app, and slow-paced strategy game should not be explored with the same coverage plan.
-7. The goal is not merely to prove the app opens. The goal is to gather enough truthful evidence for a short review that feels like a human actually used the app.
-8. If you only verified menus and did not complete a meaningful task, explicitly mark the exploration as shallow in `experience/notes.json` and `experience/review-brief.md` instead of writing an overconfident review.
-9. Do not drift into random taps. If two consecutive mutating actions fail to deepen the same coverage plan, pause, restate the plan mentally, and either retry with a clearer target or back out to a stronger surface.
-10. Screenshot quality matters. Do not save near-duplicate states as if they were different proof beats when a more distinct surface is still reachable.
-11. A strong run should usually prove one primary loop plus one secondary confirmation surface from the same product story. Treat that as the default target unless the app blocks early.
-12. Prefer one user-caused state change over passive browsing. A good review run should usually show something you actually created, changed, submitted, saved, toggled, or revisited.
-13. For organizer, planner, calendar, to-do, journaling, note, or utility apps, prefer a reversible synthetic demo object over passive inspection. Safe examples include a clearly fake local event, reminder, note, or list item such as `Demo Lunch`, `Test Task`, or another obviously temporary sample.
-14. A strong "deep enough" run should usually prove at least two linked state changes in the same product loop, such as create -> saved view, ask -> answer/source view, edit -> preview/export, or toggle -> resulting behavior. Avoid ending on one isolated tap if a second confirming beat is still safely reachable.
-15. Treat 5 screenshots as the preferred target, not 4. The 5th image should usually be a persistence, history, settings, pricing/limit, or secondary-feature proof beat that makes the review feel used rather than merely opened.
-16. If the app yields one meaningful object or result, try to revisit, reopen, or reframe that same object once before stopping. Saved-state proof is usually more valuable than one extra random menu.
-17. Proof-ladder rule: aim to leave Stage 2 with four clear beats in order when the app allows it:
+7. The goal is not merely to prove the app opens. The goal is to gather enough truthful evidence for a tutorial-style or hidden-details-style video that feels like a human actually learned the app.
+8. The App Store listing is a planning input, not just metadata. Read the subtitle, description, expected core task, and Stage 1 selection notes, then choose a coverage plan that tries to verify or falsify those promised behaviors on-device.
+9. Prefer the smallest marketed promise that can be truthfully tested on iPhone. Do not default to a generic category loop when the listing clearly positions the app around a narrower story.
+10. If the listing promises a specific workflow, artifact, or payoff, make that promise the starting hypothesis for `primaryLoop` or explain in `fallbackStory` why it could not be tested.
+11. If you only verified menus and did not complete a meaningful task, explicitly mark the exploration as shallow in `experience/notes.json` and `experience/review-brief.md` instead of writing an overconfident review.
+12. Do not drift into random taps. If two consecutive mutating actions fail to deepen the same coverage plan, pause, restate the plan mentally, and either retry with a clearer target or back out to a stronger surface.
+13. Screenshot quality matters. Do not save near-duplicate states as if they were different proof beats when a more distinct surface is still reachable.
+14. A strong run should usually prove one primary loop plus one secondary confirmation surface from the same product story. Treat that as the default target unless the app blocks early.
+15. Prefer one user-caused state change over passive browsing. A good review run should usually show something you actually created, changed, submitted, saved, toggled, or revisited.
+16. For organizer, planner, calendar, to-do, journaling, note, or utility apps, prefer a reversible synthetic demo object over passive inspection. Safe examples include a clearly fake local event, reminder, note, or list item such as `Demo Lunch`, `Test Task`, or another obviously temporary sample.
+17. A strong "deep enough" run should usually prove at least two linked state changes in the same product loop, such as create -> saved view, ask -> answer/source view, edit -> preview/export, or toggle -> resulting behavior. Avoid ending on one isolated tap if a second confirming beat is still safely reachable.
+18. Treat 5 screenshots as the preferred target, not 4. The 5th image should usually be a persistence, history, settings, pricing/limit, or secondary-feature proof beat that makes the review feel used rather than merely opened.
+19. If the app yields one meaningful object or result, try to revisit, reopen, or reframe that same object once before stopping. Saved-state proof is usually more valuable than one extra random menu.
+20. Proof-ladder rule: aim to leave Stage 4 with four clear beats in order when the app allows it:
    - first useful screen
    - primary action in progress
    - result / saved / visible consequence
    - one revisit / persistence / trust / limit / settings proof beat
-18. Do not let Stage 2 end with "pretty but thin" evidence. If the current screenshots still look like launch screen plus adjacent menus, keep pushing toward one real result, revisit, or limitation beat.
-19. A run should usually be marked `deep` only when it reaches that extra proof beat or an equally strong revisit / persistence moment. If the app felt promising but you stopped before the extra proof beat, prefer `partial` over flattering yourself.
-20. Prefer at least one short live iPhone clip of the core loop or payoff when the task is dynamic enough to benefit from motion. A strong Stage 3 cut should not be forced to rely on still screenshots alone when a safe 8-14 second clip was reachable.
-21. Any live clip must come from the real Stage 2 attempt, not from a later browser reenactment or unrelated desktop filler.
-22. Do not stop with a "looks nice" package. Before leaving Stage 2, ask whether the current evidence could cut into a genuinely watchable English-first short with at least three visually distinct iPhone-led proof beats; if not, keep digging or mark the run thin.
-23. Prefer readable, English-friendly demo objects for local creation flows. A short fake title like `Demo lunch`, `Pay rent`, or `Test task` is usually more video-usable than scribbles, emoji-only filler, or long localized sample text.
-24. Stage 2 is collecting a video-ready proof set, not just screenshots. Default target: one hook-friendly opening frame, one motion-friendly proof beat, one changed-state or revisit beat, and one audience / limit / trust beat.
-25. If the app is collaboration-first, sync-first, or network-first, exhaust the local personal loop before touching invites, sharing, or account-backed flows.
-26. If one more short clip or a fifth screenshot was safely reachable and would clearly deepen the final edit, prefer capturing it now over leaving Stage 3 to compensate with extra packaging.
-27. A human-like review run should usually answer four viewer questions with direct evidence: what is this app for, how do I start, what happens when I do the main thing, and what sticks or limits the experience afterward.
-28. Before calling a run `deep`, confirm the evidence set contains all of these:
+21. Do not let Stage 4 end with "pretty but thin" evidence. If the current screenshots still look like launch screen plus adjacent menus, keep pushing toward one real result, revisit, or limitation beat.
+22. A run should usually be marked `deep` only when it reaches that extra proof beat or an equally strong revisit / persistence moment. If the app felt promising but you stopped before the extra proof beat, prefer `partial` over flattering yourself.
+23. Prefer at least one short live iPhone clip of the core loop or payoff when the task is dynamic enough to benefit from motion. A strong Stage 5 cut should not be forced to rely on still screenshots alone when a safe clip was reachable.
+24. Any live clip must come from the real Stage 4 attempt, not from a later browser reenactment or unrelated desktop filler.
+25. Do not stop with a "looks nice" package. Before leaving Stage 4, ask whether the current evidence could cut into a genuinely watchable roughly `3 minute` English-first walkthrough or deep-dive video with a beginning, middle, and end; if not, keep digging or mark the run thin.
+26. Prefer readable, English-friendly demo objects for local creation flows. A short fake title like `Demo lunch`, `Pay rent`, or `Test task` is usually more video-usable than scribbles, emoji-only filler, or long localized sample text.
+27. Stage 4 is collecting a video-ready proof set, not just screenshots. Default target: one hook-friendly opening frame, one onboarding/start beat, one main-task progression beat, one changed-state or revisit beat, one less-obvious detail beat, and one audience / limit / trust beat.
+28. If the app is collaboration-first, sync-first, or network-first, exhaust the local personal loop before touching invites, sharing, or account-backed flows.
+29. If one more short clip or a fifth screenshot was safely reachable and would clearly deepen the final edit, prefer capturing it now over leaving Stage 5 to compensate with extra packaging.
+30. A human-like review run should usually answer four viewer questions with direct evidence: what is this app for, how do I start, what happens when I do the main thing, and what sticks or limits the experience afterward.
+31. Before calling a run `deep`, confirm the evidence set contains all of these:
    - one opening frame
    - one action-in-progress beat
    - one changed-state or visible-result beat
    - one revisit / trust / limit / persistence beat
-29. If one of those beats is still missing, keep exploring when it is safe or mark the run `partial` rather than flattering it.
-30. Prefer one extra edit / revisit on the same object over touching a second unrelated feature. Human-seeming reviews usually come from one coherent story, not scattered taps.
-31. If the main remote-first action fails, deliberately harvest the fallback proof from the same object or thread: retry state, model picker, saved history, citations, paywall/limit, settings/trust surface, or another honest follow-up beat. Do not simply give up after the first miss.
-32. If the current evidence still cannot support at least three visually distinct iPhone-led proof beats in the final short, the run is not publication-ready yet. Keep digging or record that limitation explicitly.
-33. If the app exposed any meaningful motion beat and no short live clip was captured, treat that as a missing proof decision you must justify explicitly before leaving Stage 2.
-34. For note, planner, reminder, journaling, and organizer apps, default to a typed create -> saved list/notebook/calendar view -> reopen/search/tag/revisit ladder instead of stopping at one freshly opened editor.
-35. For note and planner apps, a truly strong run usually shows at least one readable fake object title plus one persistence surface such as a list view, tag, notebook/folder, calendar slot, search result, or detail reopen.
-36. If the app belongs to the broad notes / planner family and you left without proving persistence or revisit, the run is usually `partial`, not `deep`, even if the design looked polished.
-37. Human-review depth rule: before leaving Stage 2, try to prove not only that the app can start a task, but also how it feels after one small decision. A useful extra beat is often edit, rename, move, filter, sort, search, tag, pin, or reopen on the same object rather than a second unrelated feature.
-38. Blank-canvas anti-pattern: do not let notes, journaling, sketch, or whiteboard apps finish on one beautiful but empty editor. Push to one readable object plus one saved / reopened / organized surface.
-39. Motion-proof rule for depth: if the strongest truthful beat involves visible typing, processing, reordering, or a changed-state transition and you still leave without any short live clip, assume Stage 3 will look flatter and write that limitation explicitly instead of claiming the run was strong.
-40. Evidence self-sufficiency rule: if the final short would still need Stage 1 store context or browser explanation just to make the app understandable, Stage 2 is not deep enough yet. Push until the iPhone-captured proof can explain the story on its own.
-41. Sound-off rule: prefer proof beats that still read with minimal narration. The viewer should usually be able to infer the task, result, or limitation directly from the iPhone frames themselves.
-42. Organizer / watchlist fallback rule: if a media lookup, import, sync, or network-backed add flow stalls, do not stop at create -> save -> reopen on an empty container. Push one more safe local organizing action on the same object, such as assign group/category, rename, pin, sort, move, add one readable local child item, or revisit it through search/filter.
-43. Deep-label gate for organizer-style apps: do not call the run `deep` unless you proved either create/use -> saved/result -> revisit -> one more local organizing action, or an equally strong motion-backed proof beat on the same object.
+32. If one of those beats is still missing, keep exploring when it is safe or mark the run `partial` rather than flattering it.
+33. Prefer one extra edit / revisit on the same object over touching a second unrelated feature. Human-seeming reviews usually come from one coherent story, not scattered taps.
+34. If the main remote-first action fails, deliberately harvest the fallback proof from the same object or thread: retry state, model picker, saved history, citations, paywall/limit, settings/trust surface, or another honest follow-up beat. Do not simply give up after the first miss.
+35. If the current evidence still cannot support a tutorial-like structure with a clear start, main workflow, result, and one less-obvious detail or limitation, the run is not publication-ready yet. Keep digging or record that limitation explicitly.
+36. If the app exposed any meaningful motion beat and no short live clip was captured, treat that as a missing proof decision you must justify explicitly before leaving Stage 4.
+37. For note, planner, reminder, journaling, and organizer apps, default to a typed create -> saved list/notebook/calendar view -> reopen/search/tag/revisit ladder instead of stopping at one freshly opened editor.
+38. For note and planner apps, a truly strong run usually shows at least one readable fake object title plus one persistence surface such as a list view, tag, notebook/folder, calendar slot, search result, or detail reopen.
+39. If the app belongs to the broad notes / planner family and you left without proving persistence or revisit, the run is usually `partial`, not `deep`, even if the design looked polished.
+40. Human-review depth rule: before leaving Stage 4, try to prove not only that the app can start a task, but also how it feels after one small decision. A useful extra beat is often edit, rename, move, filter, sort, search, tag, pin, or reopen on the same object rather than a second unrelated feature.
+41. Blank-canvas anti-pattern: do not let notes, journaling, sketch, or whiteboard apps finish on one beautiful but empty editor. Push to one readable object plus one saved / reopened / organized surface.
+42. Motion-proof rule for depth: if the strongest truthful beat involves visible typing, processing, reordering, or a changed-state transition and you still leave without any short live clip, assume Stage 5 will look flatter and write that limitation explicitly instead of claiming the run was strong.
+43. Evidence self-sufficiency rule: if the final video would still need Stage 1 store context or browser explanation just to make the app understandable, Stage 4 is not deep enough yet. Push until the iPhone-captured proof can explain the story on its own.
+44. Sound-off rule: prefer proof beats that still read with minimal narration. The viewer should usually be able to infer the task, result, or limitation directly from the iPhone frames themselves.
+45. Organizer / watchlist fallback rule: if a media lookup, import, sync, or network-backed add flow stalls, do not stop at create -> save -> reopen on an empty container. Push one more safe local organizing action on the same object, such as assign group/category, rename, pin, sort, move, add one readable local child item, or revisit it through search/filter.
+46. Deep-label gate for organizer-style apps: do not call the run `deep` unless you proved either create/use -> saved/result -> revisit -> one more local organizing action, or an equally strong motion-backed proof beat on the same object.
+47. Treat Stage 4 like a human making a teachable mini-tutorial, not a QA smoke test. By the end, one coherent viewer-friendly story should exist: how to start, what to do first, what changed, and what was surprisingly useful, limiting, or non-obvious.
+48. Actively look for at least one truthful detail the App Store listing did not make obvious or barely mentioned, such as a hidden affordance, smart default, friction point, persistence behavior, shortcut, trust setting, or limitation that only appears after real use.
+49. Prefer `6-10` distinct screenshots when the app safely supports it, not just the minimum package. If the current evidence still feels thin, keep pushing for one extra revisit, settings, trust, limit, or hidden-detail beat before leaving Stage 4.
+50. If you discover a useful detail that was absent from the listing, capture both the surface itself and one nearby frame that shows why it matters in practice, so Stage 5 can narrate it like a human insight instead of a generic feature list.
+51. Closeout gate: once you have a coherent create/use -> visible result -> revisit/extra-proof story, at least the required `01-04` screenshots, and one short live clip or an equally strong fifth screenshot, stop digging and move straight to structured notes. Do not start a second unrelated feature tour just because more taps are available.
+52. Anti-drift rule: after the evidence floor is met, every extra action must clearly improve one of these only: saved-state proof, hidden detail, trust/limit, or a stronger closing verdict. If not, end the exploration and write the handoff files.
+53. Shell restraint rule: outside bounded screenshot/clip capture and final artifact writing, do not use `bash` to reason about the live app state. If the next decision depends on what is on screen, prefer `gui_observe`.
 
 ## Inputs
 
@@ -72,9 +83,24 @@ metadata:
 - `manifest.json` with `selectedApp`
 - optional `targetApp` override, but the manifest is the source of truth once Stage 1 finishes
 
+## Context Management
+
+GUI exploration consumes large amounts of context (each gui_observe returns
+detailed visual descriptions). To avoid running out of context before writing
+notes:
+
+1. **Be efficient with observations**: After every gui_click or gui_type, do ONE gui_observe. Do not observe repeatedly without acting.
+2. **Batch your screenshots**: Capture 2-3 screenshots in a row during a single shell block rather than one-at-a-time with observations between each.
+3. **Write partial notes early**: As instructed in the incremental notes section, write a draft `experience/notes.json` after screenshot 04. This is non-negotiable.
+4. **Do not re-read skill files mid-exploration**: You already read them at the start. Do not re-read `iphone-mirroring-basics` or `app-explore` during the run.
+5. **Minimize shell output**: When running bash commands, pipe output through `head` or `tail` to avoid filling context with verbose tool results.
+6. **3 scenarios max, then write**: After completing 3 functional scenarios, stop exploring and write the final notes. More exploration is only worthwhile if you have context budget remaining.
+
+If you notice your responses getting truncated or tool calls failing, **immediately write notes with whatever evidence you have** rather than continuing to explore.
+
 ## Fast Path
 
-This is the default successful Stage 2 flow.
+This is the default successful Stage 4 flow.
 
 1. Read `manifest.json`, `topic/app-store-listing.json`, and `topic/selection-notes.md`.
 2. Lock one tiny truthful coverage plan:
@@ -83,17 +109,21 @@ This is the default successful Stage 2 flow.
 3. Re-open iPhone Mirroring from the home screen and launch the installed app.
 4. Default evidence target:
    - one hook-friendly first useful screen
+   - one onboarding / "how to start" beat
    - one action-in-progress beat
    - one changed-state or saved-result beat
    - one revisit / persistence / trust / limit beat
-   - one short live clip when motion would clearly help the final short
+   - one less-obvious detail, hidden affordance, or best-practice beat, ideally something the Stage 1 listing did not clearly advertise
+   - one or more short live clips when motion would clearly help the final video
 5. Default screenshot package:
    - `experience/screenshots/01-First-Screen.png`
    - `experience/screenshots/02-Main-Screen.png`
    - `experience/screenshots/03-Core-Task.png`
    - `experience/screenshots/04-Outcome-Or-Friction.png`
-   - optional `05-Secondary-Feature.png`
-   - optional `06-Pricing-Or-Limit.png`
+   - `experience/screenshots/05-Revisit-Or-Hidden-Detail.png`
+   - `experience/screenshots/06-Trust-Or-Limit.png`
+   - optional `07-Secondary-Feature.png`
+   - optional `08-Settings-Or-Pricing.png`
 6. Write:
    - `experience/notes.json`
    - `experience/review-brief.md`
@@ -114,12 +144,13 @@ Default category ladder:
 - creator / editor:
   reach a real working surface, do one bounded edit or preview step, then show the result or honest blocker
 
-If there is no changed state, no saved result, and no revisit beat, the run is
-not deep enough. Mark it `partial` or `shallow` instead of pretending it is strong.
+If there is no changed state, no saved result, no revisit beat, and no
+teachable extra detail, the run is not deep enough. Mark it `partial` or
+`shallow` instead of pretending it is strong.
 
 Self-sufficient-proof rule:
 
-- By the time Stage 2 ends, the iPhone-led evidence should already carry the story without leaning on browser screenshots or long App Store paraphrases.
+- By the time Stage 4 ends, the iPhone-led evidence should already carry the story without leaning on browser screenshots or long App Store paraphrases.
 - If the app still only makes sense after a long setup explanation, keep exploring until the task and result become visible on-device, or mark the run thin.
 
 ## Human-Review Depth Floor
@@ -152,15 +183,19 @@ Before opening the app, lock a tiny coverage plan from the browser listing:
 - `primaryLoop`: the smallest truthful task that would make a viewer believe the app was really used
 - `secondaryProof`: one follow-up surface that confirms depth, saved state, trust, settings, limit, or consequence
 - `fallbackStory`: the honest friction story you will tell if the primary loop stalls early
+- `listingPromises`: 2-4 specific claims or workflows implied by the App Store subtitle, description, `expectedCoreTask`, and Stage 1 notes
+- `mustVerifyFirst`: the single strongest listing promise you will try to verify or falsify first on-device
 
-Keep that plan coherent. The goal is not to tap everything. The goal is to return with enough linked evidence for Stage 3 to make a convincing review.
+Keep that plan coherent. The goal is not to tap everything. The goal is to return with enough linked evidence for Stage 5 to make a convincing review.
+
+The `primaryLoop` should usually come from `mustVerifyFirst`, not from a generic category template. If the listing says the app is for watchlists, categories, pinned items, podcast queues, or another specific value prop, start there before drifting into generic settings or menus.
 
 Before leaving this planning moment, also lock one simple claim boundary:
 
 - `claimsICanDefend`: 2-4 short truths the video is allowed to say confidently
 - `claimsToAvoid`: 2-4 tempting but unproven claims the video should not imply
 
-This keeps Stage 3 honest when the exploration stayed partial.
+This keeps Stage 5 honest when the exploration stayed partial.
 
 Also lock one proof ladder before touching the app:
 
@@ -170,6 +205,8 @@ Also lock one proof ladder before touching the app:
 - `extraProofBeat`: one revisit, persistence, trust, settings, pricing, history, or deeper-feature beat that would make the review feel used rather than merely opened
 
 If you cannot name those four beats, simplify the plan before entering the app.
+
+If the browser listing and the in-app surfaces disagree, prefer the truthful on-device story, but record that mismatch explicitly in `fallbackStory` or `claimsToAvoid`.
 
 Update `manifest.json` to:
 
@@ -218,56 +255,87 @@ home-grid coordinates across different iPhone layouts.
 Do not claim success until a follow-up observation shows app UI instead of the
 home screen.
 
-## Step 4: Handle lightweight blockers, stop on hard blockers
+## Step 4: Handle blockers, retry on transient failures
 
-Safe to dismiss or accept when appropriate:
+Safe to dismiss or accept:
 
-- tracking dialogs -> choose the non-tracking option
-- notification prompts -> choose `Don't Allow` unless the app is unusable without it
-- lightweight onboarding next/skip/continue flows
+- tracking dialogs → non-tracking option
+- notification prompts → `Don't Allow` unless needed for core experience
+- onboarding next/skip/continue flows
 - terms/accept screens that do not create accounts or spend money
-- low-risk first-party OS permissions needed to reach one bounded core task:
-  - photo library -> prefer `Selected Photos...` or the smallest limited-access option when available
-  - camera -> allow only when the app's core experience clearly needs it and you can still keep the run local and non-posting
-  - microphone -> only when it is the minimal requirement for one safe, reversible creation step
+- low-risk OS permissions: photo library (prefer limited), camera/microphone only when core experience needs it
 
-Permission-depth rule:
+Permission limit: grant at most 2 OS permissions per run. If a third is requested, stop granting and record the limitation.
 
-- Do not treat every OS permission prompt as an automatic blocker.
-- If granting one bounded, low-risk local permission would unlock the app's first meaningful workflow, prefer granting it once and continue the exploration.
-- Prefer the least-privileged option the system offers, and avoid broad/full access when a limited choice exists.
-- After granting a permission, immediately verify that the newly unlocked surface really appeared; if not, do not keep granting more permissions blindly.
-- Record both requested and granted permissions truthfully in `experience/notes.json`.
+**Photo/file picker rule:**
+
+Many apps (photo editors, document scanners, video tools) require selecting a
+file to start. This is not a blocker — handle it:
+
+- When a photo picker appears, grant "Allow Full Access" or "Select Photos" access.
+- Choose any available photo from the library — the iPhone always has sample/wallpaper photos or previously taken screenshots. Any image works for testing the editing workflow.
+- If the picker shows "Recents", tap the first available photo.
+- If the app asks to take a photo instead, prefer choosing from the existing library.
+- If the library is empty, use the camera to take a quick photo of anything (desk, screen), then continue.
+- Record which photo was used but do not waste time finding the "perfect" test image.
+
+**Network and transient error retry rule:**
+
+- If a core task fails due to timeout, network error, or "try again later", do NOT treat it as a terminal blocker.
+- Retry the same action once. If it fails again, try a DIFFERENT query or approach.
+- For AI/search apps: if the first query times out, try a simpler/shorter query (e.g., "best coffee shops" instead of a complex question).
+- For network-dependent apps: wait 5 seconds, then retry once before recording the failure.
+- Only mark the run as blocked after 2 different attempts have both failed.
+- Record both the failure and the retry outcome truthfully — "first query timed out, second query succeeded" is a valid and interesting review finding.
 
 Stop and report a blocker for:
 
-- login or account creation required to reach the core experience
+- login or account creation required for the core experience
 - payment or subscription required
 - irreversible sharing/posting/invite flows
-- sensitive permission flows you cannot safely judge from the prompt
-- permission ladders that keep escalating beyond the minimum needed for one bounded task
+- sensitive permissions you cannot judge safely
+- 2 different core-task attempts both failed
 
-## Step 5: Explore enough to support a strong video, not just a proof-of-life
+## Step 5: Explore deeply — cover the app's real feature surface
 
-Cover these minimum beats:
+The goal is a thorough walkthrough that a viewer would find genuinely informative, not a smoke test. The evidence must support a **3-minute video with real substance**.
 
-- the first useful screen after launch
-- the main navigation or primary working surface
-- one real core task in progress
-- one payoff, result, export surface, deeper feature, or real friction point
-- one trust, history, saved-state, settings, or limit surface when that extra beat materially strengthens the review
-- when safe, one extra screenshot that proves persistence, revisitability, or a second meaningful proof beat from the same loop
+### Minimum coverage requirements (hard floor)
 
-Coverage ladder:
+You must complete **at least 3 distinct functional scenarios**, not just one task:
 
-- Before free-form tapping, decide on the smallest believable loop that would let a viewer say "yes, someone really tried this."
-- Aim to capture:
-  - entry -> what the app promises on first launch
-  - proof -> one actual task or attempt, not just menus
-  - consequence -> the result, saved state, answer, export surface, or honest blocker
-  - context -> one secondary surface such as history, settings, sources, deck view, preferences, or pricing/limit, when that extra beat materially strengthens the review
-- If the app is promising and safe, prefer 2-3 linked actions in one coherent loop over a single tap plus narration.
-- If the app blocks early, keep pushing only toward the clearest truthful friction story. Do not pad the run with random menu taps.
+1. **Primary task**: Complete the app's main value proposition end-to-end (e.g., for a search app: ask → get answer → read sources)
+2. **Secondary task**: Try a different feature or variation (e.g., follow-up question, different mode, import/export, organize)
+3. **Discovery task**: Find something the App Store listing did NOT make obvious (e.g., a hidden setting, a smart default, a limitation, an easter egg, voice mode, widget, sharing)
+
+### Screenshot target: 10-15 distinct screens
+
+Do NOT stop at 4-6 screenshots. Aim for **10-15** that tell a complete story:
+
+- `01-First-Screen.png` — what greets you on launch
+- `02-Main-Screen.png` — the primary working surface / navigation
+- `03-Core-Task.png` — the main task in progress
+- `04-Core-Result.png` — the result / answer / output
+- `05-Source-Or-Detail.png` — drill-down into a result (e.g., source panel, detail view, citation)
+- `06-Secondary-Task.png` — a different feature or mode
+- `07-Secondary-Result.png` — result of the secondary task
+- `08-Discovery.png` — something non-obvious (hidden feature, setting, limit)
+- `09-Settings-Or-Trust.png` — settings, privacy, account, or pricing surface
+- `10-Revisit-Or-History.png` — history, saved items, collections, bookmarks
+
+Optional extras: `11-Friction.png`, `12-Comparison.png`, `13-Limit.png`, etc.
+
+Capture every screenshot with the **same consistent method**: use the latest `capture_rect` from the GUI tool, capture the full window, crop with the standard proportional insets from `iphone-mirroring-basics`. Verify each saved PNG has consistent dimensions (all should be approximately the same pixel size, e.g., ~300x650 or the 2x equivalent).
+
+### Coverage depth rules
+
+- **Do not leave after one failed attempt**. If the core task fails (timeout, error, empty result), try again with a different input.
+- **Do not stop at surface-level screens**. Tap into results, open detail views, scroll down, check secondary tabs.
+- **Do not count navigation as exploration**. Moving between tabs is not a "feature explored". Using a feature and seeing its output is.
+- **Prefer depth over breadth**: 3 features explored thoroughly beats 6 features glanced at.
+- **Test persistence**: create something, leave the screen, come back. Did it save?
+- **Test limits**: find at least one honest limitation, paywall, or friction point.
+- After completing the minimum 3 scenarios, check: could a viewer watching only these screenshots understand what the app does, how it works, and whether they should download it? If not, keep exploring.
 - Preferred target: one complete primary loop plus one secondary confirmation surface. Accept a single-loop-only run only when the app blocks early, the deeper path becomes unsafe, or the remaining actions would be pure guessing.
 - Preferred target: one complete primary loop, one secondary confirmation surface, and one revisit / persistence / limit beat when that third beat is still safe and visually distinct.
 - Strong-review target: if the app is calm enough to support it, aim for five linked proof moments rather than four:
@@ -275,7 +343,7 @@ Coverage ladder:
   2. one deliberate action
   3. one visible changed state
   4. one revisit / persistence / trust / limit beat
-  5. one short motion beat or one extra clearly different proof frame that makes the final short feel tested rather than narrated
+  5. one short motion beat or one extra clearly different proof frame that makes the final video feel tested rather than narrated
 - Distinct-evidence rule: the required screenshots should normally show different moments, not the same state with tiny wording changes. If `03-Core-Task` and `04-Outcome-Or-Friction` would look almost identical, actively seek a more distinct secondary proof surface before ending the run.
 - Do not end with four equally shallow screenshots. If the current evidence set still looks like "launch screen plus three nearby menus," keep digging for one stronger proof or one clearer blocker.
 - Revisit rule: if the app lets you safely reopen the thing you just created, returned, saved, summarized, or configured, do that once before ending. A quick revisit beat is usually worth more than another settings detour.
@@ -322,7 +390,7 @@ Coverage templates:
   - after creating or editing it, re-open the saved object or return to the calendar/list view so the review proves the state actually stuck
   - when the app allows it, prefer a three-step proof beat from the same object: create -> edit or move once -> revisit from the list/calendar/home surface
   - a truly strong note / planner run usually looks like create -> saved list/notebook/calendar view -> reopen/search/tag/filter/rename/pin on the same object
-  - if that create -> saved -> revisit ladder is visually clear, prefer capturing it as the primary short live clip rather than leaving Stage 3 with only still screenshots
+  - if that create -> saved -> revisit ladder is visually clear, prefer capturing it as the primary short live clip rather than leaving Stage 5 with only still screenshots
   - when collaboration, sharing, or sign-in is optional, stay local and prove the personal planning loop first rather than forcing invites
   - if the app is marketed around shared calendars or partner/family sync, explicitly try the solo local object flow first and only mention the collaboration angle as context unless you safely proved it
   - if search, tags, notebooks, filters, priorities, or list grouping are easy to reach, use one of those as the extra depth beat because it makes the review feel used rather than just created
@@ -338,7 +406,7 @@ Coverage templates:
   - if templates, starter note types, folders, tabs, or notebook organization surfaces exist, use those to build a clearer create-save-revisit proof ladder
   - if the app exposes tags, folders, search, pinning, or notebook switching, prefer one of those as the extra proof beat over a second empty editor screenshot
   - when stylus-first drawing is the marketed depth surface, still bias toward one readable structured note plus one notebook / saved-state revisit beat instead of trying to prove brush nuance through mirroring
-  - when safe, add one tiny second action on the same note such as check one item, rename it, move it, pin it, tag it, or reopen it from search. That small follow-up often creates the human-review depth the final short needs.
+  - when safe, add one tiny second action on the same note such as check one item, rename it, move it, pin it, tag it, or reopen it from search. That small follow-up often creates the human-review depth the final video needs.
 - Scanner / OCR / camera / import-first apps:
   - only continue when one bounded permission unlocks the first meaningful workflow
   - prefer a built-in sample, obvious local demo asset, or one reversible import path over broad library digging
@@ -361,7 +429,7 @@ Depth rule:
 - If the first attempt works, try to add one secondary proof surface before leaving, such as saved history, settings relevant to the task, share/copy, or a deeper feature that confirms product depth.
 - Favor screenshots that tell a viewer what happened without long narration. A good capture should usually show either a visible input, a visible result, or a visible blocker.
 - If the app has obvious starter content, history, saved objects, templates, or settings that validate depth without risky side effects, prefer visiting one of those before ending the run.
-- Publication-readiness check: before leaving the app, mentally ask whether Stage 3 could make a strong 25-35 second English-first short with mostly product proof and only light packaging. If the answer is no, push for one more result, revisit, motion, or limit beat when safe.
+- Publication-readiness check: before leaving the app, mentally ask whether Stage 5 could make a strong roughly `3 minute` English-first walkthrough with mostly product proof and only light packaging. If the answer is no, push for one more result, revisit, motion, hidden-detail, or limit beat when safe.
 
 Live-clip rule:
 
@@ -369,8 +437,8 @@ Live-clip rule:
 - Preferred clip paths:
   - `experience/clips/01-Core-Loop.mov`
   - `experience/clips/02-Secondary-Proof.mov`
-- Only record 1-2 clips max. Keep them short and deliberate rather than recording the whole exploration.
-- Preferred clip length is roughly `8-14s`. Do not let a clip run so long that the main action gets buried.
+- Record `2-4` clips when the app supports them. Keep them deliberate rather than recording the whole exploration.
+- Preferred clip length is roughly `10-25s`. Do not let a clip run so long that the main action gets buried.
 - Start the clip only when the app is already on the ready screen right before the important action. Avoid wasting the first seconds on app launch or hesitant setup.
 - Use the display that currently contains the iPhone Mirroring window. Prefer the latest GUI-reported `capture_display.index`; if it is unavailable, fall back to display `1`.
 - Practical shell path for a short motion beat is a backgrounded macOS screen recording such as:
@@ -379,54 +447,68 @@ Live-clip rule:
 mkdir -p "$ROOT_DIR/experience/clips"
 CLIP_PATH="$ROOT_DIR/experience/clips/01-Core-Loop.mov"
 rm -f "$CLIP_PATH"
-nohup screencapture -x -v -D1 -V12 "$CLIP_PATH" >/tmp/understudy-stage2-clip.log 2>&1 &
+DISPLAY_INDEX="${CAPTURE_DISPLAY_INDEX:-1}"
+CLIP_DURATION="${CLIP_DURATION:-15}"
+nohup screencapture -x -v -D"$DISPLAY_INDEX" -V"$CLIP_DURATION" "$CLIP_PATH" >/tmp/understudy-stage2-clip.log 2>&1 &
 sleep 1
 ```
 
-- Replace `-D1` with the actual display index when the GUI output exposed a different display.
+- **Always** set `DISPLAY_INDEX` from the latest GUI-reported `capture_display.index` and `CLIP_DURATION` to the appropriate length (10-25s) before recording. Do not copy the example values verbatim.
 - After starting the recorder, immediately perform the already-planned action sequence. Do not open random extra menus just because recording is running.
 - After the clip window elapses, verify the file exists and `ffprobe` can read it. If recording fails once, continue the run with screenshots only and note that the motion proof is missing.
-- If the recorded clip includes more desktop context than desired, Stage 3 should crop the clip to the iPhone region inside CapCut rather than discarding the motion proof entirely.
+- If the recorded clip includes more desktop context than desired, Stage 5 should crop the clip to the iPhone region inside CapCut rather than discarding the motion proof entirely.
 - Prefer the core-task clip first. Capture `02-Secondary-Proof.mov` only when the extra beat is visually distinct and still safe.
 - If the app clearly supported one meaningful animated proof beat and you skipped the clip anyway, do not flatter the run later. Record that the final edit will likely feel more static because motion proof was left uncaptured.
-- If the first clip only shows setup and not payoff, try to capture a second short clip for the strongest visible result, follow-up, or revisit beat so Stage 3 is not forced into three static proof cards in a row.
-- Before ending Stage 2 without any clip, explicitly ask whether the final short would now feel too static or too card-led. If yes and one safe motion beat is still reachable, capture it now rather than leaving Stage 3 to fake energy with extra text.
+- If the first clip only shows setup and not payoff, try to capture a second short clip for the strongest visible result, follow-up, or revisit beat so Stage 5 is not forced into three static proof cards in a row.
+- Before ending Stage 4 without any clip, explicitly ask whether the final video would now feel too static or too card-led. If yes and one safe motion beat is still reachable, capture it now rather than leaving Stage 5 to fake energy with extra text.
 
-Capture at least these screenshots with window-bounded `screencapture` and crop
-away the window chrome before saving:
+### Screenshot capture procedure
 
-- `experience/screenshots/01-First-Screen.png`
-- `experience/screenshots/02-Main-Screen.png`
-- `experience/screenshots/03-Core-Task.png`
-- `experience/screenshots/04-Outcome-Or-Friction.png`
+For EVERY screenshot:
 
-Practical capture rule:
+1. Reuse the latest `capture_rect` from the most recent GUI tool result.
+2. Capture the full iPhone Mirroring window: `screencapture -x -R"x,y,w,h" /tmp/raw.png`
+3. Crop with the standard proportional insets from `iphone-mirroring-basics`.
+4. Save to the target path under `experience/screenshots/`.
+5. Verify the file exists and is non-empty.
 
-- If the latest successful `gui_observe`, `gui_click`, or `gui_type` result already includes `capture_rect`, reuse it directly.
-- Do not stop to rediscover bounds before each screenshot if the GUI result already exposed them.
-- Prefer screenshots that prove what happened, not just that a screen existed.
-- Before saving the last required screenshot, quickly sanity-check that the set tells a viewer a progression: first useful screen -> task in progress -> result / blocker / secondary proof. If two captures are too similar, replace one before finishing.
+Consistency rule: all screenshots in one run must use the same capture and crop procedure. Do NOT mix different capture methods (e.g., some from gui_observe images and some from screencapture).
 
-Optional extras:
+### Incremental notes — write as you go, not at the end
 
-- `experience/screenshots/05-Secondary-Feature.png`
-- `experience/screenshots/06-Pricing-Or-Limit.png`
+**Critical**: Do not wait until exploration is finished to write notes. The agent
+context window can run out during a long exploration. Write incrementally:
 
-Target screenshot rule:
+1. **After capturing screenshot 04** (primary task result): write a first draft of
+   `experience/checkpoints.jsonl` and a partial `experience/notes.json` with what
+   you have so far (app info, setup, coverage so far, findings so far). This ensures
+   at least partial notes survive even if the run hits a context limit.
 
-- Treat 4 screenshots as the floor, not the ideal.
-- When the app yields a clearly distinct extra proof beat, capture `05-Secondary-Feature.png` by default.
-- If a believable `05-Secondary-Feature.png` was reachable but you chose not to capture it, explain that choice in `coverageGaps` and bias the run toward `partial` rather than `deep`.
-- When the app exposes a meaningful pricing, quota, paywall, trial, or feature-limit surface that genuinely changes the review verdict, also capture `06-Pricing-Or-Limit.png`.
-- The preferred final screenshot set is: first screen, main screen, core task, outcome, plus one distinct secondary proof.
-- Deep-run rule: a run should rarely claim `demoDepth: "deep"` unless it also captured either one live motion clip or one clearly distinct fifth screenshot that proves persistence, trust, limit, or a deeper feature.
-- Final-edit readiness rule: before leaving Stage 2, ask whether the current evidence could cut into a genuinely watchable 25-35 second short for an English-speaking viewer. If the honest answer is "mostly static screens plus narration," keep pushing for one more motion beat, changed-state screen, or revisit beat when it is still safe.
-- If the final evidence still looks like launch -> one task -> one texty conclusion with no persistence or revisit, do not expect Stage 3 packaging to save it. Record it as thin and keep the review honest.
-- If the final evidence for an organizer/watchlist app still looks like launch -> create empty container -> reopen empty container, treat that as incomplete depth and keep pushing for one more local organizing action when it is safe.
+2. **After capturing screenshot 07 or completing the second scenario**: update
+   `experience/notes.json` with the new findings, tasks, and screenshots.
 
-## Step 6: Write the structured review notes
+3. **At the end of exploration**: write the final `experience/notes.json`,
+   `experience/review-brief.md`, and `experience/story-beats.md`.
 
-Also write `experience/review-brief.md` as a human-readable handoff for Stage 3.
+If you sense the context is getting long (many tool calls, long observations),
+**stop exploring and write the notes immediately** with whatever evidence you have.
+Incomplete notes are infinitely better than no notes at all.
+
+### Depth gate
+
+Before marking exploration complete:
+
+- [ ] At least 3 distinct functional scenarios completed
+- [ ] At least 8 screenshots in `experience/screenshots/`
+- [ ] At least 1 live clip (or explicit justification)
+- [ ] At least 1 honest limitation/friction discovered
+- [ ] `experience/notes.json` exists and is valid JSON
+
+Mark `deep` when all are met. Mark `partial` when 3-4 are met. Mark `shallow` only when genuinely blocked.
+
+## Step 6: Finalize the structured review notes
+
+Also write `experience/review-brief.md` as a human-readable handoff for Stage 5.
 Also write `experience/story-beats.md` as the tighter natural-language bridge between exploration and video production.
 
 Write `experience/notes.json` with at least:
@@ -501,12 +583,12 @@ Write `experience/notes.json` with at least:
     "storyAngle": "string",
     "recommendedSlideOrder": [
       "opening-overlay",
-      "store-promise",
       "first-impression",
+      "context-beat",
       "core-task",
-      "outcome-or-friction",
+      "outcome",
       "secondary-proof",
-      "verdict-overlay"
+      "verdict"
     ],
     "narrationLines": [
       "string"
@@ -529,15 +611,15 @@ Writing guidance:
 - `tensionLine` should name the central question, tradeoff, or risk.
 - `payoffLine` should describe the clearest demonstrated payoff from the exploration.
 - `mustShowInVideo` should be 2-4 concrete visuals or moments, not abstractions.
-- `narrationLines` should be 6-7 short spoken lines that can drive a 24-35 second short.
+- `narrationLines` should usually be `12-18` lines totaling `280-460 spoken words` (roughly `150-210 seconds` at natural pace). Each line should average `20-28 words` — a complete thought, not a fragment. If the total word count falls below `280`, the video will feel too short and the narration pipeline will trigger a fallback expansion.
 - Production-language rule: when these notes are feeding a narrated short, prefer concise English-first viewer copy plus a short Latin alias for the app name when available. Keep full localized names only where they add truth and still stay readable.
 - `permissionsGranted` should list only the permissions you actually allowed during this run.
 - If the exploration stayed shallow, `coverageGaps` must say exactly what deeper task was not completed.
 - `evidenceMoments` should identify the 3-5 strongest review receipts, each tied to a visible screen or action.
-- `evidenceMoments` should usually name the exact screenshot or surface that proves each claim, so Stage 3 can lift them without guessing.
+- `evidenceMoments` should usually name the exact screenshot or surface that proves each claim, so Stage 5 can lift them without guessing.
 - Do not leave top-level sections or core sub-sections as placeholder `null` blocks when you already wrote the truth in markdown. Either fill the field truthfully or omit it; `experience/notes.json` should not be an empty shell beside a strong `review-brief.md`.
 - `bestFor` and `avoidIf` should be viewer-facing guidance, not internal notes.
-- `primaryLoop`, `secondaryProof`, and `fallbackStory` should stay simple and concrete so Stage 3 can turn them into cards without guessing.
+- `primaryLoop`, `secondaryProof`, and `fallbackStory` should stay simple and concrete so Stage 5 can turn them into cards without guessing.
 - `proofLadder` should read like a 4-step mini storyboard, not a bag of unrelated taps.
 - Narration-line rule: each line should sound speakable by local TTS. Avoid mixed-language clutter, long product subtitles, and dense punctuation.
 - Natural-language-first rule: `review-brief.md` and `story-beats.md` are the human source of truth, but `notes.json` still needs enough real structure that later helpers can recover the same story without guessing.
@@ -545,9 +627,11 @@ Writing guidance:
 Write `experience/review-brief.md` in concise natural language with these sections:
 
 - `# Hook`
+- `# How To Start`
 - `# What I Tried`
 - `# What Worked`
 - `# What Got In The Way`
+- `# Less Obvious Detail`
 - `# Why It Matters`
 - `# Best For`
 - `# Avoid If`
@@ -559,8 +643,8 @@ Writing guidance for `experience/review-brief.md`:
 - Mention the exact task you attempted.
 - If the run stayed shallow, say so plainly and explain why.
 - `Why It Matters` should translate the exploration into one viewer-facing takeaway, not just repeat the hook.
-- `Best For` and `Avoid If` should read like review advice that Stage 3 can almost quote directly.
-- The `Must Show In Video` section should call out specific screenshots or moments that Stage 3 can translate into cards and narration.
+- `Best For` and `Avoid If` should read like review advice that Stage 5 can almost quote directly.
+- The `Must Show In Video` section should call out specific screenshots or moments that Stage 5 can translate into cards and narration.
 - When a live clip exists, mention the exact clip filename and the moment inside it that carries the best proof.
 - Prefer short punchy sentences that can be lifted into an English-first short without major rewriting.
 
@@ -591,9 +675,9 @@ Writing guidance for `experience/story-beats.md`:
 - `Claims I Can Defend` should be specific viewer-facing truths backed by visible evidence.
 - `Claims To Avoid` should call out what this run did **not** prove, especially when the app felt promising but partial.
 - `Screenshot Map` should explicitly tie each saved screenshot filename to the proof beat it shows.
-- `Screenshot Map` should prefer one sentence per screenshot that explains why that frame belongs in the final short.
+- `Screenshot Map` should prefer one sentence per screenshot that explains why that frame belongs in the final video.
 - If a live clip exists, add it to the map and say which beat it should own in the final edit.
-- `Video Angle` should be the one-sentence thesis Stage 3 should lean on.
+- `Video Angle` should be the one-sentence thesis Stage 5 should lean on.
 - Where the app name is long or localized, prefer the short alias in production-facing lines and keep the full localized name only once when helpful.
 
 Append at least two checkpoint lines to `experience/checkpoints.jsonl`:
@@ -601,6 +685,12 @@ Append at least two checkpoint lines to `experience/checkpoints.jsonl`:
 - exploration started
 - core task reached or blocker recorded
 - notes written
+
+Closeout priority:
+
+- As soon as the evidence floor is met, Step 6 is the highest-priority next work.
+- Do not keep tapping through extra app surfaces before `experience/notes.json`, `experience/review-brief.md`, and `experience/story-beats.md` exist.
+- If the run already has `01-04` plus one clip or a strong revisit frame, assume Stage 5 would rather receive honest partial notes now than a longer but messier unclosed exploration.
 
 ## Step 7: Return to the home screen and stop there
 
