@@ -1,32 +1,32 @@
 {
-  "name": "@understudy-ai/understudy",
-  "version": "0.1.6",
-  "description": "Local-first teachable GUI agent runtime with gateway, web UI, channels, and tools",
-  "keywords": [
-    "agent",
-    "gui-agent",
-    "computer-use",
-    "teach-by-demonstration",
-    "desktop-automation",
-    "browser-automation",
-    "workflow-automation",
-    "local-first",
-    "channels",
-    "understudy"
-  ],
-  "homepage": "https://github.com/understudy-ai/understudy#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/understudy-ai/understudy.git"
-  },
-  "bugs": {
-    "url": "https://github.com/understudy-ai/understudy/issues"
-  },
-  "type": "module",
-  "bin": {
-    "understudy": "understudy.mjs"
-  },
-  "main": "./understudy.mjs",
+	"name": "@understudy-ai/understudy",
+	"version": "0.1.6",
+	"description": "Local-first teachable GUI agent runtime with gateway, web UI, channels, and tools",
+	"keywords": [
+		"agent",
+		"gui-agent",
+		"computer-use",
+		"teach-by-demonstration",
+		"desktop-automation",
+		"browser-automation",
+		"workflow-automation",
+		"local-first",
+		"channels",
+		"understudy"
+	],
+	"homepage": "https://github.com/understudy-ai/understudy#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/understudy-ai/understudy.git"
+	},
+	"bugs": {
+		"url": "https://github.com/understudy-ai/understudy/issues"
+	},
+	"type": "module",
+	"bin": {
+		"understudy": "understudy.mjs"
+	},
+	"main": "./understudy.mjs",
 	"exports": {
 		".": "./understudy.mjs"
 	},
@@ -49,7 +49,13 @@
 		"build": "pnpm -r --stream run build",
 		"test": "vitest --run",
 		"test:coverage": "vitest --run --coverage",
+		"test:e2e:playbook": "pnpm test:e2e:playbook:synthetic",
+		"test:e2e:playbook:synthetic": "PLAYBOOK_E2E_MODE=synthetic node scripts/e2e/understudy-playbook.mjs",
+		"test:e2e:playbook:live": "PLAYBOOK_E2E_MODE=live node scripts/e2e/understudy-playbook.mjs",
+		"test:e2e:pipeline:synthetic": "PLAYBOOK_WORKSPACE_DIR=. PLAYBOOK_NAME=app-review-pipeline PLAYBOOK_E2E_MODE=synthetic node scripts/e2e/understudy-playbook.mjs",
+		"test:e2e:pipeline:live": "PLAYBOOK_WORKSPACE_DIR=. PLAYBOOK_NAME=app-review-pipeline PLAYBOOK_E2E_MODE=live node scripts/e2e/understudy-playbook.mjs",
 		"test:gui:real": "UNDERSTUDY_RUN_REAL_GUI_TESTS=1 vitest --run packages/gui/src/__tests__/runtime.real.test.ts",
+		"test:gui:focused-secret": "pnpm --filter @understudy/gui build && node scripts/gui/type-secret-into-focused-field.mjs",
 		"test:gui:real:grounding": "UNDERSTUDY_RUN_REAL_GUI_TESTS=1 UNDERSTUDY_RUN_REAL_GUI_GROUNDING_E2E=1 vitest --run packages/gui/src/__tests__/runtime.real.test.ts --testNamePattern='real OpenAI grounding'",
 		"test:gui:real:native-task": "UNDERSTUDY_RUN_REAL_GUI_TESTS=1 UNDERSTUDY_RUN_REAL_GUI_GROUNDING_E2E=1 vitest --run packages/gui/src/__tests__/runtime.real.test.ts --testNamePattern='Pixelmator Pro'",
 		"test:gui:real:optional": "node scripts/check-optional-real-gui.mjs",
@@ -75,10 +81,10 @@
 	"license": "MIT",
 	"dependencies": {
 		"@clack/prompts": "^1.1.0",
-		"@mariozechner/pi-agent-core": "^0.56.2",
-		"@mariozechner/pi-ai": "^0.56.2",
-		"@mariozechner/pi-coding-agent": "^0.56.2",
-		"@mariozechner/pi-tui": "^0.56.2",
+		"@mariozechner/pi-agent-core": "^0.62.0",
+		"@mariozechner/pi-ai": "^0.62.0",
+		"@mariozechner/pi-coding-agent": "^0.62.0",
+		"@mariozechner/pi-tui": "^0.62.0",
 		"@sinclair/typebox": "^0.34.48",
 		"commander": "^13.1.0",
 		"croner": "^9.1.0",
@@ -100,9 +106,9 @@
 		"qrcode-terminal": "^0.12.0"
 	},
 	"devDependencies": {
-		"esbuild": "^0.25.0",
 		"@types/node": "^24.3.0",
 		"@vitest/coverage-v8": "^3.2.4",
+		"esbuild": "^0.25.0",
 		"oxlint": "^1.51.0",
 		"vitest": "^3.2.4"
 	},
