@@ -44,6 +44,12 @@ import { createHealthHandlers, type HealthHandlerDeps } from "./handlers/health-
 import { messageAction } from "./handlers/message-handlers.js";
 import { pairingApprove, pairingReject, pairingRequest } from "./handlers/pairing-handlers.js";
 import {
+	playbookRunGet,
+	playbookRunList,
+	playbookRunNext,
+	playbookRunResume,
+	playbookRunStageComplete,
+	playbookRunStart,
 	sessionCreate,
 	sessionGet,
 	sessionHistory,
@@ -437,7 +443,13 @@ export interface SessionHandlers {
 	spawnSubagent?(params?: Record<string, unknown>): Promise<unknown>;
 	subagents?(params?: Record<string, unknown>): Promise<unknown>;
 	abort?(params?: Record<string, unknown>): Promise<unknown>;
-}
+	playbookRunList?(params?: Record<string, unknown>): Promise<unknown>;
+	playbookRunGet?(params?: Record<string, unknown>): Promise<unknown>;
+	playbookRunStart?(params?: Record<string, unknown>): Promise<unknown>;
+	playbookRunResume?(params?: Record<string, unknown>): Promise<unknown>;
+	playbookRunNext?(params?: Record<string, unknown>): Promise<unknown>;
+	playbookRunStageComplete?(params?: Record<string, unknown>): Promise<unknown>;
+	}
 
 export class GatewayServer {
 	private app: Express;
@@ -1196,6 +1208,12 @@ export class GatewayServer {
 		this.rpcHandlers.register("channel.list", (request) => channelList(request, context));
 		this.rpcHandlers.register("channel.status", (request) => channelStatus(request, context));
 		this.rpcHandlers.register("channel.logout", (request) => channelLogout(request, context));
+		this.rpcHandlers.register("playbook.run.list", (request) => playbookRunList(request, context));
+		this.rpcHandlers.register("playbook.run.get", (request) => playbookRunGet(request, context));
+		this.rpcHandlers.register("playbook.run.start", (request) => playbookRunStart(request, context));
+		this.rpcHandlers.register("playbook.run.resume", (request) => playbookRunResume(request, context));
+		this.rpcHandlers.register("playbook.run.next", (request) => playbookRunNext(request, context));
+		this.rpcHandlers.register("playbook.run.stage.complete", (request) => playbookRunStageComplete(request, context));
 
 		this.rpcHandlers.register("session.list", (request) => sessionList(request, context));
 		this.rpcHandlers.register("session.get", (request) => sessionGet(request, context));

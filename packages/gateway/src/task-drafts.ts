@@ -6,55 +6,23 @@ import {
 	loadTaughtTaskDraft,
 	persistTaughtTaskDraft,
 	publishTaughtTaskDraft,
-	resolveUnderstudyHomeDir,
 	updatePersistedTaughtTaskDraft,
+	resolveUnderstudyHomeDir,
 	type TaughtTaskDraft,
 } from "@understudy/core";
+import type { UnderstudyConfig } from "@understudy/types";
 import {
 	buildTeachCapabilitySnapshot,
 	createSessionVideoTeachAnalyzer,
-	type DemonstrationEvent,
 	type DemonstrationEvidenceFrame,
 	type VideoTeachAnalyzer,
 } from "@understudy/tools";
-import type { UnderstudyConfig } from "@understudy/types";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join, resolve as resolvePath } from "node:path";
 import type { SessionEntry, SessionRunTrace } from "./session-runtime.js";
 import { asBoolean, asNumber, asRecord, asString, sanitizePathSegment } from "./value-coerce.js";
-
-const DEFAULT_MAX_MATERIALIZED_VIDEO_BYTES = 32 * 1024 * 1024;
-
-function resolveVideoTeachArtifactDir(entry: SessionEntry, sourceLabel: string): string {
-	const workspaceKey = createHash("sha1")
-		.update(resolvePath(entry.workspaceDir ?? "workspace"))
-		.digest("hex")
-		.slice(0, 12);
-	return join(
-		resolveUnderstudyHomeDir(),
-		"learning",
-		"teach-artifacts",
-		workspaceKey,
-		sanitizePathSegment(entry.id, "session"),
-		`${Date.now()}-${sanitizePathSegment(sourceLabel, "demo")}`,
-	);
-}
-
-function normalizeEvidenceKeyframes(value: DemonstrationEvidenceFrame[] | undefined): Array<Record<string, unknown>> | undefined {
-	if (!Array.isArray(value) || value.length === 0) {
-		return undefined;
-	}
-	return value.map((frame) => ({
-		path: frame.path,
-		mimeType: frame.mimeType,
-		timestampMs: frame.timestampMs,
-		label: frame.label,
-		kind: frame.kind,
-		episodeId: frame.episodeId,
-	}));
-}
 
 export interface CreateGatewayTaskDraftHandlersOptions {
 	sessionEntries: Map<string, SessionEntry>;
@@ -70,15 +38,6 @@ export interface GatewayTaskDraftHandlers {
 	createFromVideo(params?: Record<string, unknown>): Promise<{ draft: TaughtTaskDraft; created: boolean }>;
 	update(params?: Record<string, unknown>): Promise<TaughtTaskDraft>;
 	publish(params?: Record<string, unknown>): Promise<Awaited<ReturnType<typeof publishTaughtTaskDraft>>>;
-}
-
-function resolveDefaultVideoTeachAnalyzer(
-	options: CreateGatewayTaskDraftHandlersOptions,
-): VideoTeachAnalyzer {
-	return createSessionVideoTeachAnalyzer({
-		config: options.config,
-		cwd: options.resolveDefaultWorkspaceDir?.(),
-	});
 }
 
 function resolveSessionEntry(
@@ -137,13 +96,156 @@ function resolveRunForDraft(
 	return runs.find((run) => run.runId === requestedRunId);
 }
 
+function resolveDefaultVideoTeachAnalyzer(
+	options: CreateGatewayTaskDraftHandlersOptions,
+): VideoTeachAnalyzer {
+	return options.videoTeachAnalyzer ?? createSessionVideoTeachAnalyzer({
+		config: options.config,
+		cwd: options.resolveDefaultWorkspaceDir?.(),
+	});
+}
+
+function resolveVideoTeachArtifactDir(entry: SessionEntry, sourceLabel: string): string {
+	const workspaceKey = createHash("sha1")
+		.update(resolvePath(entry.workspaceDir ?? "workspace"))
+		.digest("hex")
+		.slice(0, 12);
+	return join(
+		resolveUnderstudyHomeDir(),
+		"learning",
+		"teach-artifacts",
+		workspaceKey,
+		sanitizePathSegment(entry.id, "session"),
+		`${Date.now()}-${sanitizePathSegment(sourceLabel, "demo")}`,
+	);
+}
+
+function normalizeEvidenceKeyframes(value: DemonstrationEvidenceFrame[] | undefined): Array<Record<string, unknown>> | undefined {
+	if (!Array.isArray(value) || value.length === 0) {
+		return undefined;
+	}
+	return value.map((frame) => ({
+		path: frame.path,
+		mimeType: frame.mimeType,
+		timestampMs: frame.timestampMs,
+		label: frame.label,
+		kind: frame.kind,
+		episodeId: frame.episodeId,
+	}));
+}
+
+function extensionForMimeType(mimeType?: string): string {
+	switch ((mimeType ?? "").toLowerCase()) {
+		case "video/quicktime":
+			return ".mov";
+		case "video/webm":
+			return ".webm";
+		case "video/x-matroska":
+			return ".mkv";
+		default:
+			return ".mp4";
+	}
+}
+
+function decodeDataUrl(value: string): { mimeType?: string; bytes: Buffer } {
+	const match = value.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i);
+	if (!match) {
+		throw new Error("videoDataUrl must be a base64 data URL");
+	}
+	return {
+		mimeType: asString(match[1]),
+		bytes: Buffer.from(match[2], "base64"),
+	};
+}
+
+function resolveMaxMaterializedVideoBytes(): number {
+	const configured = asNumber(process.env.UNDERSTUDY_TEACH_VIDEO_MAX_BYTES);
+	if (typeof configured === "number" && Number.isFinite(configured) && configured > 0) {
+		return Math.floor(configured);
+	}
+	return 32 * 1024 * 1024;
+}
+
+function assertMaxVideoBytes(byteLength: number, limit: number, label: string): void {
+	if (byteLength <= limit) {
+		return;
+	}
+	const limitMb = Math.max(1, Math.round(limit / (1024 * 1024)));
+	throw new Error(`${label} exceeds the ${limitMb} MB materialized upload limit.`);
+}
+
+function isVideoTeachCreateRequest(params?: Record<string, unknown>): boolean {
+	const sourceKind = asString(params?.sourceKind)?.toLowerCase();
+	return sourceKind === "video" ||
+		Boolean(asString(params?.videoPath) || asString(params?.videoDataUrl));
+}
+
+async function materializeVideoSource(params: {
+	videoPath?: string;
+	videoDataUrl?: string;
+	videoName?: string;
+}): Promise<{
+	videoPath: string;
+	sourceLabel: string;
+	auditSource: string;
+	persistedVideoPath?: string;
+	cleanup?: () => Promise<void>;
+}> {
+	const videoPath = asString(params.videoPath);
+	if (videoPath) {
+		const resolvedPath = resolvePath(videoPath);
+		return {
+			videoPath: resolvedPath,
+			sourceLabel: asString(params.videoName) ?? basename(videoPath),
+			auditSource: resolvedPath,
+			persistedVideoPath: resolvedPath,
+		};
+	}
+	const videoDataUrl = asString(params.videoDataUrl);
+	if (!videoDataUrl) {
+		throw new Error("videoPath or videoDataUrl is required");
+	}
+	const tempDir = await mkdtemp(join(tmpdir(), "understudy-teach-video-source-"));
+	try {
+		let bytes: Buffer;
+		let mimeType: string | undefined;
+		let sourceLabel: string;
+		const maxBytes = resolveMaxMaterializedVideoBytes();
+		const decoded = decodeDataUrl(videoDataUrl);
+		bytes = decoded.bytes;
+		mimeType = decoded.mimeType;
+		sourceLabel = asString(params.videoName) ?? `demo${extensionForMimeType(mimeType)}`;
+		assertMaxVideoBytes(bytes.byteLength, maxBytes, "Demo video");
+		const normalizedLabel = sourceLabel.replace(/[^a-zA-Z0-9._-]+/g, "-") || `demo${extensionForMimeType(mimeType)}`;
+		const hasExtension = extname(normalizedLabel).length > 0;
+		const fileName = hasExtension ? normalizedLabel : `${normalizedLabel}${extensionForMimeType(mimeType)}`;
+		const targetPath = join(tempDir, fileName);
+		await writeFile(targetPath, bytes);
+		return {
+			videoPath: targetPath,
+			sourceLabel: fileName,
+			auditSource: fileName,
+			cleanup: async () => {
+				await rm(tempDir, { recursive: true, force: true });
+			},
+		};
+	} catch (error) {
+		await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		throw error;
+	}
+}
+
 function buildStructuralValidationReport(draft: TaughtTaskDraft): {
 	ok: boolean;
 	summary: string;
 } {
 	const lintIssues = lintTaughtTaskDraft(draft);
 	const ok =
-		draft.steps.length > 0 &&
+		(draft.artifactKind === "playbook"
+			? draft.playbookStages.length > 0
+			: draft.artifactKind === "worker"
+				? Boolean(draft.workerContract?.goal?.trim())
+				: draft.steps.length > 0) &&
 		draft.successCriteria.length > 0 &&
 		draft.objective.trim().length > 0 &&
 		draft.parameterSlots.every((slot) => slot.required !== true || Boolean(slot.sampleValue?.trim())) &&
@@ -178,123 +280,10 @@ async function ensureDraftValidated(
 	return draft;
 }
 
-function extensionForMimeType(mimeType?: string): string {
-	switch ((mimeType ?? "").toLowerCase()) {
-		case "video/quicktime":
-			return ".mov";
-		case "video/webm":
-			return ".webm";
-		case "video/x-matroska":
-			return ".mkv";
-		default:
-			return ".mp4";
-	}
-}
-
-function decodeDataUrl(value: string): { mimeType?: string; bytes: Buffer } {
-	const match = value.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i);
-	if (!match) {
-		throw new Error("videoDataUrl must be a base64 data URL");
-	}
-	return {
-		mimeType: asString(match[1]),
-		bytes: Buffer.from(match[2], "base64"),
-	};
-}
-
-function resolveMaxMaterializedVideoBytes(): number {
-	const configured = asNumber(process.env.UNDERSTUDY_TEACH_VIDEO_MAX_BYTES);
-	if (typeof configured === "number" && Number.isFinite(configured) && configured > 0) {
-		return Math.floor(configured);
-	}
-	return DEFAULT_MAX_MATERIALIZED_VIDEO_BYTES;
-}
-
-function assertMaxVideoBytes(byteLength: number, limit: number, label: string): void {
-	if (byteLength <= limit) {
-		return;
-	}
-	const limitMb = Math.max(1, Math.round(limit / (1024 * 1024)));
-	throw new Error(`${label} exceeds the ${limitMb} MB materialized upload limit.`);
-}
-
-function isVideoTeachCreateRequest(params?: Record<string, unknown>): boolean {
-	const sourceKind = asString(params?.sourceKind)?.toLowerCase();
-	return sourceKind === "video" ||
-		Boolean(asString(params?.videoPath) || asString(params?.videoUrl) || asString(params?.videoDataUrl));
-}
-
-async function materializeVideoSource(params: {
-	videoPath?: string;
-	videoUrl?: string;
-	videoDataUrl?: string;
-	videoName?: string;
-}): Promise<{ videoPath: string; sourceLabel: string; auditSource: string; cleanup?: () => Promise<void> }> {
-	const videoPath = asString(params.videoPath);
-	if (videoPath) {
-		return {
-			videoPath: resolvePath(videoPath),
-			sourceLabel: asString(params.videoName) ?? basename(videoPath),
-			auditSource: resolvePath(videoPath),
-		};
-	}
-	const videoUrl = asString(params.videoUrl);
-	const videoDataUrl = asString(params.videoDataUrl);
-	if (!videoUrl && !videoDataUrl) {
-		throw new Error("videoPath, videoUrl, or videoDataUrl is required");
-	}
-	const tempDir = await mkdtemp(join(tmpdir(), "understudy-teach-video-source-"));
-	try {
-		let bytes: Buffer;
-		let mimeType: string | undefined;
-		let sourceLabel: string;
-		const maxBytes = resolveMaxMaterializedVideoBytes();
-		if (videoDataUrl) {
-			const decoded = decodeDataUrl(videoDataUrl);
-			bytes = decoded.bytes;
-			mimeType = decoded.mimeType;
-			sourceLabel = asString(params.videoName) ?? `demo${extensionForMimeType(mimeType)}`;
-			assertMaxVideoBytes(bytes.byteLength, maxBytes, "Demo video");
-		} else {
-			const response = await fetch(videoUrl!);
-			if (!response.ok) {
-				throw new Error(`Failed to fetch demonstration video: HTTP ${response.status}`);
-			}
-			const contentLengthHeader = response.headers.get("content-length");
-			if (contentLengthHeader) {
-				const contentLength = Number.parseInt(contentLengthHeader, 10);
-				if (Number.isFinite(contentLength) && contentLength > 0) {
-					assertMaxVideoBytes(contentLength, maxBytes, "Remote demonstration video");
-				}
-			}
-			bytes = Buffer.from(await response.arrayBuffer());
-			mimeType = asString(response.headers.get("content-type"));
-			sourceLabel = asString(params.videoName) ?? basename(videoUrl!);
-			assertMaxVideoBytes(bytes.byteLength, maxBytes, "Remote demonstration video");
-		}
-		const normalizedLabel = sourceLabel.replace(/[^a-zA-Z0-9._-]+/g, "-") || `demo${extensionForMimeType(mimeType)}`;
-		const hasExtension = extname(normalizedLabel).length > 0;
-		const fileName = hasExtension ? normalizedLabel : `${normalizedLabel}${extensionForMimeType(mimeType)}`;
-		const targetPath = join(tempDir, fileName);
-		await writeFile(targetPath, bytes);
-		return {
-			videoPath: targetPath,
-			sourceLabel: fileName,
-			auditSource: videoUrl ?? fileName,
-			cleanup: async () => {
-				await rm(tempDir, { recursive: true, force: true });
-			},
-		};
-	} catch (error) {
-		await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-		throw error;
-	}
-}
-
 export function createGatewayTaskDraftHandlers(
 	options: CreateGatewayTaskDraftHandlersOptions,
 ): GatewayTaskDraftHandlers {
-	const videoTeachAnalyzer = options.videoTeachAnalyzer ?? resolveDefaultVideoTeachAnalyzer(options);
+	const videoTeachAnalyzer = resolveDefaultVideoTeachAnalyzer(options);
 	const createFromVideo: GatewayTaskDraftHandlers["createFromVideo"] = async (params) => {
 		const entry = resolveSessionEntry(options.sessionEntries, params);
 		if (!entry) {
@@ -305,7 +294,6 @@ export function createGatewayTaskDraftHandlers(
 		}
 		const source = await materializeVideoSource({
 			videoPath: asString(params?.videoPath),
-			videoUrl: asString(params?.videoUrl),
 			videoDataUrl: asString(params?.videoDataUrl),
 			videoName: asString(params?.videoName),
 		});
@@ -323,13 +311,13 @@ export function createGatewayTaskDraftHandlers(
 				objectiveHint: asString(params?.objective),
 				capabilitySnapshot,
 				eventLogPath: asString(params?.eventLogPath),
-				events: Array.isArray(params?.events) ? params?.events as DemonstrationEvent[] : undefined,
+				events: Array.isArray(params?.events) ? params?.events as any : undefined,
 				maxEpisodes: asNumber(params?.maxEpisodes) ?? undefined,
 				maxKeyframes: asNumber(params?.maxKeyframes) ?? undefined,
 				keyframeOutputDir,
 			});
 			keepArtifacts = true;
-				const draft = createTaughtTaskDraftFromVideo({
+			const draft = createTaughtTaskDraftFromVideo({
 				workspaceDir: entry.workspaceDir,
 				repoRoot: entry.repoRoot,
 				sessionId: entry.id,
@@ -376,7 +364,7 @@ export function createGatewayTaskDraftHandlers(
 				})),
 				sourceDetails: {
 					videoSource: source.auditSource,
-					videoPath: source.videoPath,
+					...(source.persistedVideoPath ? { videoPath: source.persistedVideoPath } : {}),
 					eventLogPath: asString(params?.eventLogPath),
 					artifactDir,
 					keyframeDir: keyframeOutputDir,
@@ -390,16 +378,16 @@ export function createGatewayTaskDraftHandlers(
 					eventCount: analysis.eventCount,
 					durationMs: analysis.durationMs,
 				},
+			});
+			await persistTaughtTaskDraft(draft);
+			if (asBoolean(params?.publish) === true) {
+				const validatedDraft = await ensureDraftValidated(options, draft, params);
+				const published = await publishTaughtTaskDraft({
+					workspaceDir: entry.workspaceDir,
+					draftId: validatedDraft.id,
+					name: asString(params?.name),
 				});
-				await persistTaughtTaskDraft(draft);
-				if (asBoolean(params?.publish) === true) {
-					const validatedDraft = await ensureDraftValidated(options, draft, params);
-					const published = await publishTaughtTaskDraft({
-						workspaceDir: entry.workspaceDir,
-						draftId: validatedDraft.id,
-						name: asString(params?.name),
-					});
-					return { draft: published.draft, created: true };
+				return { draft: published.draft, created: true };
 			}
 			return { draft, created: true };
 		} finally {
@@ -453,23 +441,23 @@ export function createGatewayTaskDraftHandlers(
 					return { draft: existing, created: false };
 				}
 			}
-				const draft = createTaughtTaskDraft({
+			const draft = createTaughtTaskDraft({
 				workspaceDir: entry.workspaceDir,
 				repoRoot: entry.repoRoot,
 				sessionId: entry.id,
 				title: asString(params?.title),
 				objective: asString(params?.objective),
 				run,
+			});
+			await persistTaughtTaskDraft(draft);
+			if (asBoolean(params?.publish) === true) {
+				const validatedDraft = await ensureDraftValidated(options, draft, params);
+				const published = await publishTaughtTaskDraft({
+					workspaceDir: entry.workspaceDir,
+					draftId: validatedDraft.id,
+					name: asString(params?.name),
 				});
-				await persistTaughtTaskDraft(draft);
-				if (asBoolean(params?.publish) === true) {
-					const validatedDraft = await ensureDraftValidated(options, draft, params);
-					const published = await publishTaughtTaskDraft({
-						workspaceDir: entry.workspaceDir,
-						draftId: validatedDraft.id,
-						name: asString(params?.name),
-					});
-					return { draft: published.draft, created: true };
+				return { draft: published.draft, created: true };
 			}
 			return { draft, created: true };
 		},
@@ -483,47 +471,51 @@ export function createGatewayTaskDraftHandlers(
 			const patch = (params?.patch && typeof params.patch === "object")
 				? params.patch as Record<string, unknown>
 				: params ?? {};
-				return await updatePersistedTaughtTaskDraft({
-					workspaceDir,
-					draftId,
-					patch: {
-						...(asString(patch.title) ? { title: asString(patch.title) } : {}),
-						...(asString(patch.intent) ? { intent: asString(patch.intent) } : {}),
-						...(asString(patch.objective) ? { objective: asString(patch.objective) } : {}),
-						...(asString(patch.taskKind) ? { taskKind: asString(patch.taskKind) as any } : {}),
-						...(Array.isArray(patch.parameterSlots) ? { parameterSlots: patch.parameterSlots as any } : {}),
-						...(Array.isArray(patch.successCriteria) ? { successCriteria: patch.successCriteria as any } : {}),
-						...(Array.isArray(patch.openQuestions) ? { openQuestions: patch.openQuestions as any } : {}),
-						...(Array.isArray(patch.uncertainties) ? { uncertainties: patch.uncertainties as any } : {}),
-						...(asRecord(patch.taskCard) ? { taskCard: asRecord(patch.taskCard) as any } : {}),
-						...(Array.isArray(patch.procedure) ? { procedure: patch.procedure as any } : {}),
-						...(asRecord(patch.executionPolicy) ? { executionPolicy: asRecord(patch.executionPolicy) as any } : {}),
-						...(Array.isArray(patch.stepRouteOptions) ? { stepRouteOptions: patch.stepRouteOptions as any } : {}),
-						...(Array.isArray(patch.replayPreconditions) ? { replayPreconditions: patch.replayPreconditions as any } : {}),
-						...(Array.isArray(patch.resetSignals) ? { resetSignals: patch.resetSignals as any } : {}),
-						...(Array.isArray(patch.skillDependencies) ? { skillDependencies: patch.skillDependencies as any } : {}),
-						...(Array.isArray(patch.steps) ? { steps: patch.steps as any } : {}),
-						...(asRecord(patch.validation) && Object.keys(asRecord(patch.validation)).length > 0 ? { validation: asRecord(patch.validation) as any } : {}),
-						...(asString(patch.note) ? { note: asString(patch.note) } : {}),
-					},
-					action: asString(params?.action) as any,
-					note: asString(params?.note) ?? asString(patch.note),
-				});
-			},
+			return await updatePersistedTaughtTaskDraft({
+				workspaceDir,
+				draftId,
+				patch: {
+					...(asString(patch.title) ? { title: asString(patch.title) } : {}),
+					...(asString(patch.intent) ? { intent: asString(patch.intent) } : {}),
+					...(asString(patch.objective) ? { objective: asString(patch.objective) } : {}),
+					...(asString(patch.artifactKind) ? { artifactKind: asString(patch.artifactKind) as any } : {}),
+					...(asString(patch.taskKind) ? { taskKind: asString(patch.taskKind) as any } : {}),
+					...(Array.isArray(patch.parameterSlots) ? { parameterSlots: patch.parameterSlots as any } : {}),
+					...(Array.isArray(patch.successCriteria) ? { successCriteria: patch.successCriteria as any } : {}),
+					...(Array.isArray(patch.openQuestions) ? { openQuestions: patch.openQuestions as any } : {}),
+					...(Array.isArray(patch.uncertainties) ? { uncertainties: patch.uncertainties as any } : {}),
+					...(asRecord(patch.taskCard) ? { taskCard: asRecord(patch.taskCard) as any } : {}),
+					...(Array.isArray(patch.procedure) ? { procedure: patch.procedure as any } : {}),
+					...(asRecord(patch.executionPolicy) ? { executionPolicy: asRecord(patch.executionPolicy) as any } : {}),
+					...(Array.isArray(patch.stepRouteOptions) ? { stepRouteOptions: patch.stepRouteOptions as any } : {}),
+					...(Array.isArray(patch.replayPreconditions) ? { replayPreconditions: patch.replayPreconditions as any } : {}),
+					...(Array.isArray(patch.resetSignals) ? { resetSignals: patch.resetSignals as any } : {}),
+					...(Array.isArray(patch.skillDependencies) ? { skillDependencies: patch.skillDependencies as any } : {}),
+					...(Array.isArray(patch.childArtifacts) ? { childArtifacts: patch.childArtifacts as any } : {}),
+					...(Array.isArray(patch.playbookStages) ? { playbookStages: patch.playbookStages as any } : {}),
+					...(asRecord(patch.workerContract) ? { workerContract: asRecord(patch.workerContract) as any } : {}),
+					...(Array.isArray(patch.steps) ? { steps: patch.steps as any } : {}),
+					...(asRecord(patch.validation) && Object.keys(asRecord(patch.validation)).length > 0 ? { validation: asRecord(patch.validation) as any } : {}),
+					...(asString(patch.note) ? { note: asString(patch.note) } : {}),
+				},
+				action: asString(params?.action) as any,
+				note: asString(params?.note) ?? asString(patch.note),
+			});
+		},
 		publish: async (params) => {
 			const workspaceDir = resolveWorkspaceDir(options, params);
 			const draftId = asString(params?.draftId);
 			if (!workspaceDir || !draftId) {
 				throw new Error("workspaceDir and draftId are required");
 			}
-				const draft = await loadTaughtTaskDraft({ workspaceDir, draftId });
-				if (!draft) {
-					throw new Error(`Task draft not found: ${draftId}`);
-				}
-				await ensureDraftValidated(options, draft, params);
-				return await publishTaughtTaskDraft({
-					workspaceDir,
-					draftId,
+			const draft = await loadTaughtTaskDraft({ workspaceDir, draftId });
+			if (!draft) {
+				throw new Error(`Task draft not found: ${draftId}`);
+			}
+			await ensureDraftValidated(options, draft, params);
+			return await publishTaughtTaskDraft({
+				workspaceDir,
+				draftId,
 				name: asString(params?.name),
 			});
 		},

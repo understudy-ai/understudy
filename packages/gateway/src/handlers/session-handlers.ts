@@ -28,6 +28,27 @@ function sessionTeachHandler(
 	};
 }
 
+function sessionOptionalHandler(
+	handlerName: keyof {
+		playbookRunList: true;
+		playbookRunGet: true;
+		playbookRunStart: true;
+		playbookRunResume: true;
+		playbookRunNext: true;
+		playbookRunStageComplete: true;
+	},
+	errorMessage: string,
+): RpcHandler {
+	return async (request, context) => {
+		const handlers = context.getSessionHandlers();
+		const handler = handlers?.[handlerName as keyof typeof handlers];
+		if (!handler) {
+			return { id: request.id, error: { code: 503, message: errorMessage } };
+		}
+		return { id: request.id, result: await (handler as (params?: Record<string, unknown>) => Promise<unknown>)(request.params) };
+	};
+}
+
 export const sessionList: RpcHandler = async (request, context) => {
 	const handlers = context.getSessionHandlers();
 	if (!handlers) {
@@ -150,3 +171,13 @@ export const subagentsAction: RpcHandler = async (request, context) => {
 	}
 	return { id: request.id, result: sanitizeResponsePayload(await handlers.subagents(request.params)) };
 };
+
+export const playbookRunList = sessionOptionalHandler("playbookRunList", "Playbook run list handler not configured");
+export const playbookRunGet = sessionOptionalHandler("playbookRunGet", "Playbook run get handler not configured");
+export const playbookRunStart = sessionOptionalHandler("playbookRunStart", "Playbook run start handler not configured");
+export const playbookRunResume = sessionOptionalHandler("playbookRunResume", "Playbook run resume handler not configured");
+export const playbookRunNext = sessionOptionalHandler("playbookRunNext", "Playbook run next handler not configured");
+export const playbookRunStageComplete = sessionOptionalHandler(
+	"playbookRunStageComplete",
+	"Playbook run stage complete handler not configured",
+);

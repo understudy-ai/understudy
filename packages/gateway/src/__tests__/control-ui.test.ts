@@ -58,6 +58,7 @@ describe("mountControlUi", () => {
 			expect(html).toContain("https://example.com/avatar.png?size=64");
 			expect(html).toContain("Runtime Readiness");
 			expect(html).toContain("Channel Operations");
+				expect(html).toContain("Runs");
 			expect(html).toContain("Execution Trace");
 			expect(html).toContain('class="chip-row"');
 			expect(html).toContain("function sessionChipRowHtml");

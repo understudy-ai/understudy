@@ -101,6 +101,40 @@ export type {
 	CreateGatewayTaskDraftHandlersOptions,
 	GatewayTaskDraftHandlers,
 } from "./task-drafts.js";
+export {
+	launchSkillStage,
+} from "./skill-runtime.js";
+export type {
+	LaunchSkillStageOptions,
+	LaunchSkillStageResult,
+} from "./skill-runtime.js";
+export {
+	launchInlineStage,
+} from "./inline-runtime.js";
+export type {
+	LaunchInlineStageOptions,
+	LaunchInlineStageResult,
+} from "./inline-runtime.js";
+export {
+	launchWorkerStage,
+} from "./worker-runtime.js";
+export type {
+	LaunchWorkerStageOptions,
+	LaunchWorkerStageResult,
+} from "./worker-runtime.js";
+export {
+	completePlaybookStage,
+	resumePlaybookRun,
+	runPlaybookNextStage,
+	startPlaybookRun,
+} from "./playbook-runtime.js";
+export type {
+	CompletePlaybookStageOptions,
+	PlaybookRunResumeState,
+	RunPlaybookNextStageOptions,
+	RunPlaybookNextStageResult,
+	StartPlaybookRunOptions,
+} from "./playbook-runtime.js";
 
 export { EventBus } from "./event-bus.js";
 export type { GatewayBusEventType, BusEvent, BusEventListener } from "./event-bus.js";
@@ -115,6 +149,12 @@ export {
 	sessionGet,
 	sessionHistory,
 	sessionTrace,
+	playbookRunList,
+	playbookRunGet,
+	playbookRunStart,
+	playbookRunResume,
+	playbookRunNext,
+	playbookRunStageComplete,
 	sessionCreate,
 	sessionSend,
 	sessionPatch,

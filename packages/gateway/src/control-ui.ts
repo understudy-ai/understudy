@@ -440,6 +440,25 @@ body {
 .detail-panel-body {
   padding: 12px 16px;
 }
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.action-btn {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-hover);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.action-btn:hover {
+  background: var(--accent-soft);
+  border-color: rgba(0,132,255,0.18);
+}
 .detail-row {
   display: flex;
   align-items: flex-start;
@@ -621,6 +640,7 @@ body {
   </div>
   <div class="sidebar-nav">
     <button class="nav-tab active" data-tab="sessions" type="button">Sessions</button>
+    <button class="nav-tab" data-tab="runs" type="button">Runs</button>
     <button class="nav-tab" data-tab="channels" type="button">Channels</button>
   </div>
   <div class="sidebar-section" id="sidebar-content">
@@ -671,6 +691,8 @@ var state = {
   tools: [],
   toolSummary: null,
   skills: null,
+  playbookRuns: null,
+  playbookWorkspaceDir: '',
   schedule: null,
   readiness: null,
   sessions: [],
@@ -678,6 +700,8 @@ var state = {
   selectedSession: null,
   selectedHistory: [],
   selectedTrace: null,
+  selectedRunId: '',
+  selectedRun: null,
   activeTab: 'sessions',
   lastRefreshAt: 0,
 };
@@ -764,6 +788,23 @@ function tone(v) {
   if (t.includes('error')||t.includes('fail')||t.includes('down')||t.includes('stop')||t.includes('offline')) return 'err';
   return 'warn';
 }
+function playbookRunStageLabel(run) {
+  var stage = run && run.currentStage && typeof run.currentStage === 'object' ? run.currentStage : null;
+  if (!stage) return 'No pending stage';
+  return [stage.name || stage.id || 'Stage', stage.status || 'pending'].filter(Boolean).join(' · ');
+}
+function playbookRunChildLabel(run) {
+  var child = run && run.childSession && typeof run.childSession === 'object' ? run.childSession : null;
+  if (!child) return 'No child session';
+  return [child.label || 'child', child.status || 'unknown'].filter(Boolean).join(' · ');
+}
+function playbookRunStatusTone(run) {
+  if (!run) return 'warn';
+  return tone(run.status || '');
+}
+function playbookRunLabel(run) {
+  return run && run.playbookName ? run.playbookName : 'Playbook run';
+}
 function channelCapabilitySummary(caps) {
   if (!caps || typeof caps !== 'object') return 'Capabilities: none';
   var enabled = Object.keys(caps).filter(function(key) { return !!caps[key]; });
@@ -835,6 +876,7 @@ function renderSummaryCards() {
   var heapTotal = state.health && state.health.memory ? fmtBytes(state.health.memory.heapTotal) : '';
   var sessionCount = Array.isArray(state.sessions) ? state.sessions.length : 0;
   var channelCount = Array.isArray(state.channels) ? state.channels.length : 0;
+  var playbookRunCount = state.playbookRuns && Array.isArray(state.playbookRuns.runs) ? state.playbookRuns.runs.length : 0;
   var methodCount = 0;
   if (state.capabilities) {
     var inv = state.capabilities.inventory;
@@ -846,6 +888,7 @@ function renderSummaryCards() {
     { label: 'Model', value: defaultModel || 'unset', note: (Array.isArray(state.models) ? state.models.length : 0)+' models available' },
     { label: 'Tools', value: String(toolCount), note: skillsLoaded+'/'+skillsAvailable+' skills &middot; '+methodCount+' RPC methods' },
     { label: 'Channels', value: String(channelCount), note: 'Auth: '+authMode },
+    { label: 'Runs', value: String(playbookRunCount), note: playbookRunCount > 0 ? 'Tracked playbook runs' : 'No playbook runs' },
     { label: 'Memory', value: heap, note: heapTotal ? 'of '+heapTotal : '' },
     { label: 'Scheduling', value: state.schedule ? (state.schedule.enabled || state.schedule.running ? 'Active' : 'Off') : '--', note: state.schedule && state.schedule.runCount != null ? state.schedule.runCount+' runs' : 'Schedule jobs' },
   ];
@@ -858,6 +901,8 @@ function renderSummaryCards() {
 function renderSidebar() {
   if (state.activeTab === 'sessions') {
     renderSessionList();
+  } else if (state.activeTab === 'runs') {
+    renderPlaybookRunList();
   } else {
     renderChannelList();
   }
@@ -909,6 +954,30 @@ function renderChannelList() {
     }).join('');
 }
 
+function renderPlaybookRunList() {
+  var payload = state.playbookRuns || {};
+  var items = Array.isArray(payload.runs) ? payload.runs : [];
+  if (!items.length) {
+    sidebarContentEl.innerHTML = '<div class="section-label">Playbook Runs</div><div class="empty">No playbook runs yet</div>';
+    return;
+  }
+  sidebarContentEl.innerHTML = '<div class="section-label">Playbook Runs</div>' +
+    items.map(function(run) {
+      var active = run.id === state.selectedRunId ? ' active' : '';
+      var toneClass = playbookRunStatusTone(run);
+      var badges = [];
+      if (run.approval && run.approval.state) badges.push('approval '+run.approval.state);
+      if (run.childSession && run.childSession.status) badges.push(run.childSession.status);
+      return '<button class="sidebar-item'+active+'" data-rid="'+esc(run.id)+'" type="button">'+
+        '<div class="item-name"><span class="dot '+toneClass+'" style="display:inline-block;margin-right:6px"></span>'+esc(playbookRunLabel(run))+'</div>'+
+        '<div class="item-meta">'+esc([run.id, fmtRel(run.updatedAt)].filter(Boolean).join(' · '))+'</div>'+
+        '<div class="item-meta">'+esc(playbookRunStageLabel(run))+'</div>'+
+        '<div class="item-meta">'+esc(playbookRunChildLabel(run))+'</div>'+
+        (badges.length ? '<div class="chip-row">' + badges.map(function(label) { return '<span class="chip">'+esc(label)+'</span>'; }).join('') + '</div>' : '')+
+      '</button>';
+    }).join('');
+}
+
 function renderSidebarInfo() {
   var parts = [];
   var namespaces = [];
@@ -930,11 +999,47 @@ function renderSidebarInfo() {
 
 /* ── Render: Detail area (main) ── */
 function renderDetailArea() {
+  if (state.activeTab === 'runs') {
+    if (!state.selectedRunId || !state.selectedRun) {
+      renderPlaybookRunOverviewDetail();
+      return;
+    }
+    renderPlaybookRunDetail();
+    return;
+  }
   if (!state.selectedSessionId || !state.selectedSession) {
     renderOverviewDetail();
     return;
   }
   renderSessionDetail();
+}
+
+function renderPlaybookRunOverviewDetail() {
+  var payload = state.playbookRuns || {};
+  var runs = Array.isArray(payload.runs) ? payload.runs : [];
+  mainTitleEl.textContent = 'Playbook Runs';
+  mainSubtitleEl.textContent = payload.workspaceDir || 'Waiting for playbook run data';
+  var rows = [
+    ['Workspace', payload.workspaceDir || 'n/a'],
+    ['Runs', String(runs.length)],
+    ['Latest update', runs.length ? fmtRel((runs[0] || {}).updatedAt) : 'n/a'],
+  ];
+  var html = panelHtml('Run Actions', null,
+    '<div class="detail-actions">'+
+      '<button type="button" class="action-btn" data-run-action="start-run">Start Run</button>'+
+      '<button type="button" class="action-btn" data-run-action="refresh-runs">Refresh Runs</button>'+
+    '</div>'+
+    '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary)">These actions use the generic playbook.run RPC entrypoints directly from the dashboard.</div>'
+  );
+  html += panelHtml('Run Overview', '<span class="panel-badge">Playbooks</span>', rows.map(function(r) {
+    return '<div class="detail-row"><span class="detail-label">'+esc(r[0])+'</span><span class="detail-value">'+esc(r[1])+'</span></div>';
+  }).join(''));
+  html += panelHtml('Recent Runs', runs.length ? runs.length+' tracked' : null, runs.length
+    ? runs.map(function(run) {
+      return '<div class="detail-row"><span class="detail-label">'+esc(playbookRunLabel(run))+'</span><span class="detail-value">'+esc([run.id, run.status, playbookRunStageLabel(run)].join(' · '))+'</span></div>';
+    }).join('')
+    : '<div class="empty">No playbook runs yet</div>');
+  detailAreaEl.innerHTML = html;
 }
 
 function renderOverviewDetail() {
@@ -983,6 +1088,67 @@ function renderOverviewDetail() {
   html += panelHtml('Teach by Demonstration', null,
     '<div style="padding:4px 0;font-size:13px;color:var(--text-secondary)">Use <span class="mono">/teach start</span> to record a demo, then <span class="mono">/teach stop</span> to open a task-shaping dialogue. Use <span class="mono">/teach confirm</span> when the task card is ready. Add <span class="mono">--validate</span> or run <span class="mono">/teach validate &lt;draftId&gt;</span> whenever you want replay validation; publishing does not require it.</div>'
   );
+
+  detailAreaEl.innerHTML = html;
+}
+
+function renderPlaybookRunDetail() {
+  var payload = state.selectedRun || {};
+  var run = payload.run || null;
+  var summary = payload.summary || run || {};
+  if (!run) {
+    renderPlaybookRunOverviewDetail();
+    return;
+  }
+  mainTitleEl.textContent = playbookRunLabel(summary);
+  mainSubtitleEl.textContent = [summary.id || run.id, summary.status || run.status, summary.playbookName || run.playbookName].filter(Boolean).join(' · ');
+
+  var routeRows = [
+    ['Run', run.id || 'unknown'],
+    ['Playbook', run.playbookName || 'unknown'],
+    ['Status', run.status || 'unknown'],
+    ['Current stage', playbookRunStageLabel(summary)],
+    ['Child session', playbookRunChildLabel(summary)],
+    ['Approval', run.approval && run.approval.state ? run.approval.state : 'n/a'],
+    ['Artifacts root', run.artifacts && run.artifacts.rootDir ? run.artifacts.rootDir : 'n/a'],
+    ['Updated', fmtTime(run.updatedAt)],
+  ];
+  var badge = '<a class="panel-badge" href="'+esc(playbookRunViewHref(run.id, payload.workspaceDir || ''))+'" target="_blank" rel="noreferrer">JSON</a>';
+  var html = panelHtml('Run Actions', null,
+    '<div class="detail-actions">'+
+      '<button type="button" class="action-btn" data-run-action="resume-run">Resume State</button>'+
+      '<button type="button" class="action-btn" data-run-action="next-stage">Run Next Stage</button>'+
+      '<button type="button" class="action-btn" data-run-action="refresh-runs">Refresh Runs</button>'+
+    '</div>'
+  );
+  html += panelHtml('Run Status', badge, routeRows.map(function(r) {
+    return '<div class="detail-row"><span class="detail-label">'+esc(r[0])+'</span><span class="detail-value">'+esc(r[1])+'</span></div>';
+  }).join(''));
+
+  var stages = Array.isArray(run.stages) ? run.stages : [];
+  html += panelHtml('Stage Progress', stages.length ? stages.length+' stages' : null, stages.length
+    ? stages.map(function(stage) {
+      return '<div class="detail-row"><span class="detail-label">'+esc(stage.name || stage.id || 'stage')+'</span><span class="detail-value">'+esc([stage.kind || 'stage', stage.status || 'pending'].join(' · '))+'</span></div>';
+    }).join('')
+    : '<div class="empty">No stage data</div>');
+
+  var workerBudget = run.budgets && run.budgets.worker ? run.budgets.worker : null;
+  html += panelHtml('Worker Budget', workerBudget ? 'Worker budget' : null, workerBudget
+    ? [
+      ['Minutes', workerBudget.maxMinutes != null ? String(workerBudget.maxMinutes) : 'n/a'],
+      ['Actions', workerBudget.maxActions != null ? String(workerBudget.maxActions) : 'n/a'],
+      ['Screenshots', workerBudget.maxScreenshots != null ? String(workerBudget.maxScreenshots) : 'n/a'],
+    ].map(function(r) {
+      return '<div class="detail-row"><span class="detail-label">'+esc(r[0])+'</span><span class="detail-value">'+esc(r[1])+'</span></div>';
+    }).join('')
+    : '<div class="empty">No worker budget recorded</div>');
+
+  var children = Array.isArray(run.childSessions) ? run.childSessions : [];
+  html += panelHtml('Child Sessions', children.length ? children.length+' sessions' : null, children.length
+    ? children.map(function(child) {
+      return '<div class="detail-row"><span class="detail-label">'+esc(child.label || child.sessionId || 'child')+'</span><span class="detail-value">'+esc([child.sessionId || '', child.status || '', fmtTime(child.updatedAt)].filter(Boolean).join(' · '))+'</span></div>';
+    }).join('')
+    : '<div class="empty">No child sessions recorded</div>');
 
   detailAreaEl.innerHTML = html;
 }
@@ -1100,6 +1266,12 @@ function sessionViewHref(sid) {
   return '/rpc-view?'+q+(token ? '&token='+encodeURIComponent(token) : '');
 }
 
+function playbookRunViewHref(runId, workspaceDir) {
+  var q = 'method=playbook.run.get&runId='+encodeURIComponent(runId || '');
+  if (workspaceDir) q += '&workspaceDir='+encodeURIComponent(workspaceDir);
+  return '/rpc-view?'+q+(token ? '&token='+encodeURIComponent(token) : '');
+}
+
 /* ── Session selection ── */
 async function loadSessionDetail(sid) {
   state.selectedSessionId = sid;
@@ -1122,6 +1294,25 @@ async function loadSessionDetail(sid) {
   } catch (err) {
     state.selectedSession = null;
     showNotice('Session inspect failed: '+(err && err.message ? err.message : String(err)), 'error');
+  }
+  renderSidebar();
+  renderDetailArea();
+}
+
+async function loadPlaybookRunDetail(runId) {
+  state.selectedRunId = runId;
+  state.selectedRun = null;
+  clearNotice();
+  renderSidebar();
+  renderDetailArea();
+  try {
+    state.selectedRun = await rpc('playbook.run.get', {
+      runId: runId,
+      workspaceDir: state.playbookRuns && state.playbookRuns.workspaceDir ? state.playbookRuns.workspaceDir : undefined,
+    });
+  } catch (err) {
+    state.selectedRun = null;
+    showNotice('Run inspect failed: '+(err && err.message ? err.message : String(err)), 'error');
   }
   renderSidebar();
   renderDetailArea();
@@ -1155,6 +1346,92 @@ function deselectSession() {
   renderDetailArea();
 }
 
+function deselectPlaybookRun() {
+  state.selectedRunId = '';
+  state.selectedRun = null;
+  clearNotice();
+  renderSidebar();
+  renderDetailArea();
+}
+
+async function startPlaybookRunFromUi() {
+  var playbookName = prompt('Playbook name?', '');
+  if (!playbookName) return;
+  var rawInputs = prompt('Inputs JSON? (optional)', '{}');
+  if (rawInputs === null) return;
+  var parsedInputs = {};
+  try {
+    parsedInputs = rawInputs ? JSON.parse(rawInputs) : {};
+  } catch (err) {
+    showNotice('Inputs must be valid JSON.', 'error');
+    return;
+  }
+  try {
+    var started = await rpc('playbook.run.start', {
+      workspaceDir: state.playbookWorkspaceDir || undefined,
+      playbookName: playbookName,
+      inputs: parsedInputs,
+    });
+    state.activeTab = 'runs';
+    document.querySelectorAll('.nav-tab').forEach(function(t) {
+      t.classList.toggle('active', t.getAttribute('data-tab') === 'runs');
+    });
+    showNotice('Started run '+(started && started.run && started.run.id ? started.run.id : 'new run')+'.', 'info');
+    await refreshOverview();
+    if (started && started.run && started.run.id) {
+      await loadPlaybookRunDetail(started.run.id);
+    } else {
+      renderSidebar();
+      renderDetailArea();
+    }
+  } catch (err) {
+    showNotice('Start run failed: '+(err && err.message ? err.message : String(err)), 'error');
+  }
+}
+
+async function resumePlaybookRunFromUi() {
+  if (!state.selectedRunId) {
+    showNotice('Select a run first.', 'error');
+    return;
+  }
+  try {
+    var resumed = await rpc('playbook.run.resume', {
+      workspaceDir: state.playbookRuns && state.playbookRuns.workspaceDir ? state.playbookRuns.workspaceDir : undefined,
+      runId: state.selectedRunId,
+    });
+    showNotice('Resumed '+state.selectedRunId+' at '+(resumed && resumed.nextStage ? resumed.nextStage.name : 'the current stage')+'.', 'info');
+    await refreshOverview();
+    await loadPlaybookRunDetail(state.selectedRunId);
+  } catch (err) {
+    showNotice('Resume failed: '+(err && err.message ? err.message : String(err)), 'error');
+  }
+}
+
+async function advancePlaybookRunFromUi() {
+  if (!state.selectedRunId) {
+    showNotice('Select a run first.', 'error');
+    return;
+  }
+  var parentSessionId = prompt('Parent session id?', state.selectedSessionId || '');
+  if (!parentSessionId) {
+    showNotice('A parent session id is required to run the next stage.', 'error');
+    return;
+  }
+  try {
+    var result = await rpc('playbook.run.next', {
+      workspaceDir: state.playbookRuns && state.playbookRuns.workspaceDir ? state.playbookRuns.workspaceDir : undefined,
+      runId: state.selectedRunId,
+      parentSessionId: parentSessionId,
+    });
+    showNotice('Advanced '+state.selectedRunId+' with '+(result && result.mode ? result.mode : 'the next stage')+'.', 'info');
+    await refreshOverview();
+    await loadPlaybookRunDetail(state.selectedRunId);
+  } catch (err) {
+    showNotice('Next stage failed: '+(err && err.message ? err.message : String(err)), 'error');
+  }
+}
+
+
 /* ── Data fetching ── */
 function pickSkills(src) {
   if (!src || typeof src !== 'object') return null;
@@ -1175,6 +1452,10 @@ async function refreshOverview() {
     rpc('skills.status'),
     rpc('schedule.status'),
     rpc('runtime.readiness'),
+    rpc('playbook.run.list', {
+      limit: 20,
+      workspaceDir: state.playbookWorkspaceDir || undefined,
+    }),
   ]);
   var httpH = tasks[0].status === 'fulfilled' ? tasks[0].value : null;
   var chP = tasks[1].status === 'fulfilled' ? tasks[1].value : null;
@@ -1198,6 +1479,7 @@ async function refreshOverview() {
   if (!state.skills && tasks[7].status === 'fulfilled') state.skills = tasks[7].value || null;
   state.schedule = tasks[8].status === 'fulfilled' ? tasks[8].value : null;
   state.readiness = tasks[9].status === 'fulfilled' ? tasks[9].value : (state.health.readiness || null);
+  state.playbookRuns = tasks[10].status === 'fulfilled' ? tasks[10].value : null;
   state.lastRefreshAt = Date.now();
   renderStatusBar();
   renderSummaryCards();
@@ -1225,6 +1507,7 @@ async function refreshAll() {
   try {
     await Promise.all([refreshOverview(), refreshSessions()]);
     if (state.selectedSessionId) await loadSessionDetail(state.selectedSessionId);
+    if (state.selectedRunId) await loadPlaybookRunDetail(state.selectedRunId);
   } finally {
     refreshBtnEl.disabled = false;
   }
@@ -1245,12 +1528,44 @@ sidebarContentEl.addEventListener('click', function(e) {
   }
   /* Session select */
   var item = target instanceof Element ? target.closest('[data-sid]') : null;
-  if (!item) return;
-  var sessionId = item.getAttribute('data-sid') || '';
-  if (sessionId === state.selectedSessionId) {
-    deselectSession();
-  } else if (sessionId) {
-    void loadSessionDetail(sessionId);
+  if (item) {
+    var sessionId = item.getAttribute('data-sid') || '';
+    if (sessionId === state.selectedSessionId) {
+      deselectSession();
+    } else if (sessionId) {
+      void loadSessionDetail(sessionId);
+    }
+    return;
+  }
+  var runItem = target instanceof Element ? target.closest('[data-rid]') : null;
+  if (!runItem) return;
+  var runId = runItem.getAttribute('data-rid') || '';
+  if (runId === state.selectedRunId) {
+    deselectPlaybookRun();
+  } else if (runId) {
+    void loadPlaybookRunDetail(runId);
+  }
+});
+
+detailAreaEl.addEventListener('click', function(e) {
+  var target = e.target instanceof Element ? e.target.closest('[data-run-action]') : null;
+  if (!target) return;
+  var action = target.getAttribute('data-run-action') || '';
+  if (action === 'start-run') {
+    void startPlaybookRunFromUi();
+    return;
+  }
+  if (action === 'resume-run') {
+    void resumePlaybookRunFromUi();
+    return;
+  }
+  if (action === 'next-stage') {
+    void advancePlaybookRunFromUi();
+    return;
+  }
+  if (action === 'refresh-runs') {
+    void refreshAll();
+    return;
   }
 });
 
