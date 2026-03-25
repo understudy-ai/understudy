@@ -175,7 +175,7 @@ This manifest should become the shared source of truth for scheduler, orchestrat
 
 ## Three-Stage Execution Design
 
-### Stage 1: Topic Selection (scripted)
+### Stage 1: Browser Selection (extension-led)
 
 Goal: pick one app worth reviewing from the iPhone App Store.
 
@@ -196,7 +196,7 @@ Suggested flow:
 
 This stage should be highly teachable and mostly deterministic.
 
-### Stage 2: Experience (agentic)
+### Stages 2-4: Device Execution (GUI agentic)
 
 This is the core of the demo. It should run as a contract-driven child session, not as a huge replay trace.
 
@@ -284,7 +284,7 @@ When triggered:
 3. the orchestrator prepares a user-facing preview
 4. execution resumes only after confirmation
 
-### Stage 3: Post-production and Publish (scripted)
+### Stages 5-6: Video and Publish
 
 Goal: turn experience artifacts into a publishable draft.
 
@@ -468,15 +468,14 @@ An agentic segment should publish:
 - done criteria
 - failure policy
 
-The resulting pipeline should be a skill graph rather than one giant skill:
+The resulting pipeline should be a stage graph rather than one giant skill:
 
-1. `appstore-search-install`
-2. `app-explore`
-3. `capcut-edit`
-4. `video-review-feedback`
+1. `appstore-browser-package`
+2. `appstore-device-install`
+3. `app-explore`
+4. `capcut-edit`
 5. `youtube-upload`
 6. `app-review-cleanup`
-7. `app-review-pipeline`
 
 The same teach surface should also support a pure agentic publish path where only the worker contract is produced.
 

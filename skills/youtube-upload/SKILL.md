@@ -18,6 +18,7 @@ metadata:
 4. The playbook harness may auto-advance as soon as the expected output files exist. For `publishNow=true`, treat `publish/result.json` as the final handoff artifact and write it only after the publish has either succeeded or been explicitly marked `blocked`, and after `manifest.json` has already been updated to the same final state.
 5. If this stage is resumed and `publish/youtube.json` plus `publish/preview.md` already exist but `publish/result.json` is still missing, do not stop or re-explain the plan. Resume directly from the real publish / fallback / blocker-resolution path, then finish by writing `publish/result.json`.
 6. Never read `post/final-video.mp4` as text or binary content. Verify it with `test -f` and use the file path only.
+7. This demo lane should publish through the browser tool, not through a GUI-only upload path. GUI is only allowed for signing in Chrome, loading the Understudy extension, or attaching the intended tab so the browser route can continue.
 
 ## Inputs
 
@@ -83,17 +84,25 @@ Write `publish/preview.md` with:
 - video path
 - whether this run will only prepare a preview or actually publish
 
-Choose the title/description from the actual Stage 1 and Stage 2 material:
+Title and description guidelines:
 
-- app name
-- App Store positioning line
-- opening hook
-- final verdict
-- the stronger natural-language phrasing from `experience/review-brief.md` or `post/video-plan.md` when those files exist
+- **Title**: Must be attention-grabbing and specific. Format: a curiosity hook or bold claim about the app. Examples:
+  - "Perplexity: The AI Search That Actually Shows Its Sources"
+  - "I Let an AI Agent Review This App — Here's What It Found"
+  - "This Free App Might Replace Your Browser (Honest Review)"
+  Do NOT use generic titles like "App Review" or "iPhone App Review #1".
+
+- **Description**: Two parts:
+  1. **App review paragraph** (3-5 sentences): What the app does, what stood out, honest verdict. Use the opening hook and verdict from `experience/notes.json` scriptHooks.
+  2. **Understudy credit paragraph**: This video was produced by Understudy (https://github.com/anthropics/understudy), a teachable desktop agent that can learn and automate real GUI workflows. The entire review pipeline — from finding the app to filming the walkthrough to editing this video — was executed autonomously by Understudy through iPhone Mirroring.
+
+- **Tags**: Include the app name, "iphone", "app review", "ai", "understudy", "gui agent", "automation".
+
+- Draw title/description from `experience/notes.json` scriptHooks (openingHook, oneSentenceVerdict, titleCandidates), `experience/review-brief.md`, and `post/video-plan.md`.
 
 Copy hygiene rule:
 
-- If the Stage 1 `subtitle` or positioning line is obviously App Store shell boilerplate rather than a real product tagline, do not quote it into the YouTube package. Prefer the cleaner phrasing from `experience/review-brief.md`, `post/video-plan.md`, `selection-notes.md`, or a short paraphrase of the verified description.
+- Do not quote App Store boilerplate as the YouTube title. Prefer the natural-language phrasing from the exploration handoff.
 
 Resume rule:
 
@@ -135,8 +144,8 @@ can publish a logged-in YouTube account.
 
 Connection rule:
 
-- On the first browser start/open/status call in this stage, explicitly request `browserConnectionMode: "auto"`.
-- If you have already attached the user's Chrome tab through the Understudy extension relay, continue with `browserConnectionMode: "extension"` for the rest of the stage.
+- Follow the **Chrome Extension Relay Bootstrap** procedure in `iphone-mirroring-basics` to establish the extension relay before any browser work.
+- If already attached through the extension relay, continue with `browserConnectionMode: "extension"` for the rest of the stage.
 - Do not silently stay in a clean managed browser when the visible page is clearly a Google sign-in wall.
 
 Use the browser route to:
@@ -194,7 +203,7 @@ Login fallback order:
 
 1. Try to attach the user's existing Chrome session.
 2. If attachment is not yet active, use the GUI route to activate Google Chrome, bring a signed-in YouTube Studio tab to the front or open `https://studio.youtube.com`, and click the Understudy extension on that tab so the browser tool can continue in `extension` mode.
-3. If the extension path is unavailable but Chrome or Safari is already signed in, finish the upload with direct GUI interactions instead of the browser tool.
+3. If the extension path is still unavailable after one bounded install + attach pass, stop with a truthful blocker instead of converting the main upload into a GUI-only flow.
 4. Only write a `blocked` result after you have verified there is no usable signed-in session, the extension relay cannot be attached, or YouTube itself blocks the publish for policy/review/permissions reasons.
 
 Finalization rule for every exit path:
@@ -207,21 +216,11 @@ Finalization rule for every exit path:
 Never return a final answer, stop the child session, or abandon the stage while
 `publish/result.json` is still missing.
 
-GUI fallback rules:
+GUI assist rules:
 
 - Keep using the same metadata from `publish/youtube.json`; do not rewrite the title, description, tags, thumbnail, or visibility ad hoc.
-- Verify each major state change visually: file selected, details filled, visibility chosen, publish completed.
-- Prefer direct progress through the YouTube Studio upload dialog over trying to perfectly scroll every hidden section. Once title and description are filled, look for the next required control such as `Next`, the audience section, `Visibility`, `Publish`, or `Done`.
-- If the details dialog is focused but the GUI tool cannot confidently identify a scroll container, do not loop on visually grounded scroll targets. Use a simpler fallback such as `PageDown`, `Tab`, or one deliberate `Show more` click if that specific control is clearly visible.
-- If an audience selector is visible, set `No, it's not made for kids` unless the video is clearly child-directed.
-- After one deliberate attempt to reach tags or thumbnail controls, skip them if they remain hidden, unsupported, or obviously non-essential for the current Shorts upload path.
-- If GUI upload succeeds, capture the final Studio URL or watch URL from the visible page and write the same success payload you would write for a browser-route publish.
-- When a `Video published` dialog is visible, prefer this extraction order for the final URL:
-  1. visible share/watch link shown in the dialog
-  2. the dialog's copy-link control if you can read back the copied value
-  3. the current Studio URL together with the newest published row for the uploaded title
-- If the visible link is a Shorts share URL such as `https://youtube.com/shorts/...?...`, preserve it exactly as the `watchUrl` rather than rewriting it into a guessed `watch?v=` URL.
-- If the exact watch URL is temporarily hard to recover but the publish-success dialog is unquestionably visible, still finalize the run as `published` with the best available `studioUrl`, and include a truthful note such as `watchUrlPending: true` only if you genuinely could not recover the share link.
+- Use GUI only to activate Chrome, sign in if needed, load the extension, pin/click the extension on the intended tab, or reveal the already-attached Studio tab.
+- Once the extension relay is attached, return to the browser tool for the real upload work instead of continuing in GUI by default.
 
 Success finalization checklist:
 
