@@ -305,30 +305,20 @@ def infer_app_mode(listing: dict[str, Any], notes: dict[str, Any]) -> str:
 
 
 def infer_demo_depth(notes: dict[str, Any]) -> str:
+    """Read demo depth from the already-computed coverage.demoDepth field.
+
+    story_context.load_story_notes() computes this using the richer
+    infer_demo_depth that considers review sections, story sections,
+    clip count, and screenshot count. This function simply reads that
+    pre-computed value so all callers use a single consistent depth signal.
+    """
     coverage = as_dict(notes.get("coverage"))
-    findings = as_dict(notes.get("findings"))
     explicit = clean_text(coverage.get("demoDepth")).lower()
     if explicit in {"deep", "partial", "shallow"}:
         return explicit
-
-    pain_blob = " ".join(as_list(findings.get("painPoints"))).lower()
-    signal_blob = note_signal_text(notes)
+    # Fallback: if not pre-computed, use screenshot heuristic
     screenshot_count = len(as_list(as_dict(notes.get("media")).get("screenshots")))
-
-    shallow_markers = [
-        "shallow exploration",
-        "thin proof",
-        "only verified",
-        "only reached",
-        "did not complete",
-        "no media import",
-        "no editing session",
-        "rather than a full",
-        "not prove enough",
-    ]
-    if any(marker in pain_blob for marker in shallow_markers):
-        return "shallow"
-    if screenshot_count >= 5 and any(token in signal_blob for token in ["saved", "reopen", "history", "search", "tag", "filter", "source", "preview", "export", "result"]):
+    if screenshot_count >= 5:
         return "deep"
     if screenshot_count >= 4:
         return "partial"
@@ -620,11 +610,16 @@ def default_narration(
     signal = first_non_empty(hooks.get("openingHook"), story_text(story_sections, "Video Angle")).lower()
     if app_mode == "creator" and depth == "shallow":
         return [
-            f"{alias} looks polished from the first screen.",
-            "The dashboard is clean, and the new project path is easy to spot.",
-            "This pass stops at the tool hub before any real edit starts.",
-            "So the takeaway is about first-launch clarity, not output quality yet.",
-            "It looks promising, but it still needs a real project test.",
+            f"I opened {alias} to see whether the first run explains itself.",
+            "The first screen looks polished, but polish is not enough for a real walkthrough.",
+            "So I looked for the fastest path into an actual project.",
+            "The dashboard keeps the main tools visible instead of hiding them.",
+            "This pass still stops before a full project lands.",
+            "So the honest story is onboarding clarity, not output quality yet.",
+            "The useful detail is which tools are obvious immediately and which still feel tucked away.",
+            "If you already know what you want to make, the app looks promising.",
+            "If you need proof of export quality, this run still comes up short.",
+            "It needs a deeper second pass before the verdict gets stronger.",
         ]
     if "premium" in signal or "polish" in signal or "clean" in signal:
         opening_line = f"{alias} looks polished from the first screen."
@@ -669,7 +664,42 @@ def default_narration(
     else:
         outcome_line = "The outcome is what really decides whether the promise feels real."
 
+    how_to_start_line = sentence_case(english_review_copy(
+        first_non_empty(
+            coverage.get("primaryLoop"),
+            story_text(story_sections, "Primary Loop"),
+            "The best way in is the smallest real task the app can complete honestly.",
+        ),
+        max_chars=108,
+        max_words=18,
+        fallback="The best way in is the smallest real task the app can complete honestly.",
+    ))
+
+    setup_detail_line = sentence_case(english_review_copy(
+        first_non_empty(
+            coverage.get("proofLadder")[0] if isinstance(coverage.get("proofLadder"), list) and coverage.get("proofLadder") else "",
+            story_text(story_sections, "Opening Frame"),
+            "The first useful screen should immediately tell you where the app wants you to start.",
+        ),
+        max_chars=108,
+        max_words=18,
+        fallback="The first useful screen should immediately tell you where the app wants you to start.",
+    ))
+
+    result_followup_line = sentence_case(english_review_copy(
+        first_non_empty(
+            coverage.get("proofLadder")[2] if isinstance(coverage.get("proofLadder"), list) and len(coverage.get("proofLadder")) > 2 else "",
+            coverage.get("secondaryProof"),
+            story_text(story_sections, "Climax Frame"),
+            "What changed next is the part that proves the task was real.",
+        ),
+        max_chars=108,
+        max_words=18,
+        fallback="What changed next is the part that proves the task was real.",
+    ))
+
     best_for = clean_text(audience.get("bestFor"))
+    avoid_if = clean_text(audience.get("avoidIf"))
     if best_for and word_count(best_for) <= 12 and not is_cjk_heavy(best_for):
         verdict_line = compact_text(best_for, max_chars=82, max_words=12, fallback=best_for)
     elif overall >= 7:
@@ -705,13 +735,119 @@ def default_narration(
         elif overall >= 6:
             secondary_line = "One extra proof beat helps the review feel used instead of merely opened."
 
+    hidden_detail_line = sentence_case(english_review_copy(
+        first_non_empty(
+            as_list(findings.get("surprises"))[:1][0] if as_list(findings.get("surprises")) else "",
+            story_text(story_sections, "Secondary Proof"),
+            "One less obvious detail usually decides whether the app feels thoughtful or shallow.",
+        ),
+        max_chars=108,
+        max_words=18,
+        fallback="One less obvious detail usually decides whether the app feels thoughtful or shallow.",
+    ))
+
+    audience_line = sentence_case(english_review_copy(
+        first_non_empty(
+            avoid_if,
+            best_for,
+            story_text(story_sections, "Audience Or Limit Beat"),
+            "The limit or audience fit matters as much as the first impression.",
+        ),
+        max_chars=108,
+        max_words=18,
+        fallback="The limit or audience fit matters as much as the first impression.",
+    ))
+
+    close_line = sentence_case(english_review_copy(
+        first_non_empty(
+            hooks.get("oneSentenceVerdict"),
+            story_text(story_sections, "Video Angle"),
+            verdict_line,
+        ),
+        max_chars=108,
+        max_words=18,
+        fallback=verdict_line,
+    ))
+
+    # Build the base narration
     lines = [opening_line]
     if context_beat:
         lines.append(context_line)
-    lines.extend([first_line, core_line, outcome_line])
+    lines.extend([
+        first_line,
+        how_to_start_line,
+        setup_detail_line,
+        core_line,
+        result_followup_line,
+        outcome_line,
+    ])
     if secondary_line:
         lines.append(secondary_line)
-    lines.append(verdict_line)
+    lines.extend([hidden_detail_line, audience_line, verdict_line, close_line])
+
+    # If the narration is too short for a 3-minute video, expand with
+    # substantive bridge sentences that are always full-length.
+    if narration_too_short(lines):
+        highlights = as_list(findings.get("highlights"))
+        pain_points = as_list(findings.get("painPoints"))
+        surprises = as_list(findings.get("surprises"))
+        features = as_list(coverage.get("featuresExplored"))
+        tasks = as_list(coverage.get("coreTasksCompleted"))
+        primary = clean_text(coverage.get("primaryLoop"))
+
+        bridges: list[str] = []
+        # Detail about what the app actually does
+        if highlights and word_count(highlights[0]) >= 4:
+            bridges.append(f"The first thing worth knowing is that {highlights[0][0].lower() + highlights[0][1:]}.")
+        # Elaborate on the core task with a before/after frame
+        if primary and word_count(primary) >= 4:
+            bridges.append(f"The core loop is simple: {primary[0].lower() + primary[1:]}.")
+        # What tasks were completed
+        if len(tasks) >= 2:
+            bridges.append(f"During this run I {tasks[0][0].lower() + tasks[0][1:]}, then {tasks[1][0].lower() + tasks[1][1:]}.")
+        if len(tasks) >= 3:
+            bridges.append(f"After that I also {tasks[2][0].lower() + tasks[2][1:]} to push the test further.")
+        # Surprises and limitations
+        if surprises and word_count(surprises[0]) >= 3:
+            bridges.append(f"One thing the App Store listing does not mention: {surprises[0][0].lower() + surprises[0][1:]}.")
+        if len(highlights) >= 2 and word_count(highlights[1]) >= 4:
+            bridges.append(f"Another useful detail is that {highlights[1][0].lower() + highlights[1][1:]}.")
+        if pain_points and word_count(pain_points[0]) >= 3:
+            bridges.append(f"The honest limitation is that {pain_points[0][0].lower() + pain_points[0][1:]}.")
+        # Features explored
+        if len(features) >= 3:
+            bridges.append(f"Along the way I also explored {features[1].lower()} and {features[2].lower()} to see how deep the app really goes.")
+        # Second pain point / limitation
+        if len(pain_points) >= 2 and word_count(pain_points[1]) >= 3:
+            bridges.append(f"Another thing to know is that {pain_points[1][0].lower() + pain_points[1][1:]}.")
+        # Second highlight
+        if len(highlights) >= 3 and word_count(highlights[2]) >= 4:
+            bridges.append(f"It also helps that {highlights[2][0].lower() + highlights[2][1:]}.")
+        # Score context
+        overall = float(as_dict(notes.get("scorecard")).get("overall") or 0)
+        if overall >= 7:
+            bridges.append(f"After one real session, the overall score lands at {overall:.0f} out of ten, which is strong for a first run.")
+        elif overall >= 5:
+            bridges.append(f"The overall score is {overall:.0f} out of ten, honest but still promising after a single session.")
+
+        # Insert bridges after key positions
+        expanded: list[str] = []
+        bridge_idx = 0
+        for i, line in enumerate(lines):
+            expanded.append(line)
+            # Insert bridges at natural transition points
+            insert_after = (i == 0) or (line == core_line) or (line == outcome_line) or (line == hidden_detail_line) or (line == audience_line)
+            if insert_after and bridge_idx < len(bridges) and narration_too_short(expanded):
+                expanded.append(bridges[bridge_idx])
+                bridge_idx += 1
+
+        # Add remaining bridges at the end if still short
+        while bridge_idx < len(bridges) and narration_too_short(expanded):
+            expanded.insert(-1, bridges[bridge_idx])
+            bridge_idx += 1
+
+        lines = [l for l in expanded if l and word_count(l) >= 6][:18]
+
     return lines
 
 
@@ -721,44 +857,59 @@ def sanitize_narration_lines(lines: list[str], full_name: str, alias: str) -> li
         current = clean_text(line)
         if full_name and alias and full_name != alias:
             current = current.replace(full_name, alias)
-        current = compact_text(current, max_chars=88, max_words=14, fallback=current)
+        # First pass: only trim extremely long lines (>35 words).
+        # Narration lines should average 20-28 words; do not over-truncate.
+        if word_count(current) > 35:
+            current = compact_text(current, max_chars=200, max_words=35, fallback=current)
         current = re.sub(r"\s+", " ", current).strip(" -")
         if current:
             sanitized.append(current)
-    sanitized = sanitized[:7]
+    sanitized = sanitized[:18]
 
     def total_words(items: list[str]) -> int:
         return sum(len(item.split()) for item in items)
 
-    if total_words(sanitized) > 90:
-        sanitized = [compact_text(item, max_chars=76, max_words=12, fallback=item) for item in sanitized]
-    if total_words(sanitized) > 90:
-        sanitized = [compact_text(item, max_chars=68, max_words=10, fallback=item) for item in sanitized]
-    if total_words(sanitized) > 90:
-        sanitized = sanitized[:6]
+    # Only compress if total exceeds the 460-word budget
+    if total_words(sanitized) > 460:
+        sanitized = [compact_text(item, max_chars=160, max_words=28, fallback=item) for item in sanitized]
+    if total_words(sanitized) > 460:
+        sanitized = [compact_text(item, max_chars=140, max_words=24, fallback=item) for item in sanitized]
+    if total_words(sanitized) > 460:
+        sanitized = sanitized[:18]
     return sanitized
+
+
+MIN_NARRATION_WORDS = 200  # ~75s at 160 WPM — minimum for fallback narration
+
+
+def narration_too_short(lines: list[str]) -> bool:
+    """Check whether narration is too short for a 3-minute target."""
+    if not lines:
+        return True
+    total_words = sum(len(item.split()) for item in lines)
+    return total_words < MIN_NARRATION_WORDS
 
 
 def narration_too_long(lines: list[str]) -> bool:
     if not lines:
         return True
-    if len(lines) > 7:
+    if len(lines) > 18:
         return True
     total_words = sum(len(item.split()) for item in lines)
-    if total_words > 90:
+    if total_words > 460:
         return True
-    return any(len(item.split()) > 13 for item in lines)
+    return any(len(item.split()) > 28 for item in lines)
 
 
 def raw_narration_too_long(lines: list[str]) -> bool:
     if not lines:
         return True
-    if len(lines) > 7:
+    if len(lines) > 18:
         return True
     total_words = sum(len(clean_text(item).split()) for item in lines)
-    if total_words > 90:
+    if total_words > 460:
         return True
-    return any(len(clean_text(item).split()) > 13 for item in lines)
+    return any(len(clean_text(item).split()) > 28 for item in lines)
 
 
 def build_revision_notes(feedback: dict[str, Any]) -> list[str]:
@@ -784,20 +935,20 @@ def beat_duration_text(
     secondary_clip_exists: bool,
 ) -> str:
     if beat_id == "opening-overlay":
-        return "about 1.5-2.2s"
+        return "about 5-9s"
     if beat_id == "context-beat":
-        return "about 1.0-1.6s"
+        return "about 5-10s"
     if beat_id == "first-impression":
-        return "about 2.2-3.2s"
+        return "about 10-18s"
     if beat_id == "core-task":
-        return "about 4.5-6.0s" if core_clip_exists else "about 3.5-4.8s"
+        return "about 18-35s" if core_clip_exists else "about 15-26s"
     if beat_id == "outcome":
-        return "about 4.0-5.5s"
+        return "about 15-30s"
     if beat_id == "secondary-proof":
-        return "about 2.6-4.0s" if secondary_clip_exists else "about 2.2-3.5s"
+        return "about 12-22s" if secondary_clip_exists else "about 10-18s"
     if beat_id == "verdict":
-        return "about 1.8-2.6s"
-    return "about 2.0-3.0s" if thin_evidence else "about 2.5-3.5s"
+        return "about 6-12s"
+    return "about 8-14s" if thin_evidence else "about 10-18s"
 
 
 def beat_framing_text(beat_id: str, *, source: str, reuses_previous: bool) -> str:
@@ -945,7 +1096,18 @@ def main(root_dir: str) -> int:
     core_clip_rel = rel_if_exists(core_clip)
     secondary_clip_rel = rel_if_exists(secondary_clip)
 
-    secondary_asset_rel = first_non_empty(secondary_clip_rel, secondary_feature_rel, pricing_limit_rel)
+    # Check mustShowInVideo for unassigned screenshots that should get priority
+    must_show = as_list(findings.get("mustShowInVideo"))
+    must_show_assets = [
+        s for s in must_show
+        if s and (root / s).exists() and s not in {
+            first_screen_rel, main_screen_rel, core_task_rel,
+            outcome_rel, core_clip_rel,
+        }
+    ]
+    must_show_secondary = must_show_assets[0] if must_show_assets else ""
+
+    secondary_asset_rel = first_non_empty(must_show_secondary, secondary_clip_rel, secondary_feature_rel, pricing_limit_rel)
     secondary_exists = bool(secondary_asset_rel)
     opening_asset_rel = first_non_empty(core_clip_rel, first_screen_rel, main_screen_rel, core_task_rel, outcome_rel, store_detail_rel)
     first_impression_asset_rel = first_non_empty(main_screen_rel, core_task_rel if core_task_rel != opening_asset_rel else "", outcome_rel if outcome_rel != opening_asset_rel else "")
@@ -963,20 +1125,20 @@ def main(root_dir: str) -> int:
 
     thin_evidence = demo_depth in {"partial", "shallow"} and not core_clip_exists and not secondary_exists
     runtime_target = (
-        "about 20-24 seconds"
+        "about 130-160 seconds"
         if app_mode == "creator" and demo_depth == "shallow"
-        else "about 22-26 seconds"
+        else "about 140-180 seconds"
         if thin_evidence
-        else "about 28-32 seconds" if secondary_exists else "about 24-29 seconds"
+        else "about 170-210 seconds" if secondary_exists else "about 150-190 seconds"
     )
     story_angle = clean_text(
         first_non_empty(
             video_plan_notes.get("storyAngle"),
             story_text(story_sections, "Video Angle"),
             hooks.get("oneSentenceVerdict"),
-            "A short review built from one real first-run test.",
+            "A tutorial-style review built from one real first-run exploration.",
         )
-    ) or "A short review built from one real first-run test."
+    ) or "A tutorial-style review built from one real first-run exploration."
     opening_priority = sentence_case(
         english_review_copy(
             first_non_empty(story_text(story_sections, "Opening Frame"), ""),
@@ -1038,7 +1200,14 @@ def main(root_dir: str) -> int:
         full_name,
         alias,
     )
-    narration_lines = fallback_narration if raw_narration_too_long(raw_preferred_narration) or narration_too_long(preferred_narration) else preferred_narration
+    if raw_narration_too_long(raw_preferred_narration) or narration_too_long(preferred_narration):
+        narration_lines = fallback_narration
+    elif narration_too_short(preferred_narration):
+        # Preferred narration exists but is too short for a 3-minute video.
+        # Use fallback which includes expansion from findings/coverage data.
+        narration_lines = fallback_narration if not narration_too_short(fallback_narration) else preferred_narration
+    else:
+        narration_lines = preferred_narration
     if len(narration_lines) < 5:
         narration_lines = fallback_narration
 
@@ -1164,8 +1333,15 @@ def main(root_dir: str) -> int:
         reuse_previous=True,
     )
 
+    narration_groups: list[str] = []
+    if beat_specs:
+        for index in range(len(beat_specs)):
+            start = round(index * len(narration_lines) / len(beat_specs))
+            end = round((index + 1) * len(narration_lines) / len(beat_specs))
+            group = narration_lines[start:end]
+            narration_groups.append(" ".join(group))
     for index, beat in enumerate(beat_specs):
-        beat["narration"] = narration_lines[index] if index < len(narration_lines) else ""
+        beat["narration"] = narration_groups[index] if index < len(narration_groups) else ""
 
     import_assets: list[dict[str, str]] = []
     seen_sources: dict[str, str] = {}
@@ -1203,8 +1379,8 @@ def main(root_dir: str) -> int:
 
     plan_lines = [
         "# Video Spec",
-        "- Format: 1080x1920 vertical MP4, H.264, 30 fps, mute-safe story slides.",
-        "- Runtime goal: keep the cut in the short-review lane without rushing the proof.",
+        "- Format: 1080x1920 vertical MP4, H.264, 30 fps, voiceover-backed, subtitle-ready, and mute-safe.",
+        "- Runtime goal: keep the cut in the three-minute walkthrough lane without rushing the proof.",
         f"- Proof asset priority: {f'Open on a trimmed moment from `{core_clip.relative_to(root)}` when that clip gives the fastest honest hook, then keep the rest of the proof iPhone-led.' if core_clip_exists else 'No live proof clip was found, so the cut must rely on strong screenshot motion and honest pacing.'}",
         f"- Evidence posture: {'Keep the cut tighter than usual and avoid padding with extra packaging because the current proof set is still thin.' if thin_evidence else 'Let the proof beats dominate more runtime than the packaging beats.'}",
         "",
@@ -1235,7 +1411,7 @@ def main(root_dir: str) -> int:
         "",
         "# CapCut Build Rules",
         "- Start on a real iPhone frame and place the hook as overlay copy there. Do not burn a separate dead title card.",
-        "- Default to 4-5 beats when the proof set is thin and 5-6 beats when it is richer.",
+        "- Default to 8-10 beats when the proof set is thin and 10-14 beats when it is richer.",
         "- Keep the app UI large in frame on proof beats. Crop or zoom until the product, not the matte, is the subject.",
         "- Prefer editable text overlays inside CapCut over pre-baked text cards.",
         "- Use at most one text-first beat. Everything else should feel product-first or product-backed.",
@@ -1246,6 +1422,7 @@ def main(root_dir: str) -> int:
         "- Thin-evidence rule: if outcome and verdict rely on the same proof frame, keep the verdict as the last caption change on that frame instead of inventing a new visual beat.",
         "- Import the prepared proof assets from `post/capcut-import/`, not the raw Stage 2 screenshots. Those assets should already be 1080x1920 and phone-dominant before you animate or caption them.",
         "- Use full-bleed crop or blur-fill framing when needed. Do not leave a tiny centered phone floating inside a generic dark shell.",
+        "- Keep the voiceover and subtitle copy aligned. The edit should feel like one guided walkthrough, not like separate narration and caption scripts fighting each other.",
         "",
         "# Keep Out",
         "- Do not let browser Today or browser detail screenshots become the main visual story when iPhone captures exist.",

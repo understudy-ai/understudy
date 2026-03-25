@@ -224,11 +224,17 @@ def scaled_durations(slide_specs: list[tuple[str, float]], voiceover: Path | Non
         for index in range(len(slide_specs))
     ]
     durations = [target_total * weight for weight in combined_weights]
+    # Scale clamps proportionally when the target exceeds the base range
+    # so that longer voiceovers (e.g., 3-minute videos) can distribute
+    # duration across slides without hitting a hard ceiling.
+    slide_count = len(slide_specs)
+    min_per_slide = max(2.35, target_total / slide_count * 0.35)
+    max_per_slide = max(5.8, target_total / slide_count * 1.65)
     return rebalance_with_clamps(
         durations,
         target_total,
-        min_duration=2.35,
-        max_duration=5.8,
+        min_duration=round(min_per_slide, 2),
+        max_duration=round(max_per_slide, 2),
         priority_weights=combined_weights,
     )
 

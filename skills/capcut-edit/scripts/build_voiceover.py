@@ -133,12 +133,18 @@ def choose_rate(mode: str, lines: list[str]) -> int:
     total_words = sum(spoken_word_estimate(line) for line in lines)
     avg_words = total_words / max(len(lines), 1)
     if mode == "zh":
-        return 168 if avg_words > 12 else 172
-    if total_words > 95 or avg_words > 14:
-        return 178
+        if total_words > 220 or avg_words > 16:
+            return 154
+        return 162 if avg_words > 12 else 168
+    if total_words > 340 or avg_words > 22:
+        return 146
+    if total_words > 260 or avg_words > 17:
+        return 152
+    if total_words > 180 or avg_words > 14:
+        return 160
     if total_words < 72:
-        return 188
-    return 183
+        return 180
+    return 168
 
 
 def ffprobe_duration(path: Path) -> float | None:
@@ -220,30 +226,71 @@ def main(root_dir: str) -> None:
     meta_path = assets / "voiceover-meta.json"
     script_path.write_text("\n".join(sanitized_lines) + "\n")
 
-    subprocess.run(
-        [
-            "/usr/bin/say",
-            "-v",
-            voice_name,
-            "-r",
-            str(rate),
-            "-o",
-            str(output_path),
-            "-f",
-            str(script_path),
-        ],
-        check=True,
-    )
+    # Try edge-tts first (natural neural voices), fall back to macOS say
+    tts_engine = "macos_say"
+    edge_tts_voice = "en-US-AndrewMultilingualNeural" if mode == "en" else "zh-CN-YunxiNeural"
+    try:
+        subprocess.run(["edge-tts", "--version"], capture_output=True, check=True)
+        has_edge_tts = True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        has_edge_tts = False
+
+    if has_edge_tts:
+        mp3_tmp = assets / "voiceover-tmp.mp3"
+        edge_cmd = [
+            "edge-tts",
+            "--voice", edge_tts_voice,
+            "--text", "\n".join(sanitized_lines),
+            "--write-media", str(mp3_tmp),
+        ]
+        try:
+            subprocess.run(edge_cmd, check=True, capture_output=True, timeout=120)
+            # Convert mp3 to aiff for compatibility with downstream ffmpeg pipeline
+            subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-i", str(mp3_tmp), str(output_path)],
+                check=True, capture_output=True,
+            )
+            mp3_tmp.unlink(missing_ok=True)
+            tts_engine = "edge_tts"
+            voice_name = edge_tts_voice
+            voice_locale = edge_tts_voice.split("-")[0] + "-" + edge_tts_voice.split("-")[1]
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warnings.append(f"edge-tts failed ({exc}), falling back to macOS say")
+            mp3_tmp.unlink(missing_ok=True)
+            has_edge_tts = False
+
+    if not has_edge_tts or tts_engine == "macos_say":
+        subprocess.run(
+            [
+                "/usr/bin/say",
+                "-v",
+                voice_name,
+                "-r",
+                str(rate),
+                "-o",
+                str(output_path),
+                "-f",
+                str(script_path),
+            ],
+            check=True,
+        )
 
     duration = ffprobe_duration(output_path)
+    if duration < 120:
+        warnings.append(f"voiceover duration {duration:.0f}s is below 120s target minimum — narration may be too short for a 3-minute video")
+    if duration > 240:
+        warnings.append(f"voiceover duration {duration:.0f}s exceeds 240s — narration may be too long")
+
     meta = {
+        "engine": tts_engine,
         "voice": voice_name,
         "locale": voice_locale,
         "mode": mode,
-        "rate": rate,
+        "rate": rate if tts_engine == "macos_say" else 0,
         "lineCount": len(sanitized_lines),
         "wordCount": sum(spoken_word_estimate(line) for line in sanitized_lines),
         "durationSec": duration,
+        "durationShort": duration < 120,
         "sourceFile": str(narration_path),
         "scriptFile": str(script_path),
         "outputFile": str(output_path),
