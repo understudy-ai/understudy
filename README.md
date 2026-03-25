@@ -22,6 +22,18 @@ AI tools are changing how we use software — but they still cover only a fracti
 
 **Understudy is a teachable desktop agent.** It operates your computer like a human colleague — GUI, browser, shell, file system, all in one local runtime. You show it a task once, it extracts the intent (not just the coordinates), remembers the successful path, discovers faster execution routes over time, and eventually handles routine work on its own. No API integrations required. No workflow builders. Just demonstrate once.
 
+### Why Understudy?
+
+| Capability | Cowork | OpenClaw | Claude Code | Understudy |
+|---|---|---|---|---|
+| GUI / Computer Use | Yes (macOS) | Limited | No | **Yes (macOS, Windows planned)** |
+| Teach by Demonstration | No | No | No | **Yes** |
+| Self-Improving (5 layers) | No | No | No | **Yes** |
+| Multi-Channel Dispatch | Slack only | 6 channels | No | **8 channels** |
+| Local-First / Private | Cloud | Local | Cloud | **Local** |
+| Open Source | No | Yes | Partial | **Yes** |
+| Pricing | Subscription | API | Subscription | **API (bring your own key)** |
+
 ## The Five Layers
 
 Understudy is designed as a layered progression — the same journey a new hire takes when they grow into a reliable colleague.
@@ -58,11 +70,31 @@ Every layer depends on the one below it. No shortcuts — the system earns its w
 
 > **Demo environment:** macOS + GPT-5.4 via Codex. See [Supported Models](#supported-models) for all providers.
 
+### Teach — Show Once, Automate Forever
+
 [![Understudy Showcase](https://img.youtube.com/vi/3d5cRGnlb_0/maxresdefault.jpg)](https://www.youtube.com/watch?v=3d5cRGnlb_0)
 
 > *The video has been sped up. Full-length original: [Google Drive](https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing). For inline playback, visit the [Overview page](https://understudy-ai.github.io/understudy/#showcase).*
 
 > *The published skill artifact generated from this showcase demo is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md), so you can inspect the exact output directly.*
+
+### Computer Use — Autonomous iPhone App Review
+
+One natural language message triggers a 6-stage pipeline: Chrome app selection → iPhone Mirroring search + install → deep 3-round exploration (13+ screenshots, video clips) → narrated review video with neural voiceover → YouTube publish → device cleanup. 42 minutes, 54 artifacts, zero human intervention.
+
+[Watch the Snapseed review →](https://youtube.com/shorts/dStA_491ytw)
+
+### Remote Dispatch — Agent on Desktop, You on Phone
+
+<!-- Demo video coming soon -->
+
+Send a message from Telegram, Discord, or any of 8 channels. Understudy receives it on your desktop, executes multi-step tasks (browser research, file creation, email), and replies with the result — all while you're away from your computer.
+
+### General Agent — Everyday Productivity
+
+<!-- Demo video coming soon -->
+
+Web research with cited sources, file organization, calendar management, scheduled tasks, code generation, document summarization — the full range of agent capabilities, composable in a single instruction.
 
 ## What It Can Do Today
 
@@ -115,32 +147,6 @@ The published SKILL.md is a three-layer abstraction: intent procedure (natural l
 A real published output example is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md). It is kept under `examples/` on purpose, so the repo documents the artifact format without auto-loading it as a real workspace skill.
 
 For the full teach pipeline, evidence pack construction, and validation details, see [Product Design](./docs/Product_Design.md).
-
-### New Generic Workflow Primitives
-
-**Status:** implemented in this branch. Understudy no longer treats every published output as only a single skill. Workspace artifacts and teach drafts now support three reusable artifact kinds:
-
-| Artifact | Purpose |
-|----------|---------|
-| `skill` | A reusable workflow or capability |
-| `worker` | A goal-driven contract with explicit inputs, outputs, budgets, and allowed surfaces |
-| `playbook` | A staged pipeline that can sequence skills, workers, inline stages, and approval gates |
-
-What this adds on top of `main`:
-
-- Teach and draft analysis can now shape reusable `worker` and `playbook` artifacts instead of only one-off skill-like outputs.
-- Workspace loading, task-draft publishing, and gateway runtime all understand staged playbooks and contract-driven workers.
-- Playbook runs persist stage state, artifact roots, approvals, and child-session linkage so long-running workflows can resume truthfully.
-- Stage completion now validates declared outputs on disk, which prevents a run from claiming success when expected artifacts were never produced.
-- Browser automation defaults to `browserConnectionMode: "auto"`: attach to the Chrome extension relay when possible, otherwise fall back to managed Playwright.
-- GUI typing now supports multiple native and System Events strategies plus secret-backed input, which makes login and secure-field automation more reliable without leaking literals into command arguments.
-- The handwritten playbook example and shared playbook e2e harness are generic examples, not iPhone-review-only infrastructure.
-
-Why this is an upgrade rather than a specialization:
-
-- Existing single-skill teach and session flows continue to work.
-- The new artifact kinds and runtimes are additive; they generalize the execution model instead of replacing it with demo-specific code.
-- Demo-specific skills can be built entirely on top of these primitives, which keeps the core packages broadly reusable.
 
 ### Layer 3 — Remember What Worked
 
@@ -195,19 +201,6 @@ Starts at GUI on Day 1 — because GUI is the universal fallback that works with
 - Browser mode auto-falls back: tries Chrome extension relay first, switches to managed Playwright if that fails.
 - The GUI capability matrix dynamically enables/disables tool subsets based on available permissions, so the agent never attempts a route it can't execute.
 
-**What this looks like in practice**
-
-- A newly learned task may start with GUI as the observed fallback path.
-- Over time, the agent starts preferring higher-level routes — an existing skill, browser flow, or shell command — when those preserve the same result.
-- In practice this usually feels like fewer brittle GUI steps, faster execution, and fewer repeated detours.
-- When a better route is uncertain, the agent falls back to the slower but safer path rather than risk a failure.
-
-**Current boundaries**
-
-- Route optimization today is guidance and safe preference ordering, not a fully autonomous optimizer.
-- The agent can prefer a known faster route, but does not yet run a broad automatic search over all possible routes for every recurring task.
-- Automatic route promotion (discover → verify → promote to default) is designed but not yet fully implemented.
-
 For the full route selection mechanisms, upgrade policy, and future direction, see [Product Design](./docs/Product_Design.md).
 
 ### Layer 5 — Proactive Autonomy
@@ -215,20 +208,6 @@ For the full route selection mechanisms, upgrade policy, and future direction, s
 **Status:** mostly vision today. Scheduling and runtime surfaces exist, but passive observation, isolated workspace, and proactive autonomy are still ahead.
 
 Earned, not assumed. Understudy's ultimate goal isn't "wait for instructions" — it's becoming a colleague that observes long-term, acts proactively.
-
-**Long-term observation and learning** — beyond explicit teach, Understudy passively observes your daily operations, analyzes recurring patterns, and understands your work habits and preferences. It's not recording every click — it's understanding what you do each day, when you do it, and which tools you use.
-
-**Proactive suggestions** — based on accumulated observations, proactively suggests what to do next: emails to process, tasks to follow up on, reports to run. Suggestions are presented non-intrusively; only executed after you confirm.
-
-**Isolated workspace** — executes tasks in its own desktop, without occupying your screen:
-
-| Phase | Implementation | User Experience |
-|-------|---------------|-----------------|
-| Current | Controlled foreground window + app focus | AI completes tasks reliably |
-| Near-term | macOS second desktop / headless window | User can switch to view AI work |
-| Long-term | Docker + VNC / cloud VM | AI works 24/7 |
-
-**Cross-app orchestration** — the isolated workspace unlocks true multi-app parallel operation. In its own desktop, Understudy can control multiple apps simultaneously, coordinating data flow between them — extract info from email into a spreadsheet, update the calendar, and send results via Slack. No longer a single-threaded, one-window-at-a-time model.
 
 **Progressive trust model** — each skill starts at `manual`, promoted only through sustained success:
 

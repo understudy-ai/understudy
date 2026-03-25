@@ -20,7 +20,19 @@
 
 AI 工具正在改变我们使用软件的方式 —— 但目前它们只覆盖了工作的一小部分。我们的日常散落在浏览器、桌面应用、终端、聊天工具之间，每个都有自己的界面和操作习惯，彼此割裂。
 
-**Understudy 是一个可教学的桌面 Agent。** 它像一个人类同事一样操作你的电脑 —— GUI、浏览器、Shell、文件系统，全在一个本地运行时里。你演示一次，它提取意图（不是坐标），记住成功路径，随时间发现更快的执行方式，最终自主处理日常工作。不需要 API 集成，不需要搭工作流，演示一次就行。
+**Understudy 是一个开源桌面 Agent。** 它像人类同事一样操作你的电脑 —— 浏览网页、操控应用、执行命令、管理文件、跨平台消息通信，全在一个本地运行时里。类似 Cowork 但开源且本地运行，类似 OpenClaw 但有 Computer Use 和演示教学能力。你演示一次，它提取意图（不是坐标），记住成功路径，随时间发现更快的执行方式。不需要订阅 —— 自带 API Key 即可使用。
+
+### 为什么选 Understudy？
+
+| 能力 | Cowork | OpenClaw | Claude Code | Understudy |
+|---|---|---|---|---|
+| GUI / Computer Use | 是 (macOS) | 有限 | 否 | **是 (macOS, Windows 计划中)** |
+| 演示教学 | 否 | 否 | 否 | **是** |
+| 自我改进 (5 层) | 否 | 否 | 否 | **是** |
+| 多渠道 Dispatch | 仅 Slack | 6 渠道 | 否 | **8 渠道** |
+| 本地优先 / 隐私 | 云端 | 本地 | 云端 | **本地** |
+| 开源 | 否 | 是 | 部分 | **是** |
+| 定价 | 订阅制 | API | 订阅制 | **API (自带 Key)** |
 
 ## 五层递进
 
@@ -63,6 +75,24 @@ Layer 5 ┃ 主动观察，互不影响  在独立工作空间主动发现和执
 > *视频经过加速处理。完整原速视频：[Google Drive](https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing)。在线播放请访问[展示页](https://understudy-ai.github.io/understudy/zh-CN/index.html#showcase)。*
 
 > *这次 Showcase demo 生成出来的已发布 skill 产物放在 [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md)，可以直接查看最终产物。*
+
+### Computer Use 演示：自主 iPhone App 评测
+
+一条自然语言指令触发完整 6 阶段流水线：Chrome 选 App → iPhone Mirroring 搜索安装 → 3 轮深度体验（13+ 截图、视频片段）→ 带神经网络配音的评测视频 → YouTube 发布 → 设备清理。42 分钟，54 个产物，零人工干预。
+
+[观看 Snapseed 评测 →](https://youtube.com/shorts/dStA_491ytw)
+
+### 远程 Dispatch：手机控制桌面 Agent
+
+<!-- 演示视频即将上线 -->
+
+从 Telegram、Discord 或 8 个渠道中的任一个发送消息。Understudy 在你的桌面上接收、执行多步骤任务（浏览器研究、文件创建、邮件发送），并将结果回复 —— 即使你不在电脑前。
+
+### 通用 Agent：日常效率
+
+<!-- 演示视频即将上线 -->
+
+带来源的网页调研、文件整理、日历管理、定时任务、代码生成、文档摘要 —— 完整的 Agent 能力，可在一条指令中组合使用。
 
 ## 现在能做什么
 
@@ -115,32 +145,6 @@ Planner 决定每一步使用哪条路线。一个任务可能浏览网站、运
 仓库里放了一个真实发布产物示例：[examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md)。它故意放在 `examples/` 下，只用于展示产物格式，不会被当成真正的 workspace skill 自动加载。
 
 完整的 teach 管线、证据包构建和验证细节见 [产品设计](./docs/Product_Design.zh-CN.md)。
-
-### 新的通用工作流原语
-
-**状态：** 这个分支已经实现。Understudy 不再把所有发布产物都看成“单一 skill”。现在 workspace artifact 和 teach draft 支持三种可复用产物类型：
-
-| 产物 | 作用 |
-|------|------|
-| `skill` | 可复用的工作流或能力 |
-| `worker` | 带显式输入、输出、预算、允许操作面的目标驱动契约 |
-| `playbook` | 可以串联 skill、worker、inline stage 和 approval gate 的阶段化流水线 |
-
-相比 `main` 新增的通用能力：
-
-- Teach 和 draft 分析现在可以产出可复用的 `worker` / `playbook`，而不只是单段 skill。
-- Workspace 加载、task-draft 发布、gateway runtime 都理解阶段化 playbook 和契约化 worker。
-- Playbook run 会持久化阶段状态、artifact 根目录、approval 状态和 child session 关联，让长流程可以真实恢复，而不是“从头猜”。
-- Stage 完成时会校验声明的输出文件是否真的落盘，避免流程在产物没生成出来时也声称成功。
-- 浏览器自动化默认使用 `browserConnectionMode: "auto"`：能接 Chrome extension relay 就接，接不上再回退到托管 Playwright。
-- GUI 输入现在支持多种 native / System Events 策略，以及基于 secret 的输入源，让登录和安全字段自动化更可靠，也避免把明文塞进命令参数。
-- handwritten playbook example 和共享 playbook e2e harness 是通用示例，不是 iPhone review 专用基础设施。
-
-为什么这是升级而不是特化：
-
-- 现有的单-skill teach 和普通 session 流程仍然可用。
-- 新的 artifact 类型和 runtime 是增量式扩展，不是用 demo 特化逻辑替换原来的模型。
-- 后续 demo skill 完全建立在这些原语之上，说明核心包本身保持了泛化和可复用性。
 
 ### Layer 3 — 日用渐深
 
