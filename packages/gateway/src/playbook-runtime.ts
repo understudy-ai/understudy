@@ -447,6 +447,11 @@ export async function runPlaybookNextStage(
 		workspaceDir: options.workspaceDir,
 		runId: options.runId,
 	});
+	// Block execution on fully terminal run states (completed/cancelled).
+	// "failed" and "paused" are not blocked — callers may retry or resume.
+	if (resumed.run.status === "completed" || resumed.run.status === "cancelled") {
+		throw new Error(`Run ${options.runId} is in terminal state "${resumed.run.status}". Cannot advance.`);
+	}
 	const stage = resumed.nextStage;
 	if (!stage) {
 		const currentInfo = resumed.currentStage
@@ -531,7 +536,7 @@ export async function runPlaybookNextStage(
 			skillLaunch,
 		};
 	}
-	if (stage.kind === "inline") {
+	if (stage.kind === "inline" && !options.runInlineStage) {
 		if (!options.spawnSubagent) {
 			throw new Error("spawnSubagent is required to launch inline stages without a custom handler.");
 		}

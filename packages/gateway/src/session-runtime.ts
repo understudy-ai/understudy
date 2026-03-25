@@ -5056,10 +5056,50 @@ export function createGatewaySessionRuntime(
 		} finally {
 			onStateChanged?.();
 		}
-		return {
-			sessionId: entry.id,
-			recording,
-		};
+		if (asBoolean(params?.analyze) === false) {
+			return {
+				sessionId: entry.id,
+				recording,
+			};
+		}
+		try {
+			const result = await taskDraftHandlers.createFromVideo({
+				...params,
+				sessionId: entry.id,
+				videoPath: recording.videoPath,
+				eventLogPath: recording.eventLogPath,
+				videoName: basename(recording.videoPath),
+				publish: false,
+			});
+			const shouldValidate = asBoolean(params?.validate) !== false;
+			const shouldPublish = asBoolean(params?.publish) !== false;
+			let draft = result.draft;
+			await refreshTeachDraftPrompts(entry);
+			let validation: TeachDraftValidationResult | undefined;
+			if (shouldValidate) {
+				validation = await validateTeachDraftForEntry(entry, draft);
+				draft = await updateTeachDraftValidation(entry, draft, validation);
+			}
+			if (shouldPublish && validation?.state === "validated") {
+				const published = await publishExistingTeachDraft(entry, {
+					draftId: draft.id,
+					name: asString(params?.name),
+				});
+				draft = published.draft;
+			}
+			return {
+				sessionId: entry.id,
+				recording,
+				draft,
+				...(validation ? { validation } : {}),
+			};
+		} catch (error) {
+			return {
+				sessionId: entry.id,
+				recording,
+				analysisError: error instanceof Error ? error.message : String(error),
+			};
+		}
 	};
 
 	const stopTeachRecordingFromCommand = async (entry: SessionEntry, params?: Record<string, unknown>) => {
