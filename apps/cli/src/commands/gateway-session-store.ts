@@ -6,6 +6,10 @@ import { atomicWriteJsonFile } from "./gateway-file-store-utils.js";
 
 export type PersistedAgentRunSnapshot = AgentRunSnapshot;
 
+const MAX_PERSISTED_STRING_LENGTH = 16_000;
+const MAX_PERSISTED_ARRAY_ITEMS = 50;
+const MAX_PERSISTED_OBJECT_KEYS = 100;
+
 export interface PersistedGatewaySessionRecord {
 	id: string;
 	parentId?: string;
@@ -157,6 +161,83 @@ function serializeSessionEntry(entry: SessionEntry): PersistedGatewaySessionReco
 	};
 }
 
+function truncatePersistedString(value: string): string {
+	if (value.length <= MAX_PERSISTED_STRING_LENGTH) {
+		return value;
+	}
+	const omitted = value.length - MAX_PERSISTED_STRING_LENGTH;
+	return `${value.slice(0, MAX_PERSISTED_STRING_LENGTH)}...[truncated ${omitted} chars]`;
+}
+
+function sanitizePersistedValue(value: unknown, depth = 0): unknown {
+	if (value == null || typeof value === "number" || typeof value === "boolean") {
+		return value;
+	}
+	if (typeof value === "string") {
+		return truncatePersistedString(value);
+	}
+	if (depth >= 6) {
+		return "[truncated]";
+	}
+	if (Array.isArray(value)) {
+		return value
+			.slice(0, MAX_PERSISTED_ARRAY_ITEMS)
+			.map((entry) => sanitizePersistedValue(entry, depth + 1));
+	}
+	if (typeof value !== "object") {
+		return String(value);
+	}
+	const record = value as Record<string, unknown>;
+	const output: Record<string, unknown> = {};
+	const entries = Object.entries(record);
+	for (const [index, [key, entryValue]] of entries.entries()) {
+		if (index >= MAX_PERSISTED_OBJECT_KEYS) {
+			output.__truncatedKeys = entries.length - MAX_PERSISTED_OBJECT_KEYS;
+			break;
+		}
+		if (key === "images" && Array.isArray(entryValue)) {
+			output.images = entryValue.slice(0, 10).map((image) => {
+				if (!image || typeof image !== "object") {
+					return "[image omitted]";
+				}
+				const imageRecord = image as Record<string, unknown>;
+				return {
+					type: typeof imageRecord.type === "string" ? imageRecord.type : "image",
+					mimeType:
+						typeof imageRecord.mimeType === "string"
+							? imageRecord.mimeType
+							: undefined,
+					note: "image payload omitted from persisted gateway state",
+				};
+			});
+			continue;
+		}
+		if ((key === "imageData" || key === "data") && typeof entryValue === "string") {
+			output[key] = "[image payload omitted]";
+			continue;
+		}
+		output[key] = sanitizePersistedValue(entryValue, depth + 1);
+	}
+	return output;
+}
+
+function serializeAgentRunSnapshot(run: PersistedAgentRunSnapshot): PersistedAgentRunSnapshot {
+	return {
+		...run,
+		...(typeof run.response === "string" ? { response: truncatePersistedString(run.response) } : {}),
+		...(typeof run.error === "string" ? { error: truncatePersistedString(run.error) } : {}),
+		...(run.images?.length
+			? {
+				images: run.images.map((image) => ({
+					...(image as unknown as Record<string, unknown>),
+					data: "[image payload omitted]",
+				})) as PersistedAgentRunSnapshot["images"],
+			}
+			: {}),
+		...(run.meta ? { meta: sanitizePersistedValue(run.meta) as Record<string, unknown> } : {}),
+	};
+}
+
 export async function saveGatewaySessionState(params: {
 	storePath: string;
 	sessionEntries: Map<string, SessionEntry>;
@@ -167,7 +248,7 @@ export async function saveGatewaySessionState(params: {
 		version: 2,
 		savedAt: Date.now(),
 		sessions: Array.from(params.sessionEntries.values()).map(serializeSessionEntry),
-		runs: Array.from(params.agentRuns.values()),
+		runs: Array.from(params.agentRuns.values()).map(serializeAgentRunSnapshot),
 		activeSessionBindings: Array.from(params.activeSessionBindings.entries()).map(([routeKey, sessionId]) => ({
 			routeKey,
 			sessionId,

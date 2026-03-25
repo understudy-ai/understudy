@@ -28,6 +28,7 @@ describe("extension-relay-auth", () => {
 
 	it("allows the browser extension relay without headers when gateway auth mode is none", async () => {
 		process.env.UNDERSTUDY_GATEWAY_AUTH_MODE = "none";
+		process.env.UNDERSTUDY_GATEWAY_TOKEN = "gateway-secret";
 
 		await expect(resolveUnderstudyRelayAcceptedTokensForPort(23336)).resolves.toEqual([]);
 		await expect(getUnderstudyChromeExtensionRelayAuthHeaders("http://127.0.0.1:23336")).resolves.toEqual({});

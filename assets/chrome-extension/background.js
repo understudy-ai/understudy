@@ -1,6 +1,9 @@
 import { buildRelayWsUrl, isRetryableReconnectError, reconnectDelayMs } from './background-utils.js'
-
-const DEFAULT_PORT = 23336
+import {
+  persistBundledInstallDefaults,
+  resolveGatewayTokenWithFallback,
+  resolveRelayPortWithFallback,
+} from './install-config.js'
 
 const BADGE = {
   on: { text: 'ON', color: '#FF5A36' },
@@ -51,16 +54,12 @@ function nowStack() {
 
 async function getRelayPort() {
   const stored = await chrome.storage.local.get(['relayPort'])
-  const raw = stored.relayPort
-  const n = Number.parseInt(String(raw || ''), 10)
-  if (!Number.isFinite(n) || n <= 0 || n > 65535) return DEFAULT_PORT
-  return n
+  return await resolveRelayPortWithFallback(stored.relayPort)
 }
 
 async function getGatewayToken() {
   const stored = await chrome.storage.local.get(['gatewayToken'])
-  const token = String(stored.gatewayToken || '').trim()
-  return token || ''
+  return await resolveGatewayTokenWithFallback(stored.gatewayToken)
 }
 
 function setBadge(tabId, kind) {
@@ -922,7 +921,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // Rehydrate state on service worker startup. Split: rehydration is the gate
 // (fast), relay reconnect runs in background (slow, non-blocking).
-const initPromise = rehydrateState()
+const initPromise = (async () => {
+  await persistBundledInstallDefaults()
+  await rehydrateState()
+})()
 
 initPromise.then(() => {
   if (tabs.size > 0) {

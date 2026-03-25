@@ -1,10 +1,10 @@
 ---
 name: capcut-edit
 description: >-
-  Stage 3: Compose a vertical review short from the iPhone install context,
-  exploration notes, and captured proof. Default to assembling the final short
-  in local CapCut with iPhone-led visuals, using lightweight helper scripts
-  only for planning and optional local voiceover.
+  Stage 5: Compose a vertical tutorial-style review video from the iPhone
+  install context, exploration notes, and captured proof. Default to
+  assembling the final cut in local CapCut with iPhone-led visuals, using
+  helper scripts for planning, local voiceover, and subtitle prep.
 metadata:
   understudy:
     emoji: "🎬"
@@ -17,21 +17,21 @@ metadata:
 ## Rules
 
 1. Use the active run root: prefer `artifactsRootDir`, otherwise `EPISODE_DIR`.
-2. Read Stage 1 and Stage 2 artifacts from disk before generating anything.
-3. The output should feel like a real edited short for English-speaking viewers, not like a code-generated placeholder or a packaging-heavy fallback.
+2. Read Stage 1 and Stage 4 artifacts from disk before generating anything.
+3. The output should feel like a real edited walkthrough for English-speaking viewers, not like a code-generated placeholder or a packaging-heavy fallback.
 4. Default to local `CapCut.app` for the main edit. If a local CapCut app is installed, treat it as the primary route and confirm it can open before considering any fallback. Only if local CapCut is unavailable or clearly unusable should you prefer CapCut web through the browser tool with `browserConnectionMode: "auto"` first and `browserConnectionMode: "extension"` after the relay is attached.
 5. Do not use the deterministic ffmpeg compositor as the main demo path unless the user explicitly asks for a fallback preview render. Helper scripts may still assist with planning or voiceover.
-6. Legacy shell helpers such as `render_review_cards.py` or `build_review_video.py` are preview-only contingency tools. In the current real-edit lane, do not use them as a substitute for a blocked CapCut run. If local and web CapCut both fail, the truthful outcome is a blocked Stage 3, not a quietly downgraded fake-final video.
+6. Legacy shell helpers such as `render_review_cards.py` or `build_review_video.py` are preview-only contingency tools. In the current real-edit lane, do not use them as a substitute for a blocked CapCut run. If local and web CapCut both fail, the truthful outcome is a blocked Stage 5, not a quietly downgraded fake-final video.
 7. Do not update `manifest.json` to `edited` until `ffprobe` confirms the MP4 is structurally valid.
 8. Use a CJK-capable font or CapCut text style fallback when mixed-language app names must appear. Do not accept tofu / square boxes for Chinese or mixed-language app names.
 9. Prefer short, high-contrast, mobile-readable text. Rewrite the message into punchy lines instead of shrinking long paragraphs into unreadable blocks.
 10. The final visual source should be iPhone-led. Browser App Store screenshots are planning artifacts, not default final-video assets.
-11. If `say` is available, generate a short local voiceover from the exploration notes and import it into CapCut. Prefer the workspace helper so voice choice, mixed-language sanitization, and TTS pacing stay consistent. If local TTS is unavailable or fails, continue with a silent video and report that limitation honestly.
-12. The video should feel like a deliberate short review, not a screenshot dump. Every beat must advance the story.
+11. If `say` is available, generate a local voiceover from the exploration notes and also generate a subtitle file from the same narration. Prefer the workspace helpers so voice choice, mixed-language sanitization, subtitle timing, and TTS pacing stay consistent. If local TTS is unavailable or fails, continue with subtitle prep and report the missing voiceover honestly.
+12. The video should feel like a deliberate tutorial-style review, not a screenshot dump. Every beat must advance the story.
 13. The final copy should read like a viewer-facing review, not like operator notes about a pipeline run.
 14. Keep the story generic to the selected app. Do not hardcode AI-app assumptions into fallback text for a planner, utility, game, or creator tool.
-15. Before Stage 3 finishes, run one internal visual QA pass against the exported video. If the cut still feels browser-led, text-led, visually cheap, too static, too card-like, or shallower than the proved iPhone usage, revise it before you call the stage done.
-16. Do not stretch thin evidence into a fake-polished short. If Stage 2 only left a launch tour, one remote loading state, or one static wall with no changed-state / revisit proof, the correct next move is deeper exploration, not prettier packaging.
+15. Before Stage 5 finishes, run one internal visual QA pass against the exported video. If the cut still feels browser-led, text-led, visually cheap, too static, too card-like, or shallower than the proved iPhone usage, revise it before you call the stage done.
+16. Do not stretch thin evidence into a fake-polished short. If Stage 4 only left a launch tour, one remote loading state, or one static wall with no changed-state / revisit proof, the correct next move is deeper exploration, not prettier packaging.
 17. Do not read helper script source just to learn how to use it. Run the helper directly when the skill already defines the contract, and only inspect source if the helper fails.
 18. Prove the CapCut route early. After the planning and voiceover assets exist, open CapCut before generating any fallback visual assets. Do not quietly drift into shell rendering because it feels faster.
 19. Product proof must dominate the frame. On proof beats, the app UI should usually occupy most of the visible canvas after CapCut crop/zoom. A tiny iPhone floating in a large dark card is not acceptable.
@@ -40,14 +40,14 @@ metadata:
 22. The standard macOS Open panel is part of the local CapCut route, not a blocker by itself. If clicking `Import` opens the system file picker, continue the local edit there instead of stopping.
 23. Prefer importing one tiny prepared folder over browsing the whole run tree inside CapCut. The local edit should feel like using a clean asset bin, not like hunting through artifacts.
 24. If local CapCut is open and usable, explicitly drive the import panel, timeline build, and export flow to completion. Do not stop after proving CapCut merely launched.
-25. Treat narration budget as a real gate before editing: prefer `5-7` lines, about `55-85` spoken words, and roughly `18-30s` of voiceover. If the generated narration or `voiceover-meta.json` is longer than that, tighten it and regenerate before opening CapCut.
+25. Treat narration budget as a real gate before editing: prefer roughly `12-18` lines, about `220-420` spoken words, and roughly `150-210s` of voiceover. If the generated narration or `voiceover-meta.json` falls far outside that lane, rewrite it before opening CapCut.
 26. Prefer a fresh blank project for the current run. Do not reuse an unrelated recent CapCut draft just because it is already open; stale assets and stale timelines are more dangerous than spending one extra step to create a clean project.
 27. Before local import, prepare one short-path source folder for this run under `/tmp` or another equally short deterministic path, and use that tiny folder as the only import source. Do not browse deep artifact trees once the short path exists.
 28. Treat CapCut home / draft gallery as a distinct state with localized cues. A big `Start creating` / `开始创作` hero, left nav such as `Home` / `首页` or `Templates` / `模板`, and recent draft cards near the bottom means you are still on the home surface, not in a real editor.
 29. If CapCut home shows a clearly current draft card whose visible title matches the current app alias, `projectName`, or `runSlug` from `post/capcut-import-manifest.json`, open that draft once before creating another project. If no clear current draft exists, create a fresh project immediately instead of hovering on the gallery.
 30. A visible `录屏` / screen-record starter tile is still part of the home surface. Do not mistake that starter tile for evidence that the current edit is already open.
-31. Before each major Stage 3 action, make sure CapCut is frontmost again. If Finder or iPhone Mirroring stole focus, reactivate CapCut, re-observe the scene, and continue from the real current state instead of reasoning from stale memory.
-28. Stage 3 is not complete when only `post/video-plan.md` and `post/assets/narration.txt` exist. In the real-edit lane, the stage must end with a real CapCut export plus `post/capcut-edit-note.md`, or fail truthfully.
+31. Before each major Stage 5 action, make sure CapCut is frontmost again. If Finder or iPhone Mirroring stole focus, reactivate CapCut, re-observe the scene, and continue from the real current state instead of reasoning from stale memory.
+28. Stage 5 is not complete when only `post/video-plan.md` and `post/assets/narration.txt` exist. In the real-edit lane, the stage must end with a real CapCut export plus `post/capcut-edit-note.md`, or fail truthfully.
 28. If the macOS Open panel or Finder is showing a folder that contains previous-run outputs such as `final-video.mp4`, `capcut-project`, `manifest.json`, `publish`, `topic`, or any other parent-level run tree, treat that as the wrong location immediately. Redirect back to the prepared short import folder before importing anything.
 29. Prefer importing the actual asset files, not the enclosing directory itself. A folder tile like `assets` or `capcut-import` inside the media bin is a warning that you imported a directory object instead of the intended screenshots / clips / audio.
 30. Treat an inherited unknown CapCut draft as unsafe state. If CapCut is already open inside an old editor with stale media, stale timeline items, or unclear project identity before the current run really starts editing, quit it once and relaunch cleanly instead of trying to rescue mystery state.
@@ -58,15 +58,15 @@ metadata:
 35. Treat tiny-phone card aesthetics as a real failure, not a style preference. The default visual language for this demo is product-first, close-cropped, and proof-led.
 36. The iPhone App Store detail frame is context-only, not a default hero asset. Use it only when the context materially improves honesty or comprehension, keep it extremely brief, and never let it displace a stronger in-app beat.
 37. The strongest default edit is: hook from the real first screen, one clearly useful in-app proof, one task/result/friction beat, one revisit/limit/trust beat, then the verdict on top of the strongest proof frame.
-38. If Stage 2 already proved the app well enough, skip the listing/context beat entirely and spend that time on deeper in-app proof.
+38. If Stage 4 already proved the app well enough, skip the listing/context beat entirely and spend that time on deeper in-app proof.
 39. Avoid a fixed matte or color shell that repeats across runs. Pick a simple visual language that supports the current app proof, and vary it when a generic template would become more memorable than the app itself.
 40. On thin runs, context should merge into the opening or verdict rather than becoming a full extra slide.
 41. The product should still feel human-tested. Prefer proof that shows something you actually opened, changed, saved, revisited, or got blocked by on the iPhone over abstract marketing copy.
-42. The final short should be overwhelmingly iPhone-native. Apart from a rare half-beat from the iPhone App Store detail screen when it truly helps, avoid browser-page visuals and avoid any decorative card system that makes the app feel smaller than the review packaging.
+42. The final video should be overwhelmingly iPhone-native. Apart from a rare half-beat from the iPhone App Store detail screen when it truly helps, avoid browser-page visuals and avoid any decorative card system that makes the app feel smaller than the review packaging.
 43. If the proof set is too thin to support a strong real CapCut cut, escalate back to deeper exploration instead of compensating with extra scorecards, paragraphs, or verdict cards.
 44. Keep the audio path bounded. If `voiceover.aiff` was imported with the rest of the media, do not switch to the Audio tab or reopen import just to “manage audio better”. Use the already-imported media item directly from the main media bin whenever possible.
 45. Voiceover is helpful but not worth a loop. The allowed local-audio policy is: one clean import of all assets, one direct attempt to place the voiceover on the audio track if it is present, one bounded re-import of only the audio file if it is missing, then finish silently and record that limitation honestly instead of bouncing between `素材`, `音频`, and repeated import dialogs.
-46. Do not let voiceover or caption polish dominate the run. If the strongest visual proof is already clear, prefer a clean silent or light-caption cut over a fragile edit that never exports.
+46. Do not let voiceover or caption polish dominate the run. But in this demo lane the happy path should still leave both spoken narration and readable subtitles, not just silent proof cards.
 47. English-first viewer rule: default the overlays and narration to concise English even when the App Store region is localized. Let the product UI carry the localized truth; do not force awkward mixed-language marketing copy into the captions.
 48. Proof-first framing rule: on at least the core proof and outcome beats, the app UI should usually occupy about `70-85%` of the visible vertical frame after crop or zoom. If the phone still reads as a small card inside a template shell, revise the framing before exporting.
 49. Human-review depth rule for editing: the finished cut should usually answer four viewer questions with visible evidence, not narration alone: what is this app for, what happens when I try the main thing, what changes or blocks next, and who should still care after that result.
@@ -85,21 +85,25 @@ metadata:
 
 ## Fast Path
 
-This is the default successful Stage 3 flow.
+This is the default successful Stage 5 flow.
 
-1. Read Stage 1 and Stage 2 artifacts first. The cut should be driven by real iPhone proof, not by browser pages or generic cards.
-2. Write `post/video-plan.md`, `post/capcut-shot-list.md`, `post/capcut-import-manifest.json`, and `post/assets/narration.txt`.
+1. Read Stage 1 and Stage 4 artifacts first. The cut should be driven by real iPhone proof, not by browser pages or generic cards.
+2. Write `post/video-plan.md`, `post/capcut-shot-list.md`, `post/capcut-import-manifest.json`, `post/assets/narration.txt`, and the voiceover / subtitle prep artifacts.
 3. Keep the story English-first, concise, and proof-first:
-   - about `22-30s`
-   - about `5-7` narration lines
-   - real proof should arrive by about `3-6s`
-   - browser/store context is optional and usually very brief
+   - about `150-210s`
+   - about `12-18` narration lines
+   - real proof should arrive early instead of hiding behind a long intro
+   - browser/store context is optional and usually brief
 4. Preferred beat ladder:
    - opening hook on the first real iPhone frame
+   - how to start
    - first useful proof
-   - core task
+   - core task setup
+   - core task execution
    - outcome or friction
    - optional secondary proof
+   - hidden detail or best practice
+   - limit / audience fit
    - verdict as an overlay on the strongest proof frame
 5. Open local `CapCut.app` early. The real success bar is:
    - media imported
@@ -115,7 +119,7 @@ Default visual rules:
 - use iPhone captures as the main story
 - use browser screenshots only when one tiny context beat is truly necessary
 - avoid scorecard-heavy or verdict-card-heavy packaging
-- if the proof is thin, go back to Stage 2 instead of compensating with more text
+- if the proof is thin, go back to Stage 4 instead of compensating with more text
 - if CapCut cannot complete a real export, fail truthfully instead of quietly shipping a shell-composited fake final
 
 ## Step 1: Resolve the root and read the source material
@@ -145,13 +149,13 @@ Use Stage 1 for:
 Localization rule:
 
 - If `topic/app-store-listing.json` includes `copyLocalization`, prefer that localized copy package for viewer-facing English headlines, support lines, and narration scaffolding.
-- Keep the regional listing fields as source truth for what was actually installed, but do not let a localized Chinese subtitle or description force awkward mixed-language copy into the final short.
+- Keep the regional listing fields as source truth for what was actually installed, but do not let a localized Chinese subtitle or description force awkward mixed-language copy into the final video.
 
 Store-copy hygiene rule:
 
 - If `topic/app-store-listing.json` contains an obviously bad `subtitle` that reads like App Store shell chrome rather than a real product positioning line, ignore that subtitle for the video and derive a cleaner short positioning line from the verified description, visible detail screenshot, or selection notes instead.
 
-Use Stage 2 for:
+Use Stage 4 for:
 
 - highlights
 - pain points
@@ -165,9 +169,9 @@ Use Stage 2 for:
 Visual-source rule:
 
 - Use Stage 1 browser screenshots `00-Browser-Today-Recommendation.png` and `01-Browser-App-Detail.png` as planning-only research artifacts.
-- Do **not** let those browser-page captures appear in the main final short unless the iPhone App Store screenshot is missing or unusable.
-- The main short should be built from iPhone-captured material: iPhone App Store detail, home screen, in-app exploration screenshots, and any Stage 2 live iPhone clips.
-- If `experience/clips/01-Core-Loop.mov` or another Stage 2 clip exists, treat that motion proof as more valuable than inventing extra text panels.
+- Do **not** let those browser-page captures appear in the main final video unless the iPhone App Store screenshot is missing or unusable.
+- The main video should be built from iPhone-captured material: iPhone App Store detail, home screen, in-app exploration screenshots, and any Stage 4 live iPhone clips.
+- If `experience/clips/01-Core-Loop.mov` or another Stage 4 clip exists, treat that motion proof as more valuable than inventing extra text panels.
 
 If `experience/story-beats.md` exists, treat it as the strongest natural-language truth guard for:
 
@@ -179,7 +183,7 @@ If `experience/story-beats.md` exists, treat it as the strongest natural-languag
 If `review/video-feedback.json` already exists from an earlier review pass, use it as a revision input, not as a fiction source:
 
 - fix concrete issues such as copy that is too long, repetitive frames, unreadable chips, broken CJK rendering, awkward verdict phrasing, or pacing that obviously drags
-- do **not** invent new product depth that Stage 2 never proved just because an earlier reviewer asked for a more exciting video
+- do **not** invent new product depth that Stage 4 never proved just because an earlier reviewer asked for a more exciting video
 - if a requested fix would require deeper exploration or new evidence, keep the video honest and mention the unresolved gap instead of fabricating coverage
 
 Also check whether these optional screenshots exist and use them when helpful:
@@ -188,7 +192,7 @@ Also check whether these optional screenshots exist and use them when helpful:
 - `experience/screenshots/05-Secondary-Feature.png`
 - `experience/screenshots/06-Pricing-Or-Limit.png`
 
-If Stage 2 produced `videoPlan`, treat it as the source of truth for the story
+If Stage 4 produced `videoPlan`, treat it as the source of truth for the story
 angle and narration ordering.
 
 Video spec contract for this stage:
@@ -196,20 +200,20 @@ Video spec contract for this stage:
 - vertical short, `1080x1920`
 - normal playback frame rate, preferably `30 fps`
 - final container: H.264 MP4 with AAC audio when voiceover exists
-- ideal runtime `22-30s`, acceptable `20-34s`
-- default to `4-6` beats when proof is thin and `6-7` beats only when the evidence is clearly richer
+- ideal runtime `150-210s`, acceptable `120-240s`
+- default to `8-14` beats when the evidence is solid, with a chapter-like flow instead of one compressed burst
 - default beat order: opening overlay on the first real iPhone frame, first impression, core task, outcome, optional secondary proof, closing verdict overlay; if a promise/context line is still needed, fuse it into the opening or a sub-2s half-beat instead of giving it a full slide by default
 - do **not** assume separate `title`, `scorecard`, and `verdict` cards are all needed; most runs should not spend three separate beats on packaging
-- 5-7 narration lines, roughly `55-85` spoken words total
-- voiceover should sound like one short review, not a checklist being read aloud
+- `12-18` narration lines, roughly `220-420` spoken words total
+- voiceover should sound like one guided walkthrough or deep-dive, not a checklist being read aloud
 - every beat must still make sense with audio muted
 - keep on-screen copy mobile-readable at arm's length: one headline, one short support line, and no dense paragraph blocks
-- the first 2-3 seconds must already communicate the hook from a real iPhone-led frame; do not waste that space on labels or generic setup copy
+- the opening should communicate the hook quickly from a real iPhone-led frame; do not waste it on labels or generic setup copy
 - most of the runtime should belong to proof, not packaging: first impression, core task, outcome, and secondary proof should together own more time than any setup or verdict overlays
-- when Stage 2 gave you a strong fifth screenshot, use it; a convincing review usually beats a shorter but thinner cut
-- store/listing context should usually be omitted; when it genuinely helps, keep it roughly `1.0-2.0s` and do not let it delay the first real in-app proof
+- when Stage 4 gave you a strong fifth screenshot, use it; a convincing walkthrough usually beats a shorter but thinner cut
+- store/listing context should usually be brief; when it genuinely helps, keep it concise and do not let it delay the first real in-app proof
 - proof beats should visually feel screenshot-led or clip-led: the product should dominate, and the text should clarify rather than replace the proof
-- when Stage 2 gave you a usable clip, at least one core proof beat should feel motion-led rather than static-card-led
+- when Stage 4 gave you a usable clip, at least one core proof beat should feel motion-led rather than static-card-led
 - a clip-backed or clearly useful proof beat should normally arrive by about `3-6s`, not after the whole setup is already over
 - on proof beats, crop or zoom until the app UI usually occupies at least about 70% of the visible vertical frame
 - the default edit should feel like close product proof with light captions, not a navy presentation card with a small centered phone
@@ -238,7 +242,7 @@ Narration-to-beat contract:
 - If one beat carries no spoken line, it still needs a visually obvious reason to exist.
 - Do not let the narration describe a deeper flow than the matching beat actually shows.
 
-Write `post/video-plan.md` before rendering cards. This should be the natural-language production brief for the final short and should include:
+Write `post/video-plan.md` before rendering cards. This should be the natural-language production brief for the final video and should include:
 
 - video spec and target runtime
 - target runtime
@@ -287,7 +291,7 @@ Language-plan contract for `# Language`:
 Contingency card-renderer rule:
 
 - `skills/capcut-edit/scripts/render_review_cards.py "$ROOT_DIR"` is a fallback helper for preview assets only.
-- Do **not** use that helper as the default Stage 3 route or as a quiet shortcut when the local CapCut route is still available.
+- Do **not** use that helper as the default Stage 5 route or as a quiet shortcut when the local CapCut route is still available.
 - Only reach for rendered cards when you already proved local and web CapCut are unavailable or the user explicitly asked for a preview-only fallback.
 - If two candidate screenshots for different beats are visually near-duplicates, adjust the chosen screenshot set before building the final video. The short should show progression, not the same phone screen twice with different captions.
 - Preserve semantic mapping when you adjust screenshots. Do not fix duplication by quietly turning the `core task` beat into a settings or model-picker beat unless the run truly never reached a better task moment.
@@ -363,7 +367,7 @@ Preferred visual pool:
 - `experience/screenshots/05-Secondary-Feature.png` when it materially deepens the story
 - `experience/screenshots/06-Pricing-Or-Limit.png` when the limit genuinely shapes the verdict
 
-Do **not** use browser-page screenshots `00` or `01` in the main short unless
+Do **not** use browser-page screenshots `00` or `01` in the main video unless
 the iPhone App Store screenshot is missing or broken.
 
 Shot-list contract:
@@ -371,8 +375,8 @@ Shot-list contract:
 - choose 6-8 beats max
 - at least 5 beats should come from home screen or in-app captures; the iPhone App Store detail frame is optional context, not core proof
 - by about 10-12 seconds, the viewer should already have seen the first useful in-app proof
-- if a Stage 2 clip exists, prefer showing real motion before relying on a text-heavy scorecard or verdict beat
-- if a Stage 2 core clip exists, default to opening on that real motion or a trim from that same clip instead of spending the first beat on a static setup card
+- if a Stage 4 clip exists, prefer showing real motion before relying on a text-heavy scorecard or verdict beat
+- if a Stage 4 core clip exists, default to opening on that real motion or a trim from that same clip instead of spending the first beat on a static setup card
 - if the current shot list still feels like context plus static menus, go back and pick stronger in-app proof before editing
 - if the story only works because of a long context or store beat, the proof set is still too thin; do not compensate with more setup
 
@@ -387,7 +391,7 @@ CapCut-first composition contract:
 - avoid sticker clutter, meme overlays, generic stock footage, or non-product filler
 - a proof beat should usually begin on the product itself, not on a full-screen text card
 - allow at most one text-first beat in the whole cut; everything else should feel product-first or product-backed
-- if the only way to explain a beat is with a long card, the beat probably belongs back in Stage 2 exploration rather than Stage 3 packaging
+- if the only way to explain a beat is with a long card, the beat probably belongs back in Stage 4 exploration rather than Stage 5 packaging
 
 Timeline contract:
 
@@ -415,32 +419,37 @@ Text-overlay contract inside CapCut:
 ## Step 4: Write the narration package
 
 Use `post/video-plan.md` to lock the story first, then write
-`post/assets/narration.txt` with 5-7 short spoken lines and roughly
-55-85 words total.
+`post/assets/narration.txt` with roughly `12-18` short spoken lines and about
+`220-420` words total.
 
 The narration should follow this arc:
 
 1. hook
-2. optional context the viewer still needs
+2. how to start / what the app is trying to do
 3. what happened on first launch
-4. what core task or tool was actually reached
-5. one payoff or friction point
-6. one secondary proof or a concise honest verdict
-7. closing recommendation if the story still needs it
+4. how the main workflow is entered
+5. what core task or tool was actually reached
+6. what changed or got saved next
+7. one secondary proof or hidden detail
+8. one best practice, trust signal, or less-obvious behavior
+9. one payoff or friction point
+10. one audience / limit beat
+11. concise verdict
+12. closing recommendation if the story still needs it
 
 Narration rules:
 
 - Prefer spoken, natural review phrasing over formal prose.
 - Use the short app alias in narration if the localized full name would sound awkward in TTS.
-- Do not fabricate deeper coverage than Stage 2 actually achieved.
+- Do not fabricate deeper coverage than Stage 4 actually achieved.
 - Keep each spoken line independently readable; avoid caption fragments.
-- Aim for roughly 7-16 words per line.
+- Aim for roughly `10-28` words per line.
 - Prefer one strong claim or contrast per line. A good line usually sounds like a reviewer talking, not like a product spec being recited.
 - If the run stayed shallow, make the friction or blocker the story rather than pretending you reached deeper value.
 - If the app name is localized or mixed-language, let the narration say the short alias and keep the full localized name on-screen only when it renders cleanly.
 - Prefer straight ASCII punctuation in narration text when using local TTS. Avoid fancy quotes, uncommon unicode punctuation, or awkward mixed-language sentences that commonly sound broken in `say`.
 - Prefer one clear clause per spoken line. If a line needs two commas and a dash to fit, it is probably too dense for local TTS.
-- If there is no dedicated context beat and no secondary proof beat, the narration should usually collapse to about 5 lines instead of inventing filler.
+- If the evidence is thin, shorten the structure honestly, but do not pad the runtime with empty hype.
 - When the App Store promise still matters but the cut does not justify a separate context beat, weave that promise into the hook or verdict rather than forcing an extra store line.
 
 If `/usr/bin/say` exists, prefer the workspace helper:
@@ -456,6 +465,7 @@ That helper should:
 - write `post/assets/voiceover-script.txt`
 - write `post/assets/voiceover.aiff`
 - write `post/assets/voiceover-meta.json`
+- keep the script stable enough that a subtitle file can be generated from the same lines
 
 Only if the helper script is missing or broken, fall back to raw `say`:
 
@@ -473,9 +483,28 @@ Voice selection rule:
 Voiceover budget check:
 
 - Before opening CapCut, inspect `post/assets/narration.txt` and `post/assets/voiceover-meta.json` when the file exists.
-- If the narration drifts above the short-review budget, rewrite it tighter and regenerate the voiceover before editing.
-- Prefer one spoken idea per beat. If the narration sounds like a full paragraph explanation instead of quick reviewer beats, it is too long.
-- Treat `durationSec > 34`, `wordCount > 90`, or `lineCount > 7` as a revision trigger rather than a harmless warning.
+- If the narration drifts far outside the target lane, rewrite it and regenerate the voiceover before editing.
+- Prefer one spoken idea per sentence chunk. If the narration sounds like a dense wall of prose instead of a guided walkthrough, it is too heavy.
+- Treat `durationSec < 120`, `durationSec > 240`, `wordCount < 180`, `wordCount > 460`, `lineCount < 10`, or `lineCount > 20` as a revision trigger rather than a harmless warning.
+
+## Step 4.25: Generate the subtitle package
+
+After the narration and optional voiceover exist, also generate:
+
+- `post/assets/subtitles.srt`
+
+Preferred helper:
+
+```bash
+python3 skills/capcut-edit/scripts/build_subtitles.py "$ROOT_DIR"
+```
+
+Subtitle rules:
+
+- Build subtitles from the same narration lines that produced the voiceover so the spoken story and the on-screen text stay aligned.
+- Prefer readable sentence chunks over word-by-word karaoke fragments.
+- Keep subtitle text English-first, concise, and free of brittle mixed-language lines that would be hard to style in CapCut.
+- The subtitle file is a production aid for CapCut. It should help the editor import or reproduce captions quickly, not become a second separate script with different wording.
 
 ## Step 4.5: Prepare the CapCut import pack
 
@@ -533,15 +562,15 @@ That helper should:
 
 If the helper is unavailable or broken, fall back to the manual shell copy flow above.
 
-## Step 5: Assemble and export the final short in CapCut
+## Step 5: Assemble and export the final video in CapCut
 
 Default edit route:
 
 1. if CapCut is already open in an unknown or stale draft state, quit it once and relaunch; otherwise open local `CapCut.app`
 2. verify CapCut actually opened and a workable project surface is visible before importing assets
 3. create a fresh clean vertical `9:16` project for the current run unless an already-open editor is unmistakably the same current run and already contains only the intended assets
-4. import the chosen iPhone screenshots, Stage 2 clips, and `post/assets/voiceover.aiff` if it exists
-5. build the proof-first `5-7` beat timeline directly in CapCut
+4. import the chosen iPhone screenshots, Stage 4 clips, `post/assets/voiceover.aiff` if it exists, and the subtitle package when CapCut supports it
+5. build the proof-first `8-14` beat timeline directly in CapCut
 6. export to `post/final-video.mp4`
 
 Primary-route enforcement:
@@ -655,28 +684,29 @@ Only if local CapCut is unavailable or clearly broken:
 
 CapCut timeline rules:
 
-- keep the finished short roughly `22-30s`, with `20-34s` as the outer acceptable range
-- default to `4-6` beats when the proof set is thin and `6-7` beats when the proof set is stronger; extra beats usually add packaging, not depth
+- keep the finished video roughly `150-210s`, with `120-240s` as the outer acceptable range
+- default to `8-14` beats when the proof set is strong enough; extra beats should deepen the walkthrough, not just add packaging
 - show real product imagery almost immediately; the first second should already feel product-led rather than a dead title wall
 - the opening hook should usually live as overlay text on the first real iPhone frame, not as a standalone full-screen title card
 - if the opening and core-task beats reuse the same live clip, trim two different moments from it instead of replaying the same few seconds twice
-- the opening plus any optional context beat should usually stay under about 4-5 seconds combined
+- the opening plus any optional context beat should stay concise enough that the viewer reaches real product proof quickly
 - default beat-duration ladder:
-  - opening overlay: about `1.5-2.5s`
-  - optional context beat: about `1.0-1.8s`, and omit it entirely when the first in-app frame already explains the app
-  - first impression: about `2.5-4.0s`
-  - core task / real attempt: about `4.0-6.0s`
-  - outcome / payoff / friction: about `4.0-6.0s`
-  - optional secondary proof: about `2.5-4.0s`
-  - closing verdict overlay: about `1.8-3.0s`, preferably riding on the outcome/proof frame rather than becoming its own long static card
-- the first real in-app proof should usually appear by about `4-6s`
+  - opening overlay: about `5-9s`
+  - optional context beat: about `5-10s`, and omit it entirely when the first in-app frame already explains the app
+  - first impression / how-to-start: about `10-18s`
+  - core task setup: about `12-22s`
+  - core task / real attempt: about `18-35s`
+  - outcome / payoff / friction: about `15-30s`
+  - optional secondary proof or hidden detail: about `10-22s`
+  - limit / audience-fit beat: about `8-16s`
+  - closing verdict overlay: about `6-12s`, preferably riding on the outcome/proof frame rather than becoming its own long static card
 - the first useful in-app proof should land early, not at the very end
-- the first useful proof should usually land by about `5-6s`
-- if voiceover exists, align the shot holds to the spoken rhythm instead of leaving dead air
+- the first useful proof should usually land in the early part of the video rather than after a long setup section
+- if voiceover exists, align the shot holds and subtitle pacing to the spoken rhythm instead of leaving dead air
 - if voiceover is absent, the visual pacing still needs to land by itself; do not compensate for silent export by adding more text
 - most of the runtime should belong to first impression, core task, outcome, and optional secondary proof
-- when a Stage 2 clip exists, crop or zoom it so the viewer mainly sees the iPhone region rather than unrelated desktop borders
-- when a Stage 2 clip exists, let it own a real proof beat early instead of burying it behind multiple still-only setup beats
+- when a Stage 4 clip exists, crop or zoom it so the viewer mainly sees the iPhone region rather than unrelated desktop borders
+- when a Stage 4 clip exists, let it own a real proof beat early instead of burying it behind multiple still-only setup beats
 - do not leave the proof sequence as three static screenshots in a row when a real motion clip from the same loop is available
 - prefer a verdict overlay on the strongest outcome/proof frame over a separate static scorecard card
 - only use a dedicated scorecard beat when the evidence is already deep enough that the summary clarifies rather than replaces product proof
@@ -708,13 +738,13 @@ CapCut editing guidance:
 - if the clip includes desktop chrome, crop tighter inside CapCut so the iPhone content still feels like the subject
 - if a proof beat still feels text-led after the first export, shorten the overlay and let the product motion breathe
 - use the iPhone App Store detail frame only as a very quick context beat when it is still needed, not as a default setup card
-- the final story should still mostly work if you removed the context beat entirely; if it collapses without that setup, the underlying Stage 2 proof is still too thin
+- the final story should still mostly work if you removed the context beat entirely; if it collapses without that setup, the underlying Stage 4 proof is still too thin
 - if the app name looks awkward in mixed-language overlay text, keep the overlay to the short alias and let the visible UI supply the longer localized truth
 - prefer headline overlays of roughly `2-5` words and support lines of roughly `5-12` words. Rewrite instead of shrinking.
 - only one beat in the whole cut may be mostly text-first. Every other beat should feel product-first or product-backed.
 - english-first readability rule: if a caption line becomes brittle, mixed-language, or tofu-prone, shorten it into plain English and let the UI carry the localized truth
 - if three adjacent beats would all be stills, vary them with crop direction, hold length, or one inserted motion-led beat so the cut does not flatten.
-- if Stage 2 proved a saved-state revisit or a clear limit/paywall/trust beat, include it. Human-seeming reviews need more than launch -> one task -> verdict.
+- if Stage 4 proved a saved-state revisit or a clear limit/paywall/trust beat, include it. Human-seeming reviews need more than launch -> one task -> verdict.
 - avoid a reusable “review template” look. The viewer should mainly remember the app proof, not the matte, the frame, or the scorecard shell.
 - Keep overlay typography sentence-case, short, and scannable. A readable 2-line English caption beats a clever but cramped multi-line block every time.
 - If the localized app name is visually awkward in mixed-language overlay text, show the short alias in the caption and keep the localized full name inside the UI or App Store screenshot only.
@@ -722,12 +752,15 @@ CapCut editing guidance:
 Suggested CapCut beat mapping:
 
 1. hook + app alias on the first real iPhone frame
-2. optional quick context from the iPhone App Store detail screen only when it still helps
+2. how to start / optional quick context from the iPhone App Store detail screen only when it still helps
 3. first screen / first impression
-4. core task attempt
-5. payoff or friction result
-6. optional secondary proof or limit
-7. closing verdict overlay / best for / avoid if
+4. core task setup
+5. core task attempt
+6. payoff or friction result
+7. optional secondary proof
+8. hidden detail / best practice
+9. optional limit or trust beat
+10. closing verdict overlay / best for / avoid if
 
 Export contract:
 
@@ -744,7 +777,7 @@ Write `post/capcut-edit-note.md` after export. Keep it short and natural
 language. It should record:
 
 - whether the edit used local CapCut or web CapCut
-- whether Stage 2 live clips were used and which ones
+- whether Stage 4 live clips were used and which ones
 - which screenshots were used in the final timeline
 - whether voiceover was included
 - the main visual style choices
@@ -771,7 +804,7 @@ python3 skills/video-review-feedback/scripts/extract_review_frames.py "$ROOT_DIR
   - is on-screen copy readable and short?
   - are there any broken Chinese / CJK rendering issues?
   - does the cut feel like a human tested the app rather than assembled a packaging template?
-- If the cut still feels browser-led, too text-heavy, visually cheap, too static, or shallower than the underlying iPhone proof, reopen CapCut and improve it before calling Stage 3 done.
+- If the cut still feels browser-led, too text-heavy, visually cheap, too static, or shallower than the underlying iPhone proof, reopen CapCut and improve it before calling Stage 5 done.
 - If the cut clearly fails for edit-side reasons such as slow hook, tiny product area, repetitive frames, crowded text, or awkward mixed-language overlays, perform one bounded repair pass in CapCut before stopping.
 - A ready cut should normally satisfy all of these:
   - product visible immediately or nearly immediately

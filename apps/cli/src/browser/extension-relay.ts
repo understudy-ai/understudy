@@ -235,6 +235,13 @@ function relayAuthTokenForUrl(url: string): string | null {
   }
 }
 
+function isRelayAuthRejected(token: string | undefined, relayAuthTokens: Set<string>): boolean {
+  if (relayAuthTokens.size === 0) {
+    return false;
+  }
+  return !token || !relayAuthTokens.has(token);
+}
+
 export function getUnderstudyChromeExtensionRelayRuntimeHeaders(url: string): Record<string, string> {
   const token = relayAuthTokenForUrl(url);
   if (!token) {
@@ -589,7 +596,7 @@ export async function ensureUnderstudyChromeExtensionRelayServer(opts: {
 
       if (path.startsWith("/json")) {
         const token = getRelayAuthTokenFromRequest(req, url);
-        if (!token || !relayAuthTokens.has(token)) {
+        if (isRelayAuthRejected(token, relayAuthTokens)) {
           res.writeHead(401);
           res.end("Unauthorized");
           return;
@@ -722,7 +729,7 @@ export async function ensureUnderstudyChromeExtensionRelayServer(opts: {
 
       if (pathname === "/extension") {
         const token = getRelayAuthTokenFromRequest(req, url);
-        if (!token || !relayAuthTokens.has(token)) {
+        if (isRelayAuthRejected(token, relayAuthTokens)) {
           rejectUpgrade(socket, 401, "Unauthorized");
           return;
         }
@@ -747,7 +754,7 @@ export async function ensureUnderstudyChromeExtensionRelayServer(opts: {
 
       if (pathname === "/cdp") {
         const token = getRelayAuthTokenFromRequest(req, url);
-        if (!token || !relayAuthTokens.has(token)) {
+        if (isRelayAuthRejected(token, relayAuthTokens)) {
           rejectUpgrade(socket, 401, "Unauthorized");
           return;
         }

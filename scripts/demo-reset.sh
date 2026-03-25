@@ -57,9 +57,6 @@ tell application "System Events"
 end tell
 APPLESCRIPT
   echo "Returned iPhone Mirroring to the home screen"
-  if [ -f "$WORKSPACE_ROOT/scripts/gui/remove-home-apps.mjs" ]; then
-    node "$WORKSPACE_ROOT/scripts/gui/remove-home-apps.mjs" --strict=0 || true
-  fi
 else
   echo "iPhone Mirroring not running"
 fi

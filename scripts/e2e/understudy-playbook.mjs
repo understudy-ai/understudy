@@ -35,6 +35,8 @@ const gatewayLogPath = join(testHome, "gateway.log");
 const authSeedAgentDir =
 	process.env.UNDERSTUDY_E2E_AUTH_SOURCE?.trim() || join(homedir(), ".understudy", "agent");
 const testPort = await resolveAvailablePort(requestedPort, { locked: lockRequestedPort });
+const browserRelayPort = testPort + 3;
+const browserRelayUrl = `http://127.0.0.1:${browserRelayPort}`;
 const gatewayUrl = `http://127.0.0.1:${testPort}`;
 const gatewayLog = [];
 const stageReports = [];
@@ -495,6 +497,8 @@ const gateway = spawn(
 			UNDERSTUDY_HOME: testHome,
 			...(playbookEnvFile ? { UNDERSTUDY_ENV_FILE: playbookEnvFile } : {}),
 			UNDERSTUDY_GATEWAY_AUTH_MODE: "none",
+			UNDERSTUDY_BROWSER_CDP_URL: browserRelayUrl,
+			UNDERSTUDY_BROWSER_EXTENSION_RELAY_URL: browserRelayUrl,
 			UNDERSTUDY_DEFAULT_PROVIDER: defaultProvider,
 			UNDERSTUDY_DEFAULT_MODEL: defaultModel,
 		},

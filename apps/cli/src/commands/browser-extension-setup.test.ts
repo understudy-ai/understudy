@@ -94,6 +94,10 @@ describe("installBrowserExtensionIntoConfig", () => {
 		});
 		expect(mocks.installChromeExtension).toHaveBeenCalledWith({
 			installDir: "/Users/test/Downloads/Understudy Chrome Extension",
+			seedConfig: {
+				relayPort: 23336,
+				gatewayToken: "test-relay-token",
+			},
 		});
 		expect(relayController.ensureForConfig).toHaveBeenCalledWith(expect.objectContaining({
 			browser: expect.objectContaining({
@@ -125,6 +129,13 @@ describe("installBrowserExtensionIntoConfig", () => {
 			relayController: relayController as any,
 		});
 
+		expect(mocks.installChromeExtension).toHaveBeenCalledWith({
+			installDir: "/Users/test/Downloads/Understudy Chrome Extension",
+			seedConfig: {
+				relayPort: 23336,
+				gatewayToken: "test-relay-token",
+			},
+		});
 		expect(relayController.waitForConnection).not.toHaveBeenCalled();
 		expect(result.connected).toBe(true);
 	});

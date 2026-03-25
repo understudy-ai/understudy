@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -29,13 +29,23 @@ describe("browser extension install", () => {
 		await writeFile(join(sourceDir, "background.js"), "console.log('ok')", "utf8");
 		await writeFile(join(sourceDir, "icons", "icon16.png"), "png", "utf8");
 
-		const installed = await installChromeExtension({ sourceDir, installDir });
+		const installed = await installChromeExtension({
+			sourceDir,
+			installDir,
+			seedConfig: {
+				relayPort: 24444,
+				gatewayToken: "seed-token",
+			},
+		});
 
 		expect(installed.path).toBe(installDir);
-		const manifest = await import("node:fs/promises").then(({ readFile }) =>
-			readFile(join(installDir, "manifest.json"), "utf8"),
-		);
+		const manifest = await readFile(join(installDir, "manifest.json"), "utf8");
 		expect(manifest).toContain("Understudy Browser Relay");
+		const localConfig = JSON.parse(await readFile(join(installDir, "understudy-local-config.json"), "utf8"));
+		expect(localConfig).toEqual({
+			relayPort: 24444,
+			gatewayToken: "seed-token",
+		});
 	});
 
 	it("defaults the install path to Downloads and respects explicit targets", () => {

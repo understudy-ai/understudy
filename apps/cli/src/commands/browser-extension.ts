@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
@@ -16,6 +16,11 @@ import { installBrowserExtensionIntoConfig } from "./browser-extension-setup.js"
 export interface BrowserExtensionCommandSpec {
 	action: "install";
 	target?: string;
+}
+
+export interface BrowserExtensionSeedConfig {
+	relayPort?: number;
+	gatewayToken?: string;
 }
 
 interface BrowserExtensionConfigCommandOptions {
@@ -35,6 +40,16 @@ const LEGACY_BROWSER_EXTENSION_TARGETS = new Set([
 
 function hasManifest(dir: string): boolean {
 	return existsSync(join(dir, "manifest.json"));
+}
+
+const LOCAL_CONFIG_FILENAME = "understudy-local-config.json";
+
+function normalizeRelayPort(value: unknown): number {
+	const parsed = Number.parseInt(String(value ?? ""), 10);
+	if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+		return 23336;
+	}
+	return parsed;
 }
 
 export function resolveBundledExtensionRootDir(
@@ -182,6 +197,7 @@ export function parseBrowserExtensionSlashCommand(text: string): BrowserExtensio
 export async function installChromeExtension(opts?: {
 	sourceDir?: string;
 	installDir?: string;
+	seedConfig?: BrowserExtensionSeedConfig;
 }): Promise<{ path: string }> {
 	const sourceDir = opts?.sourceDir ?? resolveBundledExtensionRootDir();
 	if (!hasManifest(sourceDir)) {
@@ -191,6 +207,17 @@ export async function installChromeExtension(opts?: {
 	await mkdir(dirname(installDir), { recursive: true });
 	await rm(installDir, { recursive: true, force: true });
 	await cp(sourceDir, installDir, { recursive: true });
+	const gatewayToken = opts?.seedConfig?.gatewayToken?.trim();
+	if (gatewayToken) {
+		await writeFile(
+			join(installDir, LOCAL_CONFIG_FILENAME),
+			JSON.stringify({
+				relayPort: normalizeRelayPort(opts?.seedConfig?.relayPort),
+				gatewayToken,
+			}, null, 2),
+			"utf8",
+		);
+	}
 	if (!hasManifest(installDir)) {
 		throw new Error("Browser extension install failed: manifest.json missing after copy.");
 	}

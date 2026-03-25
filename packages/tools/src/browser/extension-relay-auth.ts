@@ -90,12 +90,12 @@ export async function resolveUnderstudyRelayAcceptedTokensForPort(
 		gatewayToken?: string;
 	},
 ): Promise<string[]> {
+	const authMode = await resolveGatewayAuthMode();
+	if (authMode === "none") {
+		return [];
+	}
 	const gatewayToken = await resolveGatewayAuthToken(options);
 	if (!gatewayToken) {
-		const authMode = await resolveGatewayAuthMode();
-		if (authMode === "none") {
-			return [];
-		}
 		throw new Error(
 			"Browser extension relay requires gateway auth token. Set gateway.auth.token or UNDERSTUDY_GATEWAY_TOKEN.",
 		);

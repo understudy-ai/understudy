@@ -570,6 +570,7 @@ export function buildReasoningFormatSection(): string[] {
 			"Format every reply as <think>...</think> then <final>...</final>, with no other text.",
 			"Only the final user-visible reply may appear inside <final>.",
 			"Only text inside <final> is shown to the user; everything else is discarded and never seen by the user.",
+			"If the next action is a tool call, do not put user-visible text in that same assistant message; keep tool-using turns tool-call-only and save commentary for a later assistant-only turn after the tool work is finished.",
 			"Example:",
 			"<think>Short internal reasoning.</think>",
 			"<final>Hey there! What would you like to do next?</final>",
