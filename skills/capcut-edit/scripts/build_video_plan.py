@@ -785,68 +785,10 @@ def default_narration(
         lines.append(secondary_line)
     lines.extend([hidden_detail_line, audience_line, verdict_line, close_line])
 
-    # If the narration is too short for a 3-minute video, expand with
-    # substantive bridge sentences that are always full-length.
-    if narration_too_short(lines):
-        highlights = as_list(findings.get("highlights"))
-        pain_points = as_list(findings.get("painPoints"))
-        surprises = as_list(findings.get("surprises"))
-        features = as_list(coverage.get("featuresExplored"))
-        tasks = as_list(coverage.get("coreTasksCompleted"))
-        primary = clean_text(coverage.get("primaryLoop"))
-
-        bridges: list[str] = []
-        # Detail about what the app actually does
-        if highlights and word_count(highlights[0]) >= 4:
-            bridges.append(f"The first thing worth knowing is that {highlights[0][0].lower() + highlights[0][1:]}.")
-        # Elaborate on the core task with a before/after frame
-        if primary and word_count(primary) >= 4:
-            bridges.append(f"The core loop is simple: {primary[0].lower() + primary[1:]}.")
-        # What tasks were completed
-        if len(tasks) >= 2:
-            bridges.append(f"During this run I {tasks[0][0].lower() + tasks[0][1:]}, then {tasks[1][0].lower() + tasks[1][1:]}.")
-        if len(tasks) >= 3:
-            bridges.append(f"After that I also {tasks[2][0].lower() + tasks[2][1:]} to push the test further.")
-        # Surprises and limitations
-        if surprises and word_count(surprises[0]) >= 3:
-            bridges.append(f"One thing the App Store listing does not mention: {surprises[0][0].lower() + surprises[0][1:]}.")
-        if len(highlights) >= 2 and word_count(highlights[1]) >= 4:
-            bridges.append(f"Another useful detail is that {highlights[1][0].lower() + highlights[1][1:]}.")
-        if pain_points and word_count(pain_points[0]) >= 3:
-            bridges.append(f"The honest limitation is that {pain_points[0][0].lower() + pain_points[0][1:]}.")
-        # Features explored
-        if len(features) >= 3:
-            bridges.append(f"Along the way I also explored {features[1].lower()} and {features[2].lower()} to see how deep the app really goes.")
-        # Second pain point / limitation
-        if len(pain_points) >= 2 and word_count(pain_points[1]) >= 3:
-            bridges.append(f"Another thing to know is that {pain_points[1][0].lower() + pain_points[1][1:]}.")
-        # Second highlight
-        if len(highlights) >= 3 and word_count(highlights[2]) >= 4:
-            bridges.append(f"It also helps that {highlights[2][0].lower() + highlights[2][1:]}.")
-        # Score context
-        overall = float(as_dict(notes.get("scorecard")).get("overall") or 0)
-        if overall >= 7:
-            bridges.append(f"After one real session, the overall score lands at {overall:.0f} out of ten, which is strong for a first run.")
-        elif overall >= 5:
-            bridges.append(f"The overall score is {overall:.0f} out of ten, honest but still promising after a single session.")
-
-        # Insert bridges after key positions
-        expanded: list[str] = []
-        bridge_idx = 0
-        for i, line in enumerate(lines):
-            expanded.append(line)
-            # Insert bridges at natural transition points
-            insert_after = (i == 0) or (line == core_line) or (line == outcome_line) or (line == hidden_detail_line) or (line == audience_line)
-            if insert_after and bridge_idx < len(bridges) and narration_too_short(expanded):
-                expanded.append(bridges[bridge_idx])
-                bridge_idx += 1
-
-        # Add remaining bridges at the end if still short
-        while bridge_idx < len(bridges) and narration_too_short(expanded):
-            expanded.insert(-1, bridges[bridge_idx])
-            bridge_idx += 1
-
-        lines = [l for l in expanded if l and word_count(l) >= 6][:18]
+    # Expansion is no longer done by splicing fragments from findings.
+    # The default_narration lines are already the best fallback content.
+    # If they're still too short, that's acceptable — a shorter but coherent
+    # narration is better than a longer but incoherent one.
 
     return lines
 
@@ -893,23 +835,23 @@ def narration_too_short(lines: list[str]) -> bool:
 def narration_too_long(lines: list[str]) -> bool:
     if not lines:
         return True
-    if len(lines) > 18:
+    if len(lines) > 20:
         return True
     total_words = sum(len(item.split()) for item in lines)
-    if total_words > 460:
+    if total_words > 500:
         return True
-    return any(len(item.split()) > 28 for item in lines)
+    return False  # Per-line length is handled by sanitize, not rejection
 
 
 def raw_narration_too_long(lines: list[str]) -> bool:
     if not lines:
         return True
-    if len(lines) > 18:
+    if len(lines) > 20:
         return True
     total_words = sum(len(clean_text(item).split()) for item in lines)
-    if total_words > 460:
+    if total_words > 500:
         return True
-    return any(len(clean_text(item).split()) > 28 for item in lines)
+    return False  # Per-line length handled by sanitize
 
 
 def build_revision_notes(feedback: dict[str, Any]) -> list[str]:
@@ -1200,15 +1142,18 @@ def main(root_dir: str) -> int:
         full_name,
         alias,
     )
+    # Selection logic: prefer agent-written narration (higher quality) over
+    # the mechanically generated fallback. Only fall back when preferred is
+    # empty, broken, or way too long.
     if raw_narration_too_long(raw_preferred_narration) or narration_too_long(preferred_narration):
         narration_lines = fallback_narration
-    elif narration_too_short(preferred_narration):
-        # Preferred narration exists but is too short for a 3-minute video.
-        # Use fallback which includes expansion from findings/coverage data.
-        narration_lines = fallback_narration if not narration_too_short(fallback_narration) else preferred_narration
-    else:
+    elif len(preferred_narration) >= 3:
+        # Agent wrote something usable — keep it even if short.
+        # A coherent 7-line narration is better than 18 lines of fragments.
         narration_lines = preferred_narration
-    if len(narration_lines) < 5:
+    else:
+        narration_lines = fallback_narration
+    if len(narration_lines) < 3:
         narration_lines = fallback_narration
 
     beat_specs: list[dict[str, str]] = []

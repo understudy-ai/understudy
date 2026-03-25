@@ -87,9 +87,9 @@ Write `publish/preview.md` with:
 Title and description guidelines:
 
 - **Title**: Must be attention-grabbing and specific. Format: a curiosity hook or bold claim about the app. Examples:
-  - "Perplexity: The AI Search That Actually Shows Its Sources"
+  - "[App Name]: The [Category] App That Actually [Specific Claim]"
   - "I Let an AI Agent Review This App — Here's What It Found"
-  - "This Free App Might Replace Your Browser (Honest Review)"
+  - "This Free App Might Replace Your [Existing Tool] (Honest Review)"
   Do NOT use generic titles like "App Review" or "iPhone App Review #1".
 
 - **Description**: Two parts:

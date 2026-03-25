@@ -130,19 +130,22 @@ artifacts, not in special-cased core runtime logic.
 
 ## Execution
 
-This pipeline is a compound skill triggered by natural language (e.g., "review
-an iPhone app", "帮我评测一个 app"). It works like any other workspace skill — the
-agent reads this file, understands the stages, and executes them in order.
+This pipeline is triggered by natural language (e.g., "review an iPhone app",
+"find and review a free app"). One message starts the entire pipeline.
 
 1. Create the artifacts root: `~/understudy-episodes/ep-YYYY-MM-DD-NNN`.
 2. Write an initial `manifest.json` with the resolved inputs.
-3. For each stage in the Stage Plan above, read the referenced skill file
-   (e.g., `skills/appstore-browser-package/SKILL.md`) and follow its
-   instructions directly.
-4. After each stage, verify the declared outputs exist before proceeding.
-5. If a stage fails with `retry: retry_once`, retry it once.
+3. For each stage, use `sessions_spawn` to create a **child session** that
+   reads the stage's SKILL.md and executes it. This keeps each stage in its
+   own context and lets auto-compaction work between stages.
+4. Wait for each child session to complete, then verify outputs exist.
+5. If a stage fails with `retry: retry_once`, spawn it again once.
 6. If a stage fails with `retry: pause_for_human`, stop and ask the user.
-7. The pipeline is complete when all 6 stages finish or a stage fails terminally.
+7. For the exploration stage (app-explore), spawn **3 separate child sessions**
+   — one per round (Round 1: primary task, Round 2: secondary feature,
+   Round 3: limits). Each round reads and updates the shared notes.json.
+   Auto-compaction triggers between rounds, keeping context fresh.
+8. The pipeline is complete when all 6 stages finish or a stage fails.
 
 ## Failure Policy
 

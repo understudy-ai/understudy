@@ -83,38 +83,108 @@ metadata:
 - `manifest.json` with `selectedApp`
 - optional `targetApp` override, but the manifest is the source of truth once Stage 1 finishes
 
-## Context Management
+## Exploration Architecture: 3 Focused Rounds
 
-GUI exploration consumes large amounts of context (each gui_observe returns
-detailed visual descriptions). To avoid running out of context before writing
-notes:
+The exploration must be deep enough to fill a 3-minute video. To achieve this
+within a single agent context, the exploration is structured as **3 focused
+rounds** with note-writing checkpoints between them.
 
-1. **Be efficient with observations**: After every gui_click or gui_type, do ONE gui_observe. Do not observe repeatedly without acting.
-2. **Batch your screenshots**: Capture 2-3 screenshots in a row during a single shell block rather than one-at-a-time with observations between each.
-3. **Write partial notes early**: As instructed in the incremental notes section, write a draft `experience/notes.json` after screenshot 04. This is non-negotiable.
-4. **Do not re-read skill files mid-exploration**: You already read them at the start. Do not re-read `iphone-mirroring-basics` or `app-explore` during the run.
-5. **Minimize shell output**: When running bash commands, pipe output through `head` or `tail` to avoid filling context with verbose tool results.
-6. **3 scenarios max, then write**: After completing 3 functional scenarios, stop exploring and write the final notes. More exploration is only worthwhile if you have context budget remaining.
+### Round 1: First impressions + primary task (screenshots 01-05)
 
-If you notice your responses getting truncated or tool calls failing, **immediately write notes with whatever evidence you have** rather than continuing to explore.
+1. Open the app from the home screen.
+2. Capture `01-First-Screen.png` — what greets you on launch.
+3. Handle onboarding/permissions (see Step 4 below).
+4. Navigate to the main working surface. Capture `02-Main-Screen.png`.
+5. Complete the app's **primary task** end-to-end:
+   - For photo editors: import photo → apply one edit → see result
+   - For note apps: create a note → type content → see it saved
+   - For search/AI: ask a question → get an answer
+   - For utilities: do the main thing the app promises
+6. Capture `03-Core-Task.png` (task in progress) and `04-Core-Result.png` (result).
+7. Capture one short live clip of the core task if motion helps.
+8. Capture `05-Detail.png` — drill into the result (source panel, edit details, settings of the result).
 
-## Fast Path
+**Checkpoint**: Write partial `experience/notes.json` with Round 1 findings.
 
-This is the default successful Stage 4 flow.
+### Round 2: Secondary feature + discovery (screenshots 06-10)
 
-1. Read `manifest.json`, `topic/app-store-listing.json`, and `topic/selection-notes.md`.
-2. Lock one tiny truthful coverage plan:
-   - `primaryLoop`: the smallest real task that proves the app was used
-   - `extraProofBeat`: one revisit / persistence / trust / limit beat from the same story
-3. Re-open iPhone Mirroring from the home screen and launch the installed app.
-4. Default evidence target:
-   - one hook-friendly first useful screen
-   - one onboarding / "how to start" beat
-   - one action-in-progress beat
-   - one changed-state or saved-result beat
-   - one revisit / persistence / trust / limit beat
-   - one less-obvious detail, hidden affordance, or best-practice beat, ideally something the Stage 1 listing did not clearly advertise
-   - one or more short live clips when motion would clearly help the final video
+9. Try a **different feature or mode** than what you did in Round 1:
+   - For photo editors: use a different tool (e.g., if you used filters in R1, use manual adjust in R2)
+   - For note apps: organize, search, tag, or use a different note type
+   - For search/AI: try a follow-up, a different mode, or save/bookmark
+10. Capture `06-Secondary-Task.png` and `07-Secondary-Result.png`.
+11. **Discover something non-obvious**: explore settings, pricing, hidden features, limits.
+12. Capture `08-Discovery.png` (hidden feature or surprise).
+13. Check for persistence: leave the screen and come back. Did your work survive?
+14. Capture `09-Settings.png` and `10-Revisit.png`.
+
+**Checkpoint**: Update `experience/notes.json` with Round 2 findings.
+
+### Round 3: Limits + polish (screenshots 11-15)
+
+15. Find at least one honest **limitation or friction point**:
+    - Paywall? Feature lock? Missing undo? Confusing UI?
+16. Capture `11-Friction.png`.
+17. If time permits, try one more feature or compare before/after.
+18. Capture `12+` as needed.
+19. Return to home screen. Capture a final state if relevant.
+
+**Checkpoint**: Write final `experience/notes.json`, `review-brief.md`, `story-beats.md`.
+
+### Context efficiency rules
+
+- After every gui_click or gui_type, do ONE gui_observe. Never observe twice without acting.
+- Batch 2-3 screenshots in a single shell block.
+- Do NOT re-read skill files mid-exploration.
+- Minimize shell output (pipe through `head` or `tail`).
+- If context is getting long, **stop and write notes immediately**.
+
+### Screenshot naming convention
+
+Use descriptive names that tell the story:
+
+```
+01-First-Screen.png          — what you see on launch
+02-Main-Screen.png           — the primary working surface
+03-Core-Task.png             — primary task in progress
+04-Core-Result.png           — result of the primary task
+05-Detail.png                — drill-down into result/detail
+06-Secondary-Task.png        — a different feature in action
+07-Secondary-Result.png      — result of the secondary feature
+08-Discovery.png             — something non-obvious/hidden
+09-Settings.png              — settings, pricing, or trust surface
+10-Revisit.png               — persistence proof (came back, it's still there)
+11-Friction.png              — an honest limitation or pain point
+12-Comparison.png            — before/after or side-by-side
+13-Extra-Feature.png         — bonus feature
+14-Export.png                — save/export/share flow
+15-Closing.png               — final state or summary view
+```
+
+## Fast Path (summary)
+
+1. Read manifest, listing, selection-notes.
+2. Plan 3 scenarios based on the app's category and features.
+3. Open app, execute Round 1 (screenshots 01-05, partial notes).
+4. Execute Round 2 (screenshots 06-10, update notes).
+5. Execute Round 3 (screenshots 11+, final notes + review-brief + story-beats).
+6. Return to home screen.
+
+Default evidence target: **12-15 screenshots**, **1-2 clips**, **3 completed scenarios**.
+
+## Execution model
+
+When called from a pipeline, the **caller should spawn each round as a
+separate child session** using `sessions_spawn`. This gives each round a
+fresh context window and allows auto-compaction to run between rounds.
+
+- Round 1 child: "Execute Round 1 of app-explore. Artifacts: <path>. Open the app, do primary task, capture 01-05, write partial notes."
+- Round 2 child: "Execute Round 2 of app-explore. Artifacts: <path>. Continue in the app, secondary feature, capture 06-10, update notes."
+- Round 3 child: "Execute Round 3 of app-explore. Artifacts: <path>. Find limitations, capture 11+, write final notes + review-brief + story-beats."
+
+If running in a single session (not recommended for deep apps), follow the
+context management rules and write notes incrementally.
+
 5. Default screenshot package:
    - `experience/screenshots/01-First-Screen.png`
    - `experience/screenshots/02-Main-Screen.png`

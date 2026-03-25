@@ -114,7 +114,67 @@ def slide_specs_for_assets(assets: Path) -> list[tuple[str, float]]:
         if not (assets / name).exists():
             continue
         specs.append((name, duration))
+
+    # Discover additional phone screenshots that weren't used by rendered cards.
+    # These get inserted before the scorecard/verdict to add visual evidence.
+    experience_dir = assets.parent.parent / "experience" / "screenshots"
+    if experience_dir.exists():
+        # Rendered cards already cover: first-impression, core-task, outcome, secondary-proof
+        # Find screenshots beyond those that aren't already represented
+        used_prefixes = {"01-", "02-", "03-", "04-"}  # covered by base cards
+        extra_shots = sorted([
+            f for f in experience_dir.glob("*.png")
+            if not any(f.name.startswith(p) for p in used_prefixes)
+        ])
+        # Insert extras before scorecard (which is typically second-to-last)
+        insert_idx = len(specs)
+        for i, (name, _) in enumerate(specs):
+            if name in ("scorecard.png", "verdict-card.png"):
+                insert_idx = i
+                break
+
+        for shot in extra_shots[:8]:  # cap at 8 extra to keep video reasonable
+            # Copy to assets dir for the ffmpeg pipeline
+            dest = assets / f"extra-{shot.name}"
+            if not dest.exists():
+                _prepare_phone_slide(shot, dest)
+            if dest.exists():
+                specs.insert(insert_idx, (dest.name, 3.5))
+                insert_idx += 1
+
     return specs
+
+
+def _prepare_phone_slide(src: Path, dest: Path) -> None:
+    """Frame a raw phone screenshot as a 1080x1920 slide with dark background."""
+    try:
+        from PIL import Image, ImageDraw
+
+        phone = Image.open(src).convert("RGB")
+        pw, ph = phone.size
+
+        # Create 1080x1920 dark background
+        bg = Image.new("RGB", (1080, 1920), (13, 25, 40))
+
+        # Scale phone image to fit with padding
+        max_w, max_h = 900, 1600
+        scale = min(max_w / pw, max_h / ph)
+        new_w, new_h = int(pw * scale), int(ph * scale)
+        phone_resized = phone.resize((new_w, new_h), Image.LANCZOS)
+
+        # Center on background
+        x = (1080 - new_w) // 2
+        y = (1920 - new_h) // 2
+        bg.paste(phone_resized, (x, y))
+
+        # Subtle rounded border
+        draw = ImageDraw.Draw(bg)
+        draw.rectangle([x - 2, y - 2, x + new_w + 1, y + new_h + 1],
+                       outline=(60, 80, 100), width=2)
+
+        bg.save(dest)
+    except Exception:
+        pass  # If Pillow fails, skip this slide
 
 
 def read_narration_lines(assets: Path) -> list[str]:
