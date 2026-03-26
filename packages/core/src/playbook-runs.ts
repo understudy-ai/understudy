@@ -45,6 +45,10 @@ export interface PlaybookRunStageState {
 	id: string;
 	name: string;
 	kind: WorkspacePlaybookStageKind;
+	refName?: string;
+	objective?: string;
+	inputs?: string[];
+	outputs?: string[];
 	status: "pending" | "running" | "completed" | "failed" | "skipped";
 	updatedAt?: number;
 }

@@ -57,11 +57,19 @@ export async function persistBundledInstallDefaults() {
   if (Object.keys(next).length > 0) {
     await chrome.storage.local.set(next)
   }
+  const resolvedRelayPort =
+    Object.prototype.hasOwnProperty.call(next, 'relayPort')
+      ? next.relayPort
+      : (Number.isFinite(storedRelayPort) && storedRelayPort > 0 && storedRelayPort <= 65535
+          ? storedRelayPort
+          : bundled.relayPort)
+  const resolvedGatewayToken =
+    Object.prototype.hasOwnProperty.call(next, 'gatewayToken')
+      ? next.gatewayToken
+      : (storedGatewayToken || bundled.gatewayToken || '')
   return {
-    relayPort: Number.isFinite(storedRelayPort) && storedRelayPort > 0 && storedRelayPort <= 65535
-      ? storedRelayPort
-      : bundled.relayPort,
-    gatewayToken: storedGatewayToken || bundled.gatewayToken || '',
+    relayPort: resolvedRelayPort,
+    gatewayToken: resolvedGatewayToken,
   }
 }
 

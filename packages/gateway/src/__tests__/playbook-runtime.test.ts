@@ -301,6 +301,8 @@ describe("playbook runtime", () => {
 			expect(inlineStage.mode).toBe("inline");
 			expect(inlineStage.inlineLaunch?.prompt).toContain("Execute the inline playbook stage `Synthesize Brief`.");
 			expect(inlineStage.inlineLaunch?.prompt).toContain("artifactsRootDir=");
+			expect(inlineStage.inlineLaunch?.prompt).toContain("findings.md=findings.md");
+			expect(inlineStage.inlineLaunch?.prompt).toContain("highlights.json=highlights.json");
 			await writeRunOutputs(inlineStage.run.artifacts.rootDir, ["brief.md"]);
 			const completedInline = await completePlaybookStage({
 				workspaceDir,
@@ -570,6 +572,107 @@ describe("playbook runtime", () => {
 		expect(completed.stages?.find((stage) => stage.id === skillRun.stage.id)?.status).toBe("failed");
 		expect(completed.notesSummary).toContain("Playbook output validation failed");
 		expect(completed.notesSummary).toContain("context.md");
+	});
+
+	it("uses the playbook contract captured at run start for later output validation", async () => {
+		process.env.UNDERSTUDY_BUNDLED_SKILLS_DIR = path.join(os.tmpdir(), "__understudy-no-bundled-skills__");
+		const workspaceDir = await makeTempDir("understudy-playbook-runtime-snapshot-");
+		await writeArtifact(
+			workspaceDir,
+			"snapshot-playbook",
+			[
+				"---",
+				"name: snapshot-playbook",
+				'description: "Playbook snapshot validation fixture."',
+				"metadata:",
+				"  understudy:",
+				'    artifactKind: "playbook"',
+				"    childArtifacts:",
+				'      - name: "collect-context"',
+				'        artifactKind: "skill"',
+				"        required: true",
+				"---",
+				"",
+				"# snapshot-playbook",
+				"",
+				"## Stage Plan",
+				"",
+				"1. [skill] collect-context -> Gather context | outputs: context.md | retry: retry_once",
+				"",
+			].join("\n"),
+		);
+		await writeArtifact(
+			workspaceDir,
+			"collect-context",
+			[
+				"---",
+				"name: collect-context",
+				'description: "Collect context into the run artifacts root."',
+				"metadata:",
+				"  understudy:",
+				'    artifactKind: "skill"',
+				"---",
+				"",
+				"# collect-context",
+			].join("\n"),
+		);
+
+		const started = await startPlaybookRun({
+			workspaceDir,
+			playbookName: "snapshot-playbook",
+			runId: "run_snapshot_contract",
+			now: Date.UTC(2026, 2, 20, 8, 0, 0),
+		});
+		expect(started.run.stages?.[0]?.outputs).toEqual(["context.md"]);
+
+		const launched = await runPlaybookNextStage({
+			workspaceDir,
+			runId: "run_snapshot_contract",
+			parentSessionId: "parent-snapshot",
+			spawnSubagent: vi.fn(async () => ({
+				childSessionId: "parent-snapshot:subagent:skill",
+				status: "in_flight",
+				mode: "session",
+				runtime: "subagent",
+			})),
+		});
+		await writeArtifact(
+			workspaceDir,
+			"snapshot-playbook",
+			[
+				"---",
+				"name: snapshot-playbook",
+				'description: "Playbook snapshot validation fixture."',
+				"metadata:",
+				"  understudy:",
+				'    artifactKind: "playbook"',
+				"    childArtifacts:",
+				'      - name: "collect-context"',
+				'        artifactKind: "skill"',
+				"        required: true",
+				"---",
+				"",
+				"# snapshot-playbook",
+				"",
+				"## Stage Plan",
+				"",
+				"1. [skill] collect-context -> Gather context | outputs: renamed.md | retry: retry_once",
+				"",
+			].join("\n"),
+		);
+		await writeRunOutputs(launched.run.artifacts.rootDir, ["context.md"]);
+
+		const completed = await completePlaybookStage({
+			workspaceDir,
+			runId: "run_snapshot_contract",
+			stageId: launched.stage.id,
+			status: "completed",
+			summary: "Collected context according to the original run contract.",
+			artifactPaths: ["context.md"],
+			now: Date.UTC(2026, 2, 20, 8, 5, 0),
+		});
+		expect(completed.status).toBe("completed");
+		expect(completed.notesSummary).not.toContain("Playbook output validation failed");
 	});
 
 	it("accepts alternative output paths when one declared artifact exists", async () => {

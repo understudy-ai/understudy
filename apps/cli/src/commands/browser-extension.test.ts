@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,13 +8,22 @@ import {
 	parseBrowserExtensionSlashCommand,
 	resolveBrowserExtensionInstallDir,
 } from "./browser-extension.js";
+import { persistBundledInstallDefaults } from "../../../../assets/chrome-extension/install-config.js";
 
 const tempDirs: string[] = [];
+const originalChrome = globalThis.chrome;
+const originalFetch = globalThis.fetch;
 
 afterEach(async () => {
 	for (const dir of tempDirs.splice(0)) {
 		await import("node:fs/promises").then(({ rm }) => rm(dir, { recursive: true, force: true }));
 	}
+	globalThis.chrome = originalChrome;
+	globalThis.fetch = originalFetch;
+});
+
+beforeEach(() => {
+	vi.restoreAllMocks();
 });
 
 describe("browser extension install", () => {
@@ -111,5 +120,38 @@ describe("browser extension install", () => {
 		expect(parseBrowserExtensionSlashCommand("/browser-extension config mode=extension")).toBeUndefined();
 		expect(parseBrowserExtensionSlashCommand("/extension")).toBeUndefined();
 		expect(parseBrowserExtensionSlashCommand("/extension path managed")).toBeUndefined();
+	});
+
+	it("returns merged relay defaults after persisting bundled config", async () => {
+		globalThis.fetch = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({
+				relayPort: 24444,
+				gatewayToken: "seed-token",
+			}),
+		})) as typeof fetch;
+		globalThis.chrome = {
+			runtime: {
+				getURL: vi.fn((value: string) => `chrome-extension://test/${value}`),
+			},
+			storage: {
+				local: {
+					get: vi.fn(async () => ({
+						relayPort: "",
+						gatewayToken: "",
+					})),
+					set: vi.fn(async () => undefined),
+				},
+			},
+		} as any;
+
+		await expect(persistBundledInstallDefaults()).resolves.toEqual({
+			relayPort: 24444,
+			gatewayToken: "seed-token",
+		});
+		expect(globalThis.chrome.storage.local.set).toHaveBeenCalledWith({
+			relayPort: 24444,
+			gatewayToken: "seed-token",
+		});
 	});
 });

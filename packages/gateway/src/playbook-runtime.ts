@@ -148,19 +148,11 @@ async function collectArtifactFiles(
 }
 
 async function findMissingStageOutputs(params: {
-	workspaceDir: string;
 	run: PlaybookRunRecord;
 	stageId: string;
 }): Promise<string[]> {
-	const artifact = await loadWorkspaceArtifactByName({
-		workspaceDir: params.workspaceDir,
-		name: params.run.playbookName,
-	});
-	if (!artifact || artifact.artifactKind !== "playbook") {
-		return [];
-	}
-	const stage = artifact.stages.find((entry) => entry.id === params.stageId);
-	if (!stage || stage.kind === "approval" || stage.outputs.length === 0) {
+	const stage = params.run.stages?.find((entry) => entry.id === params.stageId);
+	if (!stage || stage.kind === "approval" || !stage.outputs || stage.outputs.length === 0) {
 		return [];
 	}
 	const outputGroups = stage.outputs
@@ -291,10 +283,32 @@ async function resolveStageInputBindings(
 	if (stage.inputs.length === 0) {
 		return combinedInputs;
 	}
+	let artifactFiles: string[] | undefined;
+	const resolvedEntries = await Promise.all(stage.inputs.map(async (key) => {
+		const directValue = combinedInputs[key];
+		if (directValue !== undefined) {
+			return [key, directValue] as const;
+		}
+		for (const pattern of splitArtifactOutputAlternatives(key)) {
+			if (outputPatternHasGlobMagic(pattern)) {
+				artifactFiles ??= await collectArtifactFiles(run.artifacts.rootDir);
+				const match = artifactFiles.find((entry) => globPatternToRegex(pattern).test(entry));
+				if (match) {
+					return [key, match] as const;
+				}
+				continue;
+			}
+			try {
+				await stat(join(run.artifacts.rootDir, pattern));
+				return [key, pattern] as const;
+			} catch {
+				// Try the next alternative.
+			}
+		}
+		return undefined;
+	}));
 	return Object.fromEntries(
-		stage.inputs
-			.map((key) => [key, combinedInputs[key]] as const)
-			.filter((entry): entry is [string, string | number | boolean] => entry[1] !== undefined),
+		resolvedEntries.filter((entry): entry is [string, string | number | boolean] => entry !== undefined),
 	);
 }
 
@@ -381,11 +395,10 @@ export async function completePlaybookStage(
 	let effectiveStatus = options.status;
 	let effectiveSummary = options.summary;
 	if (options.status === "completed") {
-		const missingOutputs = await findMissingStageOutputs({
-			workspaceDir: options.workspaceDir,
-			run,
-			stageId: options.stageId,
-		});
+			const missingOutputs = await findMissingStageOutputs({
+				run,
+				stageId: options.stageId,
+			});
 		if (missingOutputs.length > 0) {
 			effectiveStatus = "failed";
 			effectiveSummary = [
