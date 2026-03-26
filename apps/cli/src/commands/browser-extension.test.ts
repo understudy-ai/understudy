@@ -8,18 +8,23 @@ import {
 	parseBrowserExtensionSlashCommand,
 	resolveBrowserExtensionInstallDir,
 } from "./browser-extension.js";
+// @ts-expect-error test-only import of raw extension asset module
 import { persistBundledInstallDefaults } from "../../../../assets/chrome-extension/install-config.js";
 
 const tempDirs: string[] = [];
-const originalChrome = globalThis.chrome;
+const testGlobal = globalThis as typeof globalThis & {
+	chrome?: any;
+	fetch?: typeof fetch;
+};
+const originalChrome = testGlobal.chrome;
 const originalFetch = globalThis.fetch;
 
 afterEach(async () => {
 	for (const dir of tempDirs.splice(0)) {
 		await import("node:fs/promises").then(({ rm }) => rm(dir, { recursive: true, force: true }));
 	}
-	globalThis.chrome = originalChrome;
-	globalThis.fetch = originalFetch;
+	testGlobal.chrome = originalChrome;
+	testGlobal.fetch = originalFetch;
 });
 
 beforeEach(() => {
@@ -123,14 +128,14 @@ describe("browser extension install", () => {
 	});
 
 	it("returns merged relay defaults after persisting bundled config", async () => {
-		globalThis.fetch = vi.fn(async () => ({
+		testGlobal.fetch = vi.fn(async () => ({
 			ok: true,
 			json: async () => ({
 				relayPort: 24444,
 				gatewayToken: "seed-token",
 			}),
-		})) as typeof fetch;
-		globalThis.chrome = {
+		}) as unknown as Response) as unknown as typeof fetch;
+		testGlobal.chrome = {
 			runtime: {
 				getURL: vi.fn((value: string) => `chrome-extension://test/${value}`),
 			},
@@ -149,7 +154,7 @@ describe("browser extension install", () => {
 			relayPort: 24444,
 			gatewayToken: "seed-token",
 		});
-		expect(globalThis.chrome.storage.local.set).toHaveBeenCalledWith({
+		expect(testGlobal.chrome.storage.local.set).toHaveBeenCalledWith({
 			relayPort: 24444,
 			gatewayToken: "seed-token",
 		});
