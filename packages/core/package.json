@@ -1,6 +1,6 @@
 {
 	"name": "@understudy/core",
-	"version": "0.1.5",
+	"version": "0.2.0",
 	"private": true,
 	"description": "Understudy agent runtime core",
 	"type": "module",

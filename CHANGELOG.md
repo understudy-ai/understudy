@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.2.0 — 2026-03-26
+
+Reposition Understudy around three ideas that now define the product more clearly in both code and docs: a general-purpose local agent first, modern computer use with bring-your-own API key second, and teach/crystallization/route-aware learning on top. This release also hardens the teach analysis path and aligns release/version metadata across the runtime.
+
+### Added
+
+- Workspace artifact publishing now supports `skill`, `worker`, and `playbook` outputs through the shared teach/task-draft pipeline.
+- Browser routing now supports both managed Playwright sessions and Chrome extension relay attach flows behind the same browser surface.
+
+### Changed
+
+- Refreshed the README, GitHub Pages overview, demo workspaces, and product-design docs to lead with "general agent → computer use → teach and learning", matching the current implementation and product story.
+- Bumped all workspace package versions, CLI/runtime version reporting, and Chrome extension release metadata to `0.2.0`.
+- Session-backed teach analysis now uses adaptive evidence-pack sizing by default instead of a hard `2 episodes / 6 keyframes` cap.
+- Session-backed teach analysis no longer applies a default hard 120s timeout unless explicitly configured.
+- Teach evidence-pack construction now filters `/teach start`, `/teach stop`, and other Understudy recording scaffolding noise before analysis.
+
+### Fixed
+
+- Corrected gateway-backed TUI ordering so tool activity renders before the final assistant reply instead of appearing out of order.
+- Fixed a docs/demo mismatch where the general-agent demo summary still referred to saving output on Desktop instead of Downloads.
+
 ## 0.1.5 — 2026-03-18
 
 Sync workspace/runtime version reporting to the published package version, make dual-registry releases rerun-safe, and align release metadata across the CLI, gateway, MCP client, and Chrome relay extension.

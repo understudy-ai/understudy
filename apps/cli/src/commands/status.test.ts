@@ -17,7 +17,7 @@ vi.mock("@understudy/core", () => ({
 		load: mocks.loadConfig,
 	},
 	resolveUnderstudyHomeDir: mocks.resolveUnderstudyHomeDir,
-	resolveUnderstudyPackageVersion: () => "0.1.5",
+	resolveUnderstudyPackageVersion: () => "0.2.0",
 }));
 
 vi.mock("@understudy/gateway", () => ({
@@ -66,7 +66,7 @@ describe("runStatusCommand", () => {
 			timeout: 1500,
 		});
 		const payload = JSON.parse(String(log.mock.calls[0]?.[0]));
-		expect(payload.version).toBe("0.1.5");
+		expect(payload.version).toBe("0.2.0");
 		expect(payload.gateway).toEqual({
 			running: true,
 			pid: undefined,
@@ -95,7 +95,7 @@ describe("runStatusCommand", () => {
 
 		expect(mocks.createRpcClient).toHaveBeenCalledTimes(2);
 		const payload = JSON.parse(String(log.mock.calls[0]?.[0]));
-		expect(payload.version).toBe("0.1.5");
+		expect(payload.version).toBe("0.2.0");
 		expect(payload.gateway).toEqual({
 			running: false,
 			staleLock: {

@@ -1,6 +1,6 @@
 {
 	"name": "@understudy/tools",
-	"version": "0.1.5",
+	"version": "0.2.0",
 	"private": true,
 	"description": "Understudy built-in tools (browser, web, process, memory, message, schedule, sessions)",
 	"type": "module",
