@@ -113,7 +113,7 @@ Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsAp
 
 > *演示流程：搜索照片 → 在 Pixelmator Pro 中打开 → 去除背景 → 通过 Telegram 发送。教一次，自主重放。*
 
-> *此演示生成的已发布 skill 产物：[examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md)。*
+> *此演示生成的已发布 skill 产物：[examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)。*
 
 ### 示例工作区
 
@@ -172,7 +172,7 @@ Planner 决定每一步使用哪条路线。一个任务可能浏览网站、运
 
 Draft / publish 管线现在也不只支持一种产物。当前 schema 可以发布 `skill`、`worker` 和 `playbook` 这几类 workspace artifact，不过演示教学最常见的产物仍然是可复用 skill。
 
-仓库里放了一个真实发布产物示例：[examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md)。它故意放在 `examples/` 下，只用于展示产物格式，不会被当成真正的 workspace skill 自动加载。
+仓库里放了一个真实发布产物示例：[examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)。它故意放在 `examples/` 下，只用于展示产物格式，不会被当成真正的 workspace skill 自动加载。
 
 完整的 teach 管线、证据包构建和验证细节见 [产品设计](./docs/Product_Design.zh-CN.md)。
 

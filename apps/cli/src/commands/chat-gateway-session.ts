@@ -945,6 +945,8 @@ export async function createGatewayBackedInteractiveSession(
 	};
 
 	const close = async () => {
+		wsIntentionallyClosed = true;
+		if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
 		gatewayState.isStreaming = false;
 		gatewayState.currentTurn = undefined;
 		gatewayState.socket?.removeAllListeners();
@@ -1291,6 +1293,10 @@ export async function createGatewayBackedInteractiveSession(
 		getGatewaySessionId: () => string | undefined;
 	};
 
+	let wsIntentionallyClosed = false;
+	let wsReconnectAttempt = 0;
+	let wsReconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
 	const connectEventStream = () => {
 		const socketUrl = buildGatewaySocketUrl(
 			options.gatewayUrl,
@@ -1299,6 +1305,24 @@ export async function createGatewayBackedInteractiveSession(
 		try {
 			const socket = new WebSocket(socketUrl);
 			gatewayState.socket = socket;
+
+			socket.on("open", () => {
+				wsReconnectAttempt = 0;
+				// Catch up on any events missed while disconnected.
+				syncHistory().catch(() => {});
+			});
+
+			socket.on("close", () => {
+				if (wsIntentionallyClosed) return;
+				scheduleReconnect();
+			});
+
+			socket.on("error", () => {
+				// The "close" event always follows "error", so reconnect
+				// is handled there. Just make sure the socket is cleaned up.
+				try { socket.close(); } catch { /* already closing */ }
+			});
+
 			socket.on("message", (raw) => {
 				try {
 					const parsed = JSON.parse(raw.toString()) as { type?: string; data?: Record<string, unknown> };
@@ -1387,7 +1411,19 @@ export async function createGatewayBackedInteractiveSession(
 			});
 		} catch {
 			gatewayState.socket = null;
+			if (!wsIntentionallyClosed) scheduleReconnect();
 		}
+	};
+
+	const scheduleReconnect = () => {
+		if (wsIntentionallyClosed) return;
+		if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+		// Exponential backoff: 1s, 2s, 4s, capped at 10s.
+		const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempt), 10_000);
+		wsReconnectAttempt++;
+		wsReconnectTimer = setTimeout(() => {
+			if (!wsIntentionallyClosed) connectEventStream();
+		}, delay);
 	};
 
 	try {
