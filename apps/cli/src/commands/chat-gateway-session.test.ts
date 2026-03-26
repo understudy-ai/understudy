@@ -10,6 +10,7 @@ const wsMocks = vi.hoisted(() => {
 		static readonly OPEN = 1;
 		static readonly CLOSING = 2;
 		static readonly CLOSED = 3;
+		private readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
 		readonly close = vi.fn(() => {
 			this.readyState = MockWebSocket.CLOSED;
 			for (const handler of this.closeHandlers) {
@@ -27,7 +28,10 @@ const wsMocks = vi.hoisted(() => {
 			webSocketCtor(url);
 		}
 
-		on(_event: string, _handler: (...args: unknown[]) => void): this {
+		on(event: string, handler: (...args: unknown[]) => void): this {
+			const existing = this.handlers.get(event) ?? [];
+			existing.push(handler);
+			this.handlers.set(event, existing);
 			return this;
 		}
 
@@ -42,7 +46,14 @@ const wsMocks = vi.hoisted(() => {
 
 		removeAllListeners(): this {
 			this.closeHandlers = [];
+			this.handlers.clear();
 			return this;
+		}
+
+		emit(event: string, ...args: unknown[]): void {
+			for (const handler of this.handlers.get(event) ?? []) {
+				handler(...args);
+			}
 		}
 	}
 
@@ -319,6 +330,105 @@ describe("createGatewayBackedInteractiveSession", () => {
 			}),
 		]);
 		expect(client.call.mock.calls.filter(([method]) => method === "session.history")).toHaveLength(1);
+
+		await session.close();
+	});
+
+	it("renders tool events before the final assistant message when the gateway produces tools first", async () => {
+		const sendDeferred = deferred<Record<string, unknown>>();
+		const client = {
+			call: vi.fn(async (method: string) => {
+				if (method === "session.create") {
+					return { id: "gateway-session-1" };
+				}
+				if (method === "session.history") {
+					return { sessionId: "gateway-session-1", messages: [] };
+				}
+				if (method === "session.send") {
+					return await sendDeferred.promise;
+				}
+				throw new Error(`unexpected RPC method: ${method}`);
+			}),
+		};
+		const session = await createGatewayBackedInteractiveSession({
+			baseSession: createBaseSession(),
+			client: client as any,
+			gatewayUrl: "https://gateway.example.com",
+			cwd: "/tmp/workspace",
+			forceNew: true,
+		});
+		const events: string[] = [];
+		(session as any).subscribe((event: Record<string, unknown>) => {
+			const type = typeof event.type === "string" ? event.type : "unknown";
+			if (type === "message_start" || type === "message_end") {
+				const role = (event.message as { role?: string } | undefined)?.role ?? "unknown";
+				events.push(`${type}:${role}`);
+				return;
+			}
+			events.push(type);
+		});
+
+		const promptPromise = (session as any).prompt("delete saved messages");
+		for (let attempt = 0; attempt < 10 && !events.includes("agent_start"); attempt += 1) {
+			await Promise.resolve();
+		}
+
+		const socket = wsMocks.sockets.at(-1);
+		expect(socket).toBeDefined();
+		socket?.emit(
+			"message",
+			JSON.stringify({
+				type: "tool_start",
+				data: {
+					sessionId: "gateway-session-1",
+					toolCallId: "tool-1",
+					toolName: "gui_observe",
+					params: { app: "Telegram" },
+				},
+			}),
+		);
+		socket?.emit(
+			"message",
+			JSON.stringify({
+				type: "tool_end",
+				data: {
+					sessionId: "gateway-session-1",
+					toolCallId: "tool-1",
+					toolName: "gui_observe",
+					status: "ok",
+					result: { content: [{ type: "text", text: "Captured Telegram." }] },
+				},
+			}),
+		);
+		socket?.emit(
+			"message",
+			JSON.stringify({
+				type: "stream_end",
+				data: {
+					sessionId: "gateway-session-1",
+					status: "ok",
+					text: "Deleted Saved Messages.",
+				},
+			}),
+		);
+
+		sendDeferred.resolve({
+			sessionId: "gateway-session-1",
+			status: "ok",
+			response: "Deleted Saved Messages.",
+		});
+		await promptPromise;
+
+		expect(events).toEqual([
+			"message_start:user",
+			"message_end:user",
+			"agent_start",
+			"tool_execution_start",
+			"tool_execution_end",
+			"message_start:assistant",
+			"message_end:assistant",
+			"agent_end",
+		]);
 
 		await session.close();
 	});

@@ -570,6 +570,24 @@ describe("runChatCommand", () => {
 		);
 		expect(exit).toHaveBeenCalledWith(1);
 	});
+
+	it("retries gateway health once before failing interactive startup", async () => {
+		const fetchMock = vi.fn()
+			.mockRejectedValueOnce(new Error("cold start"))
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({}),
+			});
+		vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+
+		await runChatCommand({
+			cwd: "/tmp/project",
+			message: "hello",
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(mocks.createGatewayBackedInteractiveSession).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe("managed TUI tool download policy", () => {

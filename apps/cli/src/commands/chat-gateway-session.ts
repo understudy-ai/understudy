@@ -847,6 +847,11 @@ export async function createGatewayBackedInteractiveSession(
 		};
 	};
 
+	let wrapper: InteractiveSessionLike & {
+		close: () => Promise<void>;
+		getGatewaySessionId: () => string | undefined;
+	};
+
 	const flushQueuedPrompts = async () => {
 		if (gatewayState.isStreaming || typeof baseSession.clearQueue !== "function") {
 			return;
@@ -1063,7 +1068,7 @@ export async function createGatewayBackedInteractiveSession(
 		return true;
 	};
 
-	const wrapper = new Proxy(baseSession as Record<string, unknown>, {
+	wrapper = new Proxy(baseSession as Record<string, unknown>, {
 		get(target, prop, receiver) {
 			if (dynamicOverrides.has(prop)) {
 				return dynamicOverrides.get(prop);
@@ -1339,58 +1344,41 @@ export async function createGatewayBackedInteractiveSession(
 									}
 									message.content = content;
 								});
-								break;
-							}
-							case "tool_start":
-								await updateAssistantContent((message) => {
-									const content = Array.isArray(message.content)
-										? message.content as Array<Record<string, unknown>>
-										: [];
-									const toolCallId = typeof data.toolCallId === "string"
-										? data.toolCallId
-										: randomUUID();
-									if (!content.some((part) => part.type === "toolCall" && part.id === toolCallId)) {
-										content.push({
-											type: "toolCall",
-											id: toolCallId,
-											name: typeof data.toolName === "string" ? data.toolName : "tool",
-											arguments: data.params ?? {},
-										});
-									}
-									message.content = content;
-								});
-								await emit({
-									type: "tool_execution_start",
-									toolCallId: data.toolCallId,
-									toolName: data.toolName,
-									args: data.params ?? {},
-								});
-								break;
-							case "tool_end":
-								await emit({
-									type: "tool_execution_end",
-									toolCallId: data.toolCallId,
-									toolName: data.toolName,
-									result: {
-										content: buildToolResultContent(data.result ?? data.error, data.status === "error"),
-									},
-									isError: data.status === "error",
-								});
-								break;
-							case "stream_end":
-								await finalizeTurn({
-									status:
-										data.status === "error"
-											? "error"
-											: data.status === "aborted"
-												? "aborted"
-												: "ok",
-									text: typeof data.text === "string" ? data.text : "",
-									errorMessage: typeof data.error === "string" ? data.error : undefined,
-								});
-								break;
-							default:
-								break;
+							break;
+						}
+						case "tool_start":
+							await emit({
+								type: "tool_execution_start",
+								toolCallId: data.toolCallId,
+								toolName: data.toolName,
+								args: data.params ?? {},
+							});
+							break;
+						case "tool_end":
+							await emit({
+								type: "tool_execution_end",
+								toolCallId: data.toolCallId,
+								toolName: data.toolName,
+								result: {
+									content: buildToolResultContent(data.result ?? data.error, data.status === "error"),
+								},
+								isError: data.status === "error",
+							});
+							break;
+						case "stream_end":
+							await finalizeTurn({
+								status:
+									data.status === "error"
+										? "error"
+										: data.status === "aborted"
+											? "aborted"
+											: "ok",
+								text: typeof data.text === "string" ? data.text : "",
+								errorMessage: typeof data.error === "string" ? data.error : undefined,
+							});
+							break;
+						default:
+							break;
 						}
 					})().catch(() => {});
 				} catch {

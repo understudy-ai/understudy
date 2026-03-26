@@ -159,16 +159,21 @@ function normalizeGatewayUrl(value: string | undefined): string | undefined {
 }
 
 async function probeGatewayHealth(gatewayUrl: string): Promise<boolean> {
-	try {
-		const signal =
-			typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
-				? AbortSignal.timeout(600)
-				: undefined;
-		const response = await fetch(`${gatewayUrl}/health`, { signal });
-		return response.ok;
-	} catch {
-		return false;
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			const signal =
+				typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+					? AbortSignal.timeout(2_000)
+					: undefined;
+			const response = await fetch(`${gatewayUrl}/health`, { signal });
+			if (response.ok) {
+				return true;
+			}
+		} catch {
+			// Retry once for cold starts and transient local stalls.
+		}
 	}
+	return false;
 }
 
 async function resolveInteractiveGatewayUrl(config: UnderstudyConfig): Promise<string> {
