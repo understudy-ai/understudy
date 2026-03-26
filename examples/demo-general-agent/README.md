@@ -4,14 +4,14 @@ Demonstrates Understudy's ability to handle complex everyday tasks from a single
 
 ## Demo Scenario
 
-**Prompt:** "Research the latest computer use capabilities from OpenAI, Anthropic, xAI (Grok), and Google — covering their research papers, product releases, and technical approaches. Then create a slide deck that includes: (1) a title slide with a representative computer use screenshot, (2) one slide per company with a product screenshot or diagram, (3) a side-by-side feature comparison table covering architecture, grounding method, supported platforms, benchmark scores, and safety approach, (4) a timeline chart showing when each company shipped their key releases, and (5) an industry outlook slide. Save the file to the Downloads."
+**Prompt:** "Research the latest computer use capabilities from OpenAI, Anthropic, xAI (Grok), and Google — covering their research papers, product releases, and technical approaches. Then create a polished PowerPoint presentation for an executive audience. Keep the deck concise and presentation-ready rather than text-heavy. Include: (1) a strong title / thesis slide, (2) one slide per company with a product screenshot or diagram when possible, (3) a side-by-side comparison scorecard covering architecture, grounding method, supported platforms, benchmark scores, and safety approach, (4) a timeline chart showing key releases, and (5) a recommendation / industry outlook slide. Use meaningful visuals across multiple slides; if screenshots are unavailable, create charts or visual summaries instead of falling back to text-only slides. Use only enough current primary sources to support the deck, then build it. Save the final `.pptx` to the Downloads."
 
 **What happens:**
 1. Agent searches the web for recent computer use research and product announcements from all four companies
 2. Collects key facts: model names, release dates, benchmarks, interaction paradigms, limitations
 3. Synthesizes a structured comparison across dimensions (architecture, grounding method, supported platforms, safety approach)
-4. Creates a presentation file with formatted slides, tables, and screenshots
-5. Saves to the user's Desktop
+4. Turns the research into a polished `.pptx` with charts and optional screenshots
+5. Saves to the user's Downloads
 
 **Expected output:** A complete `.pptx` file with 8-10 slides including:
 - Title slide with a computer use screenshot
@@ -36,7 +36,7 @@ Or via API:
 curl -X POST http://localhost:23333/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
-  -d '{"text": "Research the latest computer use capabilities from OpenAI, Anthropic, xAI (Grok), and Google — covering their research papers, product releases, and technical approaches. Then create a slide deck that includes: (1) a title slide with a representative computer use screenshot, (2) one slide per company with a product screenshot or diagram, (3) a side-by-side feature comparison table covering architecture, grounding method, supported platforms, benchmark scores, and safety approach, (4) a timeline chart showing when each company shipped their key releases, and (5) an industry outlook slide. Save the file to the Desktop.", "channelId": "web", "senderId": "demo"}'
+  -d '{"text": "Research the latest computer use capabilities from OpenAI, Anthropic, xAI (Grok), and Google — covering their research papers, product releases, and technical approaches. Then create a polished PowerPoint presentation for an executive audience. Keep the deck concise and presentation-ready rather than text-heavy. Include: (1) a strong title / thesis slide, (2) one slide per company with a product screenshot or diagram when possible, (3) a side-by-side comparison scorecard covering architecture, grounding method, supported platforms, benchmark scores, and safety approach, (4) a timeline chart showing key releases, and (5) a recommendation / industry outlook slide. Use meaningful visuals across multiple slides; if screenshots are unavailable, create charts or visual summaries instead of falling back to text-only slides. Use only enough current primary sources to support the deck, then build it. Save the final .pptx to the Downloads.", "channelId": "web", "senderId": "demo"}'
 ```
 
 ## Model

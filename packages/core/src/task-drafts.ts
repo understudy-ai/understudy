@@ -2626,7 +2626,7 @@ function buildPublishedSkillMarkdown(params: {
 		"## Failure Policy",
 		"",
 		"- Use `gui_observe` before each `gui_click`/`gui_type` to confirm the target is visible on the current surface.",
-		"- Use `groundingMode: \"complex\"` after any grounding failure or when the UI is dense/ambiguous.",
+		"- Use `groundingMode: \"single\"` for clearly labeled one-match controls such as a top-menu item, dialog action, tab, or row. Escalate to `groundingMode: \"complex\"` after any grounding failure or when the UI is dense/ambiguous.",
 		"- Use `captureMode: \"display\"` for menu bar, Dock, or cross-window operations; `captureMode: \"window\"` for in-app work.",
 		"- Describe targets using visible text labels from the current screenshot, not memorized positions from the teach recording.",
 		"- Re-observe the UI after each significant state change.",

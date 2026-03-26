@@ -679,6 +679,68 @@ describe("createGatewaySessionRuntime reset behavior", () => {
 		expect(result).toMatchObject({ sessionId: "scope-reset" });
 	});
 
+	it("recovers once when a prompt run ends with an empty visible reply", async () => {
+		const sessionEntries = new Map<string, SessionEntry>();
+		const inFlightSessionIds = new Set<string>();
+		const entry = createEntry("scope-empty-reply");
+		const usageTracker = { record: vi.fn() };
+		const appendHistory = vi.fn((target: SessionEntry, role: "user" | "assistant", text: string) => {
+			target.history.push({
+				role,
+				text,
+				timestamp: target.history.length + 1,
+			});
+		});
+		const getOrCreateSession = vi.fn(async () => entry);
+		const createScopedSession = vi.fn();
+		const promptSession = vi.fn(async (_entry: SessionEntry, text: string, runId?: string) => {
+			if (text.includes("empty <final>")) {
+				return {
+					response: "Completed the Telegram send.",
+					runId: runId ?? "run-empty-reply",
+				};
+			}
+			return {
+				response: "",
+				runId: runId ?? "run-empty-reply",
+			};
+		});
+		const abortSessionEntry = vi.fn(async () => false);
+
+		const runtime = createGatewaySessionRuntime({
+			sessionEntries,
+			inFlightSessionIds,
+			config: {
+				defaultModel: "claude-sonnet-4-6",
+				defaultProvider: "anthropic",
+				agent: { userTimezone: "Asia/Hong_Kong" },
+			} as any,
+			usageTracker: usageTracker as any,
+			estimateTokens: (text) => text.length,
+			appendHistory: appendHistory as any,
+			getOrCreateSession: getOrCreateSession as any,
+			createScopedSession: createScopedSession as any,
+			promptSession: promptSession as any,
+			abortSessionEntry: abortSessionEntry as any,
+		});
+
+		const result = await runtime.chatHandler("Send a test message in Telegram.", {
+			channelId: "web",
+			senderId: "user-empty-reply",
+		});
+
+		expect(promptSession).toHaveBeenCalledTimes(2);
+		expect(promptSession.mock.calls[1]?.[1]).toContain("empty <final>");
+		expect(result).toMatchObject({
+			status: "ok",
+			response: "Completed the Telegram send.",
+		});
+		expect(entry.history).toEqual([
+			expect.objectContaining({ role: "user", text: "Send a test message in Telegram." }),
+			expect.objectContaining({ role: "assistant", text: "Completed the Telegram send." }),
+		]);
+	});
+
 	it("serializes same-session prompt execution instead of starting concurrent runs", async () => {
 		const sessionEntries = new Map<string, SessionEntry>();
 		const inFlightSessionIds = new Set<string>();

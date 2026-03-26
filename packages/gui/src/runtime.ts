@@ -38,7 +38,7 @@ const DEFAULT_WAIT_INTERVAL_MS = 350;
 const DEFAULT_DRAG_DURATION_MS = 450;
 const DEFAULT_DRAG_STEPS = 24;
 const DEFAULT_HOVER_SETTLE_MS = 200;
-const DEFAULT_POST_ACTION_CAPTURE_SETTLE_MS = 1_500;
+const DEFAULT_POST_ACTION_CAPTURE_SETTLE_MS = 3_000;
 const DEFAULT_CLICK_AND_HOLD_MS = 650;
 const DEFAULT_TYPE_FOCUS_SETTLE_MS = 180;
 const DEFAULT_SCROLL_AMOUNT = 5;
@@ -667,6 +667,8 @@ function defaultGroundingModeForAction(
 ): GuiGroundingMode | undefined {
 	switch (action) {
 		case "type":
+		case "drag_source":
+		case "drag_destination":
 			return "complex";
 		// "wait" intentionally omitted — its validation round is always suppressed
 		// in the provider, so requesting "complex" mode would be misleading.
@@ -2586,7 +2588,14 @@ export class ComputerUseGuiRuntime {
 		} else if (params.typeStrategy) {
 			action = await performNativeType({ ...params, app: appName }, input.text);
 		} else {
-			action = await performType({ ...params, app: appName }, input.text);
+			try {
+				action = await performType({ ...params, app: appName }, input.text);
+			} catch (error) {
+				if (!(error instanceof GuiRuntimeError)) {
+					throw error;
+				}
+				action = await performNativeType({ ...params, app: appName }, input.text);
+			}
 		}
 			const evidence = await this.captureEvidenceImage({
 				appName,

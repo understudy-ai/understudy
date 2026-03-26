@@ -281,6 +281,46 @@ describe("wrapToolsWithWatchdog", () => {
 		expect((result.details as any)?.error).toBeUndefined();
 	});
 
+	it("lets subagents wait honor the requested timeout window", async () => {
+		vi.useFakeTimers();
+		const tool: AgentTool<any> = {
+			name: "subagents",
+			label: "Subagents",
+			description: "Wait for child sessions",
+			parameters: Type.Object({
+				action: Type.String(),
+				timeoutMs: Type.Number(),
+			}),
+			execute: vi.fn(
+				async () =>
+					new Promise<AgentToolResult<any>>((resolve) => {
+						setTimeout(
+							() =>
+								resolve({
+									content: [{ type: "text" as const, text: "child completed" }],
+									details: {},
+								}),
+							35_000,
+						);
+					}),
+			),
+		};
+
+		const [wrapped] = wrapToolsWithWatchdog([tool], {
+			runtimeProfile: "assistant",
+			preflight: createManifest({
+				toolAvailability: { subagents: { enabled: true } },
+			}),
+		});
+
+		const pending = wrapped.execute("id1", { action: "wait", timeoutMs: 60_000 });
+		await vi.advanceTimersByTimeAsync(36_000);
+		const result = await pending;
+
+		expect((result.content[0] as { text: string }).text).toBe("child completed");
+		expect((result.details as any)?.error).toBeUndefined();
+	});
+
 	it("returns hard timeout when tool never resolves", async () => {
 		vi.useFakeTimers();
 		const tool: AgentTool<any> = {

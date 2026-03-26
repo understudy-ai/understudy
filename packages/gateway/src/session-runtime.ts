@@ -5539,6 +5539,8 @@ export function createGatewaySessionRuntime(
 		channelId?: string;
 		promptOptions?: Record<string, unknown>;
 		runPromise: Promise<{ response: string; runId: string; images?: ImageContent[]; meta?: Record<string, unknown> }>;
+		tracePrompt?: string;
+		allowEmptyReplyRecovery?: boolean;
 		}): Promise<RunTurnResult> => {
 			const promptResult = await params.runPromise;
 			const assistantImages =
@@ -5550,6 +5552,33 @@ export function createGatewaySessionRuntime(
 				{ images: assistantImages },
 			));
 			const visibleResponse = assistantResult.text;
+			if (
+				(params.allowEmptyReplyRecovery ?? true) &&
+				!assistantResult.silent &&
+				visibleResponse.trim().length === 0
+			) {
+				const recoveryPrompt = [
+					"System note: your previous turn ended with an empty <final> after tool use.",
+					"Continue the same task from the current state.",
+					"Do not repeat completed setup.",
+					"Either keep working, or if the task is complete or blocked, say that explicitly in <final>.",
+					"Do not return an empty <final>.",
+				].join(" ");
+				const recoveryRunPromise = promptSession(
+					params.entry,
+					recoveryPrompt,
+					promptResult.runId,
+					params.promptOptions,
+				);
+				void recoveryRunPromise.catch(() => {});
+				return await finalizePromptRun({
+					...params,
+					effectiveText: recoveryPrompt,
+					runPromise: recoveryRunPromise,
+					tracePrompt: params.tracePrompt ?? params.effectiveText,
+					allowEmptyReplyRecovery: false,
+				});
+			}
 			if (!assistantResult.silent) {
 				appendHistory(
 					params.entry,
@@ -5561,7 +5590,7 @@ export function createGatewaySessionRuntime(
 			}
 			const runTrace = storeSessionRunTrace(params.entry, {
 				runId: promptResult.runId,
-				userPrompt: params.effectiveText,
+				userPrompt: params.tracePrompt ?? params.effectiveText,
 			response: visibleResponse,
 			meta: promptResult.meta,
 		});

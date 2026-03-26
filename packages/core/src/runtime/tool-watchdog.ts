@@ -34,7 +34,32 @@ const HEADLESS_DEFAULT: ToolTimeoutPolicy = {
 	hardTimeoutMs: 180_000,
 };
 
-function timeoutPolicy(toolName: string, profile: RuntimeProfile): ToolTimeoutPolicy {
+function resolveRequestedTimeoutMs(params: unknown): number | undefined {
+	if (!params || typeof params !== "object") return undefined;
+	const timeoutMs = (params as { timeoutMs?: unknown }).timeoutMs;
+	return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+		? Math.max(1, Math.floor(timeoutMs))
+		: undefined;
+}
+
+function timeoutPolicy(
+	toolName: string,
+	profile: RuntimeProfile,
+	params?: unknown,
+): ToolTimeoutPolicy {
+	if (toolName === "subagents") {
+		const action =
+			params && typeof params === "object" && typeof (params as { action?: unknown }).action === "string"
+				? (params as { action: string }).action.toLowerCase()
+				: "";
+		const requestedTimeoutMs = resolveRequestedTimeoutMs(params);
+		if (action === "wait" && requestedTimeoutMs) {
+			return {
+				noOutputTimeoutMs: requestedTimeoutMs,
+				hardTimeoutMs: requestedTimeoutMs + 5_000,
+			};
+		}
+	}
 	if (profile === "headless") {
 		return HEADLESS_DEFAULT;
 	}
@@ -133,7 +158,7 @@ async function executeWithWatchdog<TDetails>(
 	) => Promise<AgentToolResult<TDetails | unknown>>,
 ): Promise<AgentToolResult<TDetails | unknown>> {
 	const availability = options.preflight.toolAvailability[toolName];
-	const toolPolicy = timeoutPolicy(toolName, options.runtimeProfile);
+	const toolPolicy = timeoutPolicy(toolName, options.runtimeProfile, params);
 
 	if (availability && !availability.enabled) {
 		return textResult(

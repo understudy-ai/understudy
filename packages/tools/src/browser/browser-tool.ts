@@ -317,6 +317,36 @@ export function createBrowserTool(
 		].join(" ");
 	};
 
+	const isRecoverableExtensionRoutingError = (message: string): boolean => {
+		const normalized = message.trim().toLowerCase();
+		return normalized.includes("no attached tab for method target.createtarget")
+			|| normalized.includes("no tab context is attached")
+			|| (normalized.includes("connectovercdp") && normalized.includes("invalid url: undefined"))
+			|| normalized.includes("retrieving websocket url");
+	};
+
+	const shouldRetryWithManagedFallback = (params: BrowserParams, message: string): boolean => {
+		if (externalManager || hasExplicitManagerConfig(params)) {
+			return false;
+		}
+		if ((params.action !== "start" && params.action !== "open") || !isRecoverableExtensionRoutingError(message)) {
+			return false;
+		}
+		return resolveConfiguredManagerOptions().browserConnectionMode === "extension";
+	};
+
+	const switchToManagedFallback = async (): Promise<BrowserManager> => {
+		if (browserManager?.isRunning()) {
+			await browserManager.close().catch(() => {});
+		}
+		managerSignature = managerSignatureFromOptions({ browserConnectionMode: "managed" });
+		managerConfigSource = "explicit";
+		browserManager = new BrowserManager({ browserConnectionMode: "managed" });
+		return browserManager;
+	};
+
+	const fallbackNotice = "Configured extension relay had no attached tab, so the browser tool retried in managed mode.";
+
 	const ensureBrowserManager = async (params: BrowserParams): Promise<BrowserManager> => {
 		if (externalManager) {
 			return browserManager!;
@@ -1493,6 +1523,58 @@ export function createBrowserTool(
 				}
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
+				if (shouldRetryWithManagedFallback(params, msg)) {
+					try {
+						const retryParams = {
+							...params,
+							browserConnectionMode: "managed" as const,
+						};
+						const fallbackBrowserManager = await switchToManagedFallback();
+						if (params.action === "start") {
+							await fallbackBrowserManager.start();
+							const connection = describeConnectionMode(fallbackBrowserManager, retryParams);
+							return textResult(
+								[`Browser started (${connection.label})`, `[fallback] ${fallbackNotice}`].join("\n"),
+								{
+									connectionMode: connection.resolvedMode ?? connection.configuredMode,
+									configuredConnectionMode: connection.configuredMode,
+									resolvedConnectionMode: connection.resolvedMode,
+									connectionFallback: {
+										from: "extension",
+										to: "managed",
+										reason: msg,
+									},
+								},
+							);
+						}
+						if (params.action === "open") {
+							const tab = await fallbackBrowserManager.createTab(params.url);
+							return textResult(
+								[`Opened ${tab.id}: ${tab.url || "about:blank"}`, `[fallback] ${fallbackNotice}`].join("\n"),
+								{
+									targetId: tab.id,
+									url: tab.url,
+									title: tab.title,
+									connectionFallback: {
+										from: "extension",
+										to: "managed",
+										reason: msg,
+									},
+								},
+							);
+						}
+					} catch (retryError) {
+						const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
+						return textResult(`Browser error: ${retryMsg}`, {
+							error: retryMsg,
+							connectionFallback: {
+								from: "extension",
+								to: "managed",
+								reason: msg,
+							},
+						});
+					}
+				}
 				return textResult(`Browser error: ${msg}`, { error: msg });
 			}
 		},

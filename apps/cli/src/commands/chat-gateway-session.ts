@@ -288,6 +288,8 @@ function buildToolResultContent(payload: unknown, isError: boolean): Array<Recor
 			? (payload as { error: string }).error
 			: payload && typeof payload === "object" && typeof (payload as { summary?: unknown }).summary === "string"
 				? (payload as { summary: string }).summary
+				: payload && typeof payload === "object" && typeof (payload as { textPreview?: unknown }).textPreview === "string"
+					? (payload as { textPreview: string }).textPreview
 				: isError
 					? "Tool execution failed."
 					: "Tool execution finished.";
@@ -869,10 +871,16 @@ export async function createGatewayBackedInteractiveSession(
 		}
 		if (gatewayState.isStreaming) {
 			const behavior = promptOptions?.streamingBehavior;
-			if (behavior !== "steer" && behavior !== "followUp") {
-				throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
+			const queuedBehavior =
+				behavior === "steer" || behavior === "followUp"
+					? behavior
+					: behavior == null
+						? "followUp"
+						: undefined;
+			if (!queuedBehavior) {
+				throw new Error("Invalid streamingBehavior. Expected 'steer' or 'followUp'.");
 			}
-			await queuePromptWhileStreaming(prepared.text, prepared.images, behavior);
+			await queuePromptWhileStreaming(prepared.text, prepared.images, queuedBehavior);
 			return;
 		}
 
