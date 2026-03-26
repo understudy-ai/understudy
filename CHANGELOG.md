@@ -20,6 +20,7 @@ Reposition Understudy around three ideas that now define the product more clearl
 - Session-backed teach analysis now uses adaptive evidence-pack sizing by default instead of a hard `2 episodes / 6 keyframes` cap.
 - Session-backed teach analysis no longer applies a default hard 120s timeout unless explicitly configured.
 - Teach evidence-pack construction now filters `/teach start`, `/teach stop`, and other Understudy recording scaffolding noise before analysis.
+- Removed legacy OpenClaw `message` / `cron` compatibility surfaces and `metadata.openclaw` parsing; the runtime now keeps only the narrower `exec` fallback for bash-only environments.
 
 ### Fixed
 

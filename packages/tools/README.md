@@ -16,7 +16,6 @@ Provides the tool implementations that agents use during session execution:
 | `memory_*` | Semantic memory read/write across sessions |
 | `message_send` | Send messages through channels |
 | `schedule` | Cron jobs, one-shot timers, and run history |
-| `cron` | OpenClaw compatibility alias layered on top of `schedule` |
 | `platform_capabilities` | Report runtime and plugin-provided platform surfaces |
 | `sessions_*` | Subagent session creation and messaging |
 | `image` / `vision_read` / `pdf` | Media ingestion and document understanding helpers |
@@ -42,7 +41,6 @@ Also includes:
 | `gui-tools.ts` | GUI tool definitions and execution |
 | `browser/` | Browser tool with managed, extension, and auto connection modes |
 | `schedule/` | Schedule tool, service, and persistent store |
-| `cron-compat-tool.ts` | OpenClaw `cron.*` compatibility mapping onto `schedule` |
 | `memory/` | Memory tool with pluggable providers |
 | `platform-capabilities.ts` | Core + plugin platform capability normalization |
 | `platform-capabilities-tool.ts` | Runtime-facing `platform_capabilities` tool |

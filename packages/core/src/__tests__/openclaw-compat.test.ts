@@ -6,34 +6,29 @@ import {
 } from "../openclaw-compat.js";
 
 describe("openclaw compatibility tool surfaces", () => {
-	it("still expands OpenClaw tool names for runtime compatibility", () => {
-		expect(expandOpenClawCompatibleToolNames(["exec", "cron", "message"])).toEqual([
+	it("still expands exec for bash-only runtime compatibility", () => {
+		expect(expandOpenClawCompatibleToolNames(["exec", "schedule", "message_send"])).toEqual([
 			"exec",
 			"bash",
-			"cron",
 			"schedule",
-			"message",
 			"message_send",
 		]);
 	});
 
-	it("only hides pure alias names from prompt/tool summaries", () => {
+	it("no longer hides removed message/cron aliases from prompt/tool summaries", () => {
 		expect(filterOpenClawCompatibilityToolNames([
 			"exec",
 			"bash",
-			"cron",
 			"schedule",
-			"message",
 			"message_send",
 		])).toEqual([
 			"exec",
 			"bash",
-			"cron",
 			"schedule",
 			"message_send",
 		]);
-		expect(shouldHideOpenClawCompatibilityToolName("message", ["message_send"])).toBe(true);
 		expect(shouldHideOpenClawCompatibilityToolName("exec", ["bash"])).toBe(false);
+		expect(shouldHideOpenClawCompatibilityToolName("message", ["message_send"])).toBe(false);
 		expect(shouldHideOpenClawCompatibilityToolName("cron", ["schedule"])).toBe(false);
 	});
 });

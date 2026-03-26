@@ -250,65 +250,6 @@ describe("buildWorkspaceSkillSnapshot", () => {
 		);
 	});
 
-	it("understands OpenClaw frontmatter metadata, skillKey, and allowed tool aliases", async () => {
-		process.env.UNDERSTUDY_BUNDLED_SKILLS_DIR = path.join(os.tmpdir(), "__understudy-no-bundled-skills__");
-		const workspace = await makeTempDir("understudy-skills-openclaw-compat-");
-		const workspaceSkills = path.join(workspace, "skills");
-
-		await writeSkill(
-			workspaceSkills,
-			"openclaw-compatible",
-			"openclaw-compatible",
-			"compat skill",
-			[
-				'metadata: { "openclaw": { "skillKey": "compat-key", "primaryEnv": "OPENCLAW_TEST_SKILL_ENV", "requires": { "env": ["OPENCLAW_TEST_SKILL_ENV"] }, "install": [{ "id": "python-brew", "kind": "brew", "bins": ["python3"] }] } }',
-				'allowed-tools: ["message", "cron"]',
-			],
-		);
-
-		delete process.env.OPENCLAW_TEST_SKILL_ENV;
-		let snapshot = buildWorkspaceSkillSnapshot({
-			workspaceDir: workspace,
-			config: {
-				...baseConfig(),
-			} as any,
-		});
-		expect(snapshot.resolvedSkills.some((skill) => skill.name === "openclaw-compatible")).toBe(false);
-
-		snapshot = buildWorkspaceSkillSnapshot({
-			workspaceDir: workspace,
-			config: {
-				...baseConfig(),
-				skills: {
-					entries: {
-						"compat-key": {
-							apiKey: "test-api-key",
-						},
-					},
-				},
-			} as any,
-		});
-		const skill = snapshot.resolvedSkills.find((entry) => entry.name === "openclaw-compatible");
-		const summary = snapshot.skills.find((entry) => entry.name === "openclaw-compatible");
-
-		expect(skill).toBeDefined();
-		expect(skill?.skillKey).toBe("compat-key");
-		expect(skill?.primaryEnv).toBe("OPENCLAW_TEST_SKILL_ENV");
-		expect(skill?.allowedToolNames).toEqual(
-			expect.arrayContaining(["message", "message_send", "cron", "schedule"]),
-		);
-		expect(summary).toMatchObject({
-			name: "openclaw-compatible",
-			skillKey: "compat-key",
-			primaryEnv: "OPENCLAW_TEST_SKILL_ENV",
-			requiredEnv: ["OPENCLAW_TEST_SKILL_ENV"],
-			installCount: 1,
-		});
-		expect(summary?.allowedToolNames).toEqual(
-			expect.arrayContaining(["message_send", "schedule"]),
-		);
-	});
-
 	it("surfaces trigger cues in the prompt for skills that declare them", async () => {
 		process.env.UNDERSTUDY_BUNDLED_SKILLS_DIR = path.join(os.tmpdir(), "__understudy-no-bundled-skills__");
 		const workspace = await makeTempDir("understudy-skills-triggers-");

@@ -210,7 +210,6 @@ function extractMetadata(frontmatter: Record<string, unknown>): SkillRuntimeMeta
 	const candidates = [
 		normalizeMetadata(frontmatter),
 		normalizeMetadata(metadataRecord),
-		normalizeMetadata(metadataRecord?.openclaw),
 		normalizeMetadata(metadataRecord?.understudy),
 	];
 	return candidates.reduce<SkillRuntimeMetadata | undefined>(

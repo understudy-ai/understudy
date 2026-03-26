@@ -124,7 +124,6 @@ export type { MemoryEntry, MemorySearchOptions, MemoryStoreOptions } from "./mem
 // Schedule tools
 export { createScheduleTool } from "./schedule/schedule-tool.js";
 export type { ScheduleToolConfig } from "./schedule/schedule-tool.js";
-export { createOpenClawCronCompatibilityTool } from "./cron-compat-tool.js";
 export type { StoredScheduleJob, ScheduleRunRecord, ScheduleDelivery, ScheduleOptions, ScheduleStoreData } from "./schedule/schedule-store.js";
 export { ScheduleService } from "./schedule/schedule-service.js";
 export type { ScheduleServiceConfig, ScheduleServiceStatus } from "./schedule/schedule-service.js";

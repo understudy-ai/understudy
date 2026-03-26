@@ -8,7 +8,6 @@ import { createAgentsListTool } from "./bridge/agents-list-tool.js";
 import { createGatewayTool } from "./bridge/gateway-tool.js";
 import { createSessionsSpawnTool } from "./bridge/sessions-spawn-tool.js";
 import { createSubagentsTool } from "./bridge/subagents-tool.js";
-import { createOpenClawCronCompatibilityTool } from "./cron-compat-tool.js";
 import { createExecTool } from "./exec-tool.js";
 import {
 	createGuiToolset,
@@ -258,10 +257,7 @@ export function createRuntimeToolset(options: RuntimeToolsetOptions): Array<Agen
 					}
 					: undefined,
 		});
-		tools.push(
-			scheduleTool,
-			createOpenClawCronCompatibilityTool(scheduleTool),
-		);
+		tools.push(scheduleTool);
 	}
 
 	if (options.gatewayUrl) {
@@ -289,12 +285,7 @@ export function createRuntimeToolset(options: RuntimeToolsetOptions): Array<Agen
 			createSessionStatusTool({ gatewayUrl: options.gatewayUrl }),
 			createSessionsSendTool({ gatewayUrl: options.gatewayUrl }),
 			createAgentsListTool({ gatewayUrl: options.gatewayUrl }),
-			...(!hasLocalSchedulingSurface
-				? [
-					gatewayScheduleTool!,
-					createOpenClawCronCompatibilityTool(gatewayScheduleTool!),
-				]
-				: []),
+			...(!hasLocalSchedulingSurface ? [gatewayScheduleTool!] : []),
 			createGatewayTool({ gatewayUrl: options.gatewayUrl }),
 			createSessionsSpawnTool({
 				gatewayUrl: options.gatewayUrl,
