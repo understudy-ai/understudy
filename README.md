@@ -113,7 +113,7 @@ Teach a task by demonstrating it once. Understudy learns the **intent**, not the
 
 > *Demo flow: search for a photo → open in Pixelmator Pro → remove background → send via Telegram. Taught once, replayed autonomously.*
 
-> *The published skill artifact from this demo is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md).*
+> *The published skill artifact from this demo is available at [examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md).*
 
 ### Example Workspaces
 
@@ -172,7 +172,7 @@ The published SKILL.md is a three-layer abstraction: intent procedure (natural l
 
 The draft/publish pipeline is no longer limited to one artifact shape. The current schema can publish `skill`, `worker`, and `playbook` workspace artifacts, although teach-by-demonstration most commonly produces reusable skills today.
 
-A real published output example is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md). It is kept under `examples/` on purpose, so the repo documents the artifact format without auto-loading it as a real workspace skill.
+A real published output example is available at [examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md). It is kept under `examples/` on purpose, so the repo documents the artifact format without auto-loading it as a real workspace skill.
 
 For the full teach pipeline, evidence pack construction, and validation details, see [Product Design](./docs/Product_Design.md).
 

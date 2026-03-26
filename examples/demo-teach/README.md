@@ -20,7 +20,7 @@ Demonstrates Understudy's distinctive learn-from-demonstration stack: teach once
 ## Published Skill Example
 
 The published SKILL.md from this demo is available at:
-[`../published-skills/taught-person-photo-cutout-bc88ec/SKILL.md`](../published-skills/taught-person-photo-cutout-bc88ec/SKILL.md)
+[`../published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md`](../published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)
 
 ## Prerequisites
 
