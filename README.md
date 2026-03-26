@@ -24,23 +24,32 @@ AI agents are getting better at terminals, but real work still spans browsers, d
 
 **It also brings modern computer-use capability without locking you into a subscription product.** Understudy can see the screen and operate software through grounded GUI actions, while still letting you use your own model/API key.
 
-**What makes it distinctive after that is the learning loop.** You can teach by demonstration, let repeated daily work crystallize into reusable skills, and gradually promote faster execution routes over time.
+**What makes it distinctive after that is the learning loop.** You can teach by demonstration today, and the same system already carries early crystallization and route-upgrade machinery for repeated work over time.
 
 - **General agent first** — one runtime across GUI, browser, shell, web, files, memory, messaging, scheduling, and subagents.
-- **Computer use built in** — Cowork-style desktop operation, but local-first and bring-your-own model/API key.
-- **Teach + crystallize + upgrade** — explicit teaching, automatic daily workflow crystallization, and route-aware replay in one system.
+- **Computer use built in** — grounded desktop operation inside the same local runtime, with your own model/API key.
+- **Teach + crystallize + upgrade** — explicit teaching today, plus early workflow crystallization and route-aware replay in one system.
 
 ### Why Understudy?
 
-| Capability | Cowork | OpenClaw | Claude Code | Understudy |
-|---|---|---|---|---|
-| GUI / Computer Use | Yes (macOS) | Limited | No | **Yes (macOS, Windows planned)** |
-| Teach by Demonstration | No | No | No | **Yes** |
-| Self-Improving (5 layers) | No | No | No | **Yes** |
-| Multi-Channel Dispatch | Slack only | 6 channels | No | **8 channels** |
-| Local-First / Private | Cloud | Local | Cloud | **Local** |
-| Open Source | No | Yes | Partial | **Yes** |
-| Pricing | Subscription | API | Subscription | **API (bring your own key)** |
+Snapshot as of March 26, 2026. Conservative: sourced from official docs; if a product does not clearly advertise a capability, the wording stays narrow.
+
+| Capability | OpenClaw | Cowork | Vy (Vercept) | Understudy |
+|:---|:---|:---|:---|:---|
+| GUI / Computer Use | Partial — browser automation | Yes | Yes | **Yes (macOS)** |
+| Teach by Demonstration | No | No | Yes ("Watch & Repeat") | **Yes** |
+| Multi-Channel Dispatch | 20 + channels | 50 + MCP connectors (not a messaging inbox) | No | **8 built-in messaging channels** |
+| Open Source | Yes (MIT) | No | No | **Yes (MIT)** |
+| How You Pay | Open-source runtime + own API keys | Pro $20 /mo · Max $100–200 /mo | Discontinued Mar 25 2026 | **Open-source runtime + own API keys** |
+
+<details><summary>Sources</summary>
+
+- **OpenClaw** — [GitHub](https://github.com/openclaw/openclaw) · [browser docs](https://docs.openclaw.ai/tools/browser) · [pricing](https://www.getopenclaw.ai/en/pricing)
+- **Cowork** — [pricing](https://claude.com/pricing) · [computer-use announcement](https://claude.com/blog/dispatch-and-computer-use) · [Cowork webinar](https://www.anthropic.com/webinars/future-of-ai-at-work-introducing-cowork)
+- **Vy** — [Vercept → Anthropic](https://vercept.com/) · [Watch & Repeat launch](https://vercept.com/changelog/0.3.0) · [workflow updates](https://vercept.com/changelog/0.7.8)
+- **Understudy** — this repo (`README`, `docs/`, `examples/`)
+
+</details>
 
 ## The Five Layers
 
@@ -92,9 +101,9 @@ This is the starting point: Understudy is first a general-purpose agent. Create 
 
 <!-- TODO: embed demo video -->
 
-This is computer use in practice: send a message from Telegram, Discord, Slack, or any of 8 channels, and Understudy receives it on your desktop, executes multi-step tasks — browser research, GUI automation, file creation, shell commands — and replies with the result. All while you're away from your computer.
+This is computer use in practice: send a message from Telegram, Discord, Slack, or any of 8 built-in channels, and Understudy receives it on your desktop, executes multi-step tasks — browser research, GUI automation, file creation, shell commands — and replies with the result. All while you're away from your computer.
 
-Unlike [Claude Dispatch](https://www.anthropic.com/news/cowork), which requires the Claude iOS app, Understudy works with the messaging apps you already use: Telegram, Discord, Slack, WhatsApp, Signal, LINE, iMessage, and Web.
+Understudy works with messaging apps people already use: Telegram, Discord, Slack, WhatsApp, Signal, LINE, iMessage, and Web.
 
 ### Teach — Show Once, Automate Forever
 
