@@ -3,579 +3,510 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Understudy | 通用 Agent + Computer Use + Teach</title>
+    <title>Understudy — 一句话，操作你的整台电脑</title>
     <meta
       name="description"
-      content="Understudy 是一个本地运行的通用电脑 Agent：先是一条指令完成通用工作，再是现代 Computer Use，最后叠加演示教学、日常结晶化 skill 和路线升级。"
+      content="Understudy 是一个开源的本地 AI Agent，能操作你的电脑完成各种任务。给它一个指令，教它一次，它会越用越好。自带模型，开源免费。"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        --bg: #f5f0e8;
-        --bg-deep: #eadfce;
-        --panel: rgba(255, 249, 240, 0.78);
-        --panel-strong: rgba(255, 252, 247, 0.9);
-        --ink: #1f1a16;
-        --muted: #66584c;
-        --line: rgba(77, 55, 32, 0.14);
-        --accent: #d05f2d;
-        --accent-deep: #9e3f1d;
-        --accent-soft: rgba(208, 95, 45, 0.12);
-        --teal: #1e6b66;
-        --shadow: 0 24px 80px rgba(77, 55, 32, 0.14);
-        --radius-xl: 30px;
-        --radius-lg: 22px;
-        --radius-md: 16px;
-        --content-width: 1180px;
+        --bg: #f4f5f9;
+        --bg-card: #ffffff;
+        --bg-dark: #0f1117;
+        --text: #111118;
+        --text-secondary: #555566;
+        --text-tertiary: #888899;
+        --border: rgba(0, 0, 0, 0.06);
+        --border-strong: rgba(0, 0, 0, 0.1);
+        --accent: #4361ee;
+        --accent-soft: rgba(67, 97, 238, 0.08);
+        --accent-mid: rgba(67, 97, 238, 0.15);
+        --green: #10b981;
+        --amber: #f59e0b;
+        --slate: #94a3b8;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+        --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.06);
+        --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.08);
+        --radius: 16px;
+        --radius-sm: 10px;
+        --radius-xs: 6px;
+        --content: 1120px;
+        --font: "DM Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+        --font-serif: "Instrument Serif", "Songti SC", Georgia, serif;
       }
 
       * {
         box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
 
       html {
         scroll-behavior: smooth;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
       body {
-        margin: 0;
-        font-family: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", sans-serif;
-        color: var(--ink);
-        background:
-          radial-gradient(circle at top left, rgba(208, 95, 45, 0.24), transparent 28%),
-          radial-gradient(circle at 85% 12%, rgba(30, 107, 102, 0.22), transparent 24%),
-          linear-gradient(180deg, #f7f1e8 0%, #f3ece3 44%, #efe5d7 100%);
-        min-height: 100vh;
-      }
-
-      body::before {
-        content: "";
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        background-image:
-          linear-gradient(rgba(77, 55, 32, 0.045) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(77, 55, 32, 0.045) 1px, transparent 1px);
-        background-size: 28px 28px;
-        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 85%);
-        opacity: 0.4;
+        font-family: var(--font);
+        color: var(--text);
+        background: var(--bg);
+        line-height: 1.6;
       }
 
       a {
         color: inherit;
+        text-decoration: none;
       }
 
-      .page {
-        position: relative;
-        z-index: 1;
-      }
-
+      /* --- Top Bar --- */
       .topbar {
         position: sticky;
         top: 0;
-        z-index: 10;
-        backdrop-filter: blur(18px);
-        background: rgba(247, 241, 232, 0.72);
-        border-bottom: 1px solid rgba(77, 55, 32, 0.08);
-      }
-
-      .topbar-inner,
-      .section,
-      .footer-inner {
-        width: min(calc(100% - 32px), var(--content-width));
-        margin: 0 auto;
+        z-index: 100;
+        background: rgba(244, 245, 249, 0.82);
+        backdrop-filter: blur(20px) saturate(1.4);
+        -webkit-backdrop-filter: blur(20px) saturate(1.4);
+        border-bottom: 1px solid var(--border);
       }
 
       .topbar-inner {
+        max-width: var(--content);
+        margin: 0 auto;
+        padding: 0 24px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 24px;
-        min-height: 72px;
+        height: 64px;
       }
 
       .brand {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 12px;
         text-decoration: none;
       }
 
       .brand-mark {
-        width: 42px;
-        height: 42px;
-        border-radius: 12px;
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        background: var(--accent);
         display: grid;
         place-items: center;
-        background: linear-gradient(135deg, var(--accent), #f0a95f);
-        color: #fff9f2;
-        font-family: "Space Grotesk", sans-serif;
-        font-size: 1.1rem;
+        color: #fff;
         font-weight: 700;
-        box-shadow: 0 10px 22px rgba(208, 95, 45, 0.28);
+        font-size: 0.95rem;
+        box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
       }
 
-      .brand-copy strong,
-      .hero h1,
-      .section h2,
-      .layer-card h3,
-      .metric strong,
-      .panel-title {
-        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+      .brand-name {
+        font-weight: 700;
+        font-size: 1.05rem;
         letter-spacing: -0.02em;
-      }
-
-      .brand-copy {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .brand-copy strong {
-        font-size: 1rem;
-      }
-
-      .brand-copy span {
-        font-size: 0.82rem;
-        color: var(--muted);
       }
 
       .nav {
         display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
+        align-items: center;
+        gap: 6px;
       }
 
       .nav a {
-        text-decoration: none;
-        color: var(--muted);
-        font-size: 0.95rem;
-        padding: 8px 12px;
-        border-radius: 999px;
-        transition: background-color 180ms ease, color 180ms ease;
+        font-size: 0.88rem;
+        color: var(--text-secondary);
+        padding: 6px 14px;
+        border-radius: 99px;
+        transition: all 0.2s;
       }
 
       .nav a:hover {
-        background: rgba(255, 255, 255, 0.56);
-        color: var(--ink);
+        color: var(--text);
+        background: rgba(0, 0, 0, 0.04);
       }
 
-      .hero-wrap {
-        padding: 48px 0 22px;
+      .nav-lang {
+        margin-left: 8px;
+        padding: 5px 14px !important;
+        border: 1px solid var(--border-strong) !important;
+        font-weight: 500;
+        border-radius: 99px;
       }
 
+      /* --- Layout --- */
+      .wrap {
+        max-width: var(--content);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      section {
+        padding: 80px 0;
+      }
+
+      /* --- Hero --- */
       .hero {
-        display: grid;
-        grid-template-columns: 1.15fr 0.85fr;
-        gap: 28px;
-        align-items: stretch;
-      }
-
-      .hero-main,
-      .hero-side,
-      .card,
-      .layer-card,
-      .route-card,
-      .command-panel,
-      .architecture-panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-xl);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(14px);
-      }
-
-      .hero-main {
-        padding: 36px;
-        overflow: hidden;
+        padding: 72px 0 64px;
         position: relative;
+        overflow: hidden;
       }
 
-      .hero-main::after {
+      .hero::before {
         content: "";
         position: absolute;
-        width: 280px;
-        height: 280px;
-        right: -90px;
-        top: -70px;
+        top: -180px;
+        right: -120px;
+        width: 600px;
+        height: 600px;
         border-radius: 50%;
-        background: radial-gradient(circle, rgba(208, 95, 45, 0.24) 0%, transparent 70%);
+        background: radial-gradient(circle, rgba(67, 97, 238, 0.08), transparent 70%);
         pointer-events: none;
       }
 
-      .eyebrow,
-      .lang-link {
+      .hero::after {
+        content: "";
+        position: absolute;
+        bottom: -200px;
+        left: -100px;
+        width: 500px;
+        height: 500px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(16, 185, 129, 0.06), transparent 70%);
+        pointer-events: none;
+      }
+
+      .hero-inner {
+        position: relative;
+        z-index: 1;
+      }
+
+      .eyebrow {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 9px 14px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.6);
-        border: 1px solid rgba(208, 95, 45, 0.18);
-        font-size: 0.9rem;
-        color: var(--accent-deep);
-        text-decoration: none;
+        padding: 7px 16px;
+        border-radius: 99px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 0.84rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        margin-bottom: 28px;
       }
 
       .eyebrow::before {
         content: "";
-        width: 8px;
-        height: 8px;
+        width: 7px;
+        height: 7px;
         border-radius: 50%;
         background: var(--accent);
-        box-shadow: 0 0 0 6px rgba(208, 95, 45, 0.14);
       }
 
       .hero h1 {
-        font-size: clamp(3rem, 7vw, 5.5rem);
-        line-height: 0.95;
-        margin: 20px 0 18px;
-        max-width: 10ch;
+        font-family: var(--font-serif);
+        font-size: clamp(3rem, 7vw, 5rem);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        font-weight: 400;
+        max-width: 16ch;
+        margin-bottom: 24px;
       }
 
-      .hero-lead {
+      .hero h1 em {
+        font-style: italic;
+        color: var(--accent);
+      }
+
+      .hero-sub {
         font-size: 1.12rem;
-        line-height: 1.75;
-        color: var(--muted);
-        max-width: 60ch;
-        margin: 0 0 24px;
-      }
-
-      .hero-actions,
-      .hero-tags,
-      .metric-grid,
-      .card-grid,
-      .layer-grid,
-      .route-grid,
-      .architecture-grid {
-        display: grid;
-        gap: 14px;
+        line-height: 1.85;
+        color: var(--text-secondary);
+        max-width: 48ch;
+        margin-bottom: 36px;
       }
 
       .hero-actions {
-        grid-template-columns: repeat(2, minmax(0, max-content));
-        align-items: center;
-      }
-
-      .button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        min-height: 50px;
-        padding: 0 18px;
-        border-radius: 999px;
-        text-decoration: none;
-        font-weight: 600;
-        transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
-      }
-
-      .button:hover {
-        transform: translateY(-1px);
-      }
-
-      .button-primary {
-        background: linear-gradient(135deg, var(--accent), #f0a95f);
-        color: #fff9f2;
-        box-shadow: 0 18px 30px rgba(208, 95, 45, 0.22);
-      }
-
-      .button-secondary {
-        background: rgba(255, 255, 255, 0.6);
-        color: var(--ink);
-        border: 1px solid rgba(77, 55, 32, 0.1);
-      }
-
-      .hero-tags {
-        margin-top: 22px;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
-
-      .tag {
-        background: rgba(255, 255, 255, 0.52);
-        border: 1px solid rgba(77, 55, 32, 0.08);
-        border-radius: 18px;
-        padding: 14px 16px;
-      }
-
-      .tag strong {
-        display: block;
-        font-size: 0.95rem;
-        margin-bottom: 4px;
-      }
-
-      .tag span {
-        display: block;
-        color: var(--muted);
-        font-size: 0.9rem;
-        line-height: 1.45;
-      }
-
-      .hero-side {
-        padding: 22px;
-        display: grid;
-        gap: 14px;
-      }
-
-      .panel-title {
-        font-size: 1.15rem;
-        margin: 0 0 2px;
-      }
-
-      .panel-subtitle {
-        color: var(--muted);
-        line-height: 1.6;
-        margin: 0;
-      }
-
-      .metric-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        margin-top: 6px;
-      }
-
-      .metric {
-        padding: 18px;
-        border-radius: 20px;
-        background: var(--panel-strong);
-        border: 1px solid rgba(77, 55, 32, 0.08);
-      }
-
-      .metric strong {
-        display: block;
-        font-size: 2rem;
-        margin-bottom: 8px;
-      }
-
-      .metric span {
-        display: block;
-        color: var(--muted);
-        line-height: 1.5;
-      }
-
-      .code-slice {
-        background: #221d19;
-        color: #f4e9dd;
-        border-radius: 22px;
-        padding: 18px;
-        font-family: "IBM Plex Sans", monospace;
-        font-size: 0.95rem;
-        line-height: 1.7;
-        overflow: auto;
-      }
-
-      .code-slice .accent {
-        color: #f0a95f;
-      }
-
-      .section {
-        padding: 24px 0 12px;
-      }
-
-      .section-head {
         display: flex;
-        align-items: end;
-        justify-content: space-between;
-        gap: 18px;
-        margin-bottom: 18px;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 48px;
       }
 
-      .section h2 {
-        font-size: clamp(2rem, 4.2vw, 3.2rem);
-        line-height: 1.02;
-        margin: 0;
-      }
-
-      .section-copy {
-        max-width: 64ch;
-        color: var(--muted);
-        line-height: 1.8;
-      }
-
-      .card-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .card {
-        padding: 26px;
-      }
-
-      .card-kicker,
-      .layer-status,
-      .route-rank {
+      .btn {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        min-height: 30px;
-        padding: 0 12px;
-        border-radius: 999px;
-        background: var(--accent-soft);
-        color: var(--accent-deep);
-        font-size: 0.84rem;
+        padding: 13px 26px;
+        border-radius: 99px;
         font-weight: 600;
+        font-size: 0.95rem;
+        transition: all 0.25s;
+        cursor: pointer;
+        border: none;
       }
 
-      .card h3,
-      .route-card h3 {
-        margin: 16px 0 12px;
-        font-size: 1.4rem;
-        line-height: 1.15;
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 4px 16px rgba(67, 97, 238, 0.3);
       }
 
-      .card p,
-      .route-card p,
-      .layer-card p,
-      .architecture-panel p,
-      .command-panel p {
-        color: var(--muted);
-        line-height: 1.75;
-        margin: 0;
+      .btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px rgba(67, 97, 238, 0.35);
       }
 
-      .list {
-        display: grid;
-        gap: 10px;
-        margin-top: 18px;
+      .btn-secondary {
+        background: var(--bg-card);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        box-shadow: var(--shadow-sm);
       }
 
-      .list div {
-        padding: 12px 14px;
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.58);
-        border: 1px solid rgba(77, 55, 32, 0.08);
-        line-height: 1.55;
+      .btn-secondary:hover {
+        background: #fff;
+        border-color: rgba(0, 0, 0, 0.15);
       }
 
-      .list strong {
-        color: var(--ink);
-      }
-
-      .layer-grid {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-      }
-
-      .layer-card {
-        padding: 22px;
+      .hero-pills {
         display: flex;
-        flex-direction: column;
-        gap: 14px;
-      }
-
-      .layer-status.is-live {
-        background: rgba(30, 107, 102, 0.14);
-        color: var(--teal);
-      }
-
-      .layer-status.is-build {
-        background: rgba(240, 169, 95, 0.18);
-        color: #975209;
-      }
-
-      .layer-status.is-future {
-        background: rgba(102, 88, 76, 0.12);
-        color: var(--muted);
-      }
-
-      .layer-step {
-        font-size: 0.9rem;
-        color: var(--muted);
-      }
-
-      .route-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
-
-      .route-card {
-        padding: 24px;
-      }
-
-      .route-rank {
-        background: rgba(30, 107, 102, 0.12);
-        color: var(--teal);
-      }
-
-      .route-note {
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px dashed rgba(77, 55, 32, 0.14);
-        font-size: 0.94rem;
-      }
-
-      .architecture-panel,
-      .command-panel {
-        padding: 28px;
-      }
-
-      .architecture-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        margin-top: 20px;
-      }
-
-      .architecture-cell {
-        padding: 18px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.58);
-        border: 1px solid rgba(77, 55, 32, 0.08);
-      }
-
-      .architecture-cell strong {
-        display: block;
-        margin-bottom: 8px;
-      }
-
-      .command-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 22px;
-        align-items: start;
-      }
-
-      .terminal {
-        background: #1d1916;
-        color: #f2e6d8;
-        border-radius: 22px;
-        padding: 20px;
-        font-family: "IBM Plex Sans", monospace;
-        line-height: 1.8;
-        overflow: auto;
-      }
-
-      .terminal strong {
-        color: #f0a95f;
-      }
-
-      .footer {
-        padding: 28px 0 52px;
-      }
-
-      .footer-inner {
-        display: flex;
-        justify-content: space-between;
-        gap: 18px;
-        color: var(--muted);
-        font-size: 0.94rem;
-      }
-
-      .footer-links {
-        display: flex;
+        gap: 12px;
         flex-wrap: wrap;
-        gap: 16px;
       }
 
-      .showcase-video {
+      .pill {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 20px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .pill-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+      }
+
+      .pill-icon.operate { background: rgba(67, 97, 238, 0.1); }
+      .pill-icon.learn { background: rgba(16, 185, 129, 0.1); }
+      .pill-icon.grow { background: rgba(245, 158, 11, 0.1); }
+
+      .pill-text strong {
+        display: block;
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 1px;
+      }
+
+      .pill-text span {
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+      }
+
+      /* --- Section Headers --- */
+      .section-header {
+        margin-bottom: 48px;
+      }
+
+      .section-header h2 {
+        font-family: var(--font-serif);
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        font-weight: 400;
+        margin-bottom: 16px;
+      }
+
+      .section-header p {
+        font-size: 1.08rem;
+        color: var(--text-secondary);
+        max-width: 48ch;
+        line-height: 1.8;
+      }
+
+      /* --- Scenario Cards --- */
+      .scenarios {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+
+      .scenario {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 32px 28px;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.3s;
         position: relative;
-        width: 100%;
-        aspect-ratio: 7314 / 2160;
-        border-radius: var(--radius-xl);
         overflow: hidden;
-        box-shadow: var(--shadow);
-        border: 1px solid var(--line);
       }
 
-      .showcase-video iframe {
+      .scenario:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+      }
+
+      .scenario::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--accent);
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+
+      .scenario:hover::before {
+        opacity: 1;
+      }
+
+      .scenario-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        font-size: 1.3rem;
+        margin-bottom: 20px;
+      }
+
+      .scenario:nth-child(1) .scenario-icon { background: rgba(67, 97, 238, 0.08); }
+      .scenario:nth-child(2) .scenario-icon { background: rgba(16, 185, 129, 0.08); }
+      .scenario:nth-child(3) .scenario-icon { background: rgba(245, 158, 11, 0.08); }
+
+      .scenario h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 10px;
+        letter-spacing: -0.01em;
+      }
+
+      .scenario p {
+        color: var(--text-secondary);
+        line-height: 1.8;
+        font-size: 0.95rem;
+      }
+
+      /* --- Showcase Section --- */
+      .showcase-panel {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: var(--shadow-md);
+      }
+
+      .showcase-tabs {
+        display: flex;
+        gap: 4px;
+        padding: 16px 48px 0;
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+      }
+
+      .showcase-tab {
+        padding: 12px 20px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        border: none;
+        background: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        transition: all 0.2s;
+        white-space: nowrap;
+        font-family: var(--font);
+      }
+
+      .showcase-tab:hover {
+        color: var(--text-secondary);
+      }
+
+      .showcase-tab.is-active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+
+      .showcase-demo {
+        display: none;
+      }
+
+      .showcase-demo.is-active {
+        display: block;
+      }
+
+      .demo-content {
+        padding: 40px 48px;
+      }
+
+      .demo-content h3 {
+        font-family: var(--font-serif);
+        font-size: 1.6rem;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+        margin-bottom: 14px;
+      }
+
+      .demo-content p {
+        color: var(--text-secondary);
+        line-height: 1.85;
+        font-size: 1.02rem;
+        max-width: 56ch;
+        margin-bottom: 14px;
+      }
+
+      .demo-example {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        background: var(--accent-soft);
+        border-radius: var(--radius-xs);
+        color: var(--accent);
+        font-size: 0.9rem;
+        font-weight: 500;
+        margin-top: 4px;
+      }
+
+      .demo-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 16px;
+        font-size: 0.9rem;
+        color: var(--accent);
+        font-weight: 500;
+      }
+
+      .demo-link:hover {
+        text-decoration: underline;
+      }
+
+      .demo-video {
+        position: relative;
+        aspect-ratio: 7314 / 2160;
+        background: var(--bg-dark);
+      }
+
+      .demo-video iframe {
         position: absolute;
         inset: 0;
         width: 100%;
@@ -583,22 +514,340 @@
         border: 0;
       }
 
+      .demo-video-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        aspect-ratio: 16 / 7;
+        background: linear-gradient(135deg, #0f1117, #1a1b2e);
+        color: rgba(255, 255, 255, 0.25);
+        font-size: 0.95rem;
+      }
+
       .showcase-note {
-        text-align: center;
-        margin-top: 14px;
-        color: var(--muted);
-        font-size: 0.92rem;
-        line-height: 1.6;
+        padding: 14px 48px 18px;
+        background: rgba(0, 0, 0, 0.02);
+        border-top: 1px solid var(--border);
+        font-size: 0.86rem;
+        color: var(--text-tertiary);
+        line-height: 1.7;
       }
 
       .showcase-note a {
-        color: var(--accent-deep);
+        color: var(--accent);
       }
 
+      /* --- Growth Timeline --- */
+      .growth-section {
+        background: var(--bg-dark);
+        border-radius: 24px;
+        padding: 64px 48px;
+        color: #e8e8f0;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .growth-section::before {
+        content: "";
+        position: absolute;
+        top: -100px;
+        right: -50px;
+        width: 400px;
+        height: 400px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(67, 97, 238, 0.15), transparent 70%);
+        pointer-events: none;
+      }
+
+      .growth-section h2 {
+        font-family: var(--font-serif);
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        font-weight: 400;
+        margin-bottom: 16px;
+        color: #fff;
+        position: relative;
+      }
+
+      .growth-section > p {
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 1.05rem;
+        line-height: 1.8;
+        max-width: 46ch;
+        margin-bottom: 48px;
+        position: relative;
+      }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 16px;
+        position: relative;
+      }
+
+      .timeline::before {
+        content: "";
+        position: absolute;
+        top: 42px;
+        left: 10%;
+        right: 10%;
+        height: 2px;
+        background: linear-gradient(90deg, var(--accent), rgba(67, 97, 238, 0.2));
+        border-radius: 1px;
+      }
+
+      .timeline-step {
+        text-align: center;
+        position: relative;
+      }
+
+      .timeline-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        margin: 34px auto 20px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .timeline-step:nth-child(1) .timeline-dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.25); }
+      .timeline-step:nth-child(2) .timeline-dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.2); }
+      .timeline-step:nth-child(3) .timeline-dot { background: rgba(67, 97, 238, 0.6); box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.15); }
+      .timeline-step:nth-child(4) .timeline-dot { background: rgba(67, 97, 238, 0.4); box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.1); }
+      .timeline-step:nth-child(5) .timeline-dot { background: rgba(67, 97, 238, 0.25); box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.08); }
+
+      .timeline-when {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(255, 255, 255, 0.35);
+        margin-bottom: 6px;
+      }
+
+      .timeline-label {
+        font-weight: 600;
+        font-size: 1rem;
+        color: #fff;
+        margin-bottom: 6px;
+      }
+
+      .timeline-desc {
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.45);
+        line-height: 1.5;
+      }
+
+      .growth-quote {
+        margin-top: 48px;
+        padding-top: 32px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: 1.15rem;
+        color: rgba(255, 255, 255, 0.4);
+        position: relative;
+      }
+
+      /* --- Open Source Section --- */
+      .features {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+      }
+
+      .feature {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 28px 24px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .feature-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        font-size: 1.15rem;
+        margin-bottom: 18px;
+        background: var(--accent-soft);
+      }
+
+      .feature h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .feature p {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.7;
+      }
+
+      /* --- Get Started --- */
+      .start-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+
+      .start-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 36px 32px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .start-card h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+      }
+
+      .start-card p {
+        color: var(--text-secondary);
+        font-size: 0.93rem;
+        line-height: 1.7;
+        margin-bottom: 20px;
+      }
+
+      .terminal {
+        background: var(--bg-dark);
+        color: #c8c8d8;
+        border-radius: var(--radius-sm);
+        padding: 20px;
+        font-family: "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+        font-size: 0.88rem;
+        line-height: 2;
+        overflow-x: auto;
+      }
+
+      .terminal .cmd {
+        color: #a8b4ff;
+      }
+
+      .terminal .comment {
+        color: #555568;
+      }
+
+      /* --- Roadmap --- */
+      .roadmap {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 12px;
+        margin-top: 6px;
+      }
+
+      .roadmap-item {
+        padding: 16px 14px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+      }
+
+      .roadmap-badge {
+        display: inline-flex;
+        padding: 3px 10px;
+        border-radius: 99px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 10px;
+      }
+
+      .badge-live {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--green);
+      }
+
+      .badge-wip {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--amber);
+      }
+
+      .badge-vision {
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--slate);
+      }
+
+      .roadmap-item strong {
+        display: block;
+        font-size: 0.88rem;
+        margin-bottom: 4px;
+      }
+
+      .roadmap-item span {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        line-height: 1.55;
+      }
+
+      /* --- Models --- */
+      .models-bar {
+        margin-top: 20px;
+        padding: 18px 24px;
+        border-radius: var(--radius-sm);
+        background: rgba(0, 0, 0, 0.02);
+        border: 1px solid var(--border);
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        line-height: 1.7;
+      }
+
+      .models-bar strong {
+        color: var(--text);
+      }
+
+      /* --- Footer --- */
+      .footer {
+        padding: 40px 0 56px;
+        border-top: 1px solid var(--border);
+      }
+
+      .footer-inner {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      .footer-left {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+      }
+
+      .footer-left span {
+        font-family: var(--font-serif);
+        font-style: italic;
+        color: var(--text-tertiary);
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 20px;
+      }
+
+      .footer-links a {
+        color: var(--text-secondary);
+        font-size: 0.88rem;
+        transition: color 0.2s;
+      }
+
+      .footer-links a:hover {
+        color: var(--text);
+      }
+
+      /* --- Animations --- */
       .reveal {
         opacity: 0;
-        transform: translateY(14px);
-        transition: opacity 500ms ease, transform 500ms ease;
+        transform: translateY(20px);
+        transition: opacity 0.6s ease, transform 0.6s ease;
       }
 
       .reveal.is-visible {
@@ -606,510 +855,435 @@
         transform: translateY(0);
       }
 
-      @media (max-width: 1120px) {
-        .hero,
-        .command-grid {
+      .reveal-delay-1 { transition-delay: 0.1s; }
+      .reveal-delay-2 { transition-delay: 0.2s; }
+      .reveal-delay-3 { transition-delay: 0.3s; }
+
+      /* --- Responsive --- */
+      @media (max-width: 900px) {
+        .scenarios,
+        .features {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .timeline,
+        .roadmap {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+
+        .timeline::before {
+          display: none;
+        }
+
+        .timeline-step {
+          text-align: left;
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 16px;
+          align-items: center;
+        }
+
+        .timeline-dot {
+          margin: 0;
+        }
+
+        .timeline-when {
+          display: none;
+        }
+
+        .start-grid {
           grid-template-columns: 1fr;
         }
 
-        .hero-tags,
-        .card-grid,
-        .layer-grid,
-        .route-grid,
-        .architecture-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+        .growth-section {
+          padding: 48px 28px;
+        }
+
+        .demo-content {
+          padding: 28px 28px;
+        }
+
+        .showcase-tabs {
+          padding: 12px 28px 0;
+        }
+
+        .showcase-note {
+          padding: 12px 28px 16px;
         }
       }
 
-      @media (max-width: 760px) {
-        .topbar-inner,
-        .section,
-        .footer-inner {
-          width: min(calc(100% - 24px), var(--content-width));
+      @media (max-width: 640px) {
+        .topbar-inner {
+          height: 56px;
         }
 
-        .topbar-inner,
-        .section-head,
-        .footer-inner {
+        .nav a:not(.nav-lang) {
+          display: none;
+        }
+
+        .hero {
+          padding: 48px 0 40px;
+        }
+
+        .hero-pills {
           flex-direction: column;
-          align-items: flex-start;
         }
 
-        .hero-main,
-        .hero-side,
-        .card,
-        .layer-card,
-        .route-card,
-        .command-panel,
-        .architecture-panel {
-          border-radius: 24px;
-        }
-
-        .hero-main {
-          padding: 26px;
-        }
-
-        .hero h1 {
-          max-width: none;
-        }
-
-        .hero-actions,
-        .hero-tags,
-        .metric-grid,
-        .card-grid,
-        .layer-grid,
-        .route-grid,
-        .architecture-grid {
+        .scenarios,
+        .features {
           grid-template-columns: 1fr;
-        }
-
-        .nav {
-          width: 100%;
-        }
-
-        .nav a {
-          padding-left: 0;
-          padding-right: 0;
-        }
-
-        .button {
-          width: 100%;
         }
 
         .hero-actions {
-          grid-template-columns: 1fr;
+          flex-direction: column;
+        }
+
+        .btn {
+          width: 100%;
+          justify-content: center;
+        }
+
+        section {
+          padding: 56px 0;
         }
       }
     </style>
   </head>
   <body>
-    <div class="page">
-      <header class="topbar">
-        <div class="topbar-inner">
-          <a class="brand" href="#top">
-            <div class="brand-mark">U</div>
-            <div class="brand-copy">
-              <strong>Understudy</strong>
-              <span>通用桌面 Agent</span>
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#top">
+          <div class="brand-mark">U</div>
+          <div class="brand-name">Understudy</div>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="#features">产品能力</a>
+          <a href="#showcase">演示</a>
+          <a href="#roadmap">路线图</a>
+          <a href="#start">开始使用</a>
+          <a class="nav-lang" href="../index.html">EN</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+
+      <!-- 1. Hero -->
+      <section class="hero">
+        <div class="wrap hero-inner">
+          <div class="eyebrow reveal">开源免费 · 自带模型和 API Key</div>
+          <h1 class="reveal reveal-delay-1">一句话，操作你的<em>整台电脑</em></h1>
+          <p class="hero-sub reveal reveal-delay-2">
+            Understudy 是一个开源的本地 AI Agent。给它一个指令，它就能帮你查资料、浏览网页、操作桌面应用、管理文件，还能通过你常用的聊天工具回复你。教它一次，它就学会。用得越多，它就越快。
+          </p>
+          <div class="hero-actions reveal reveal-delay-2">
+            <a class="btn btn-primary" href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">
+              开始使用
+            </a>
+            <a class="btn btn-secondary" href="#showcase">
+              观看演示
+            </a>
+          </div>
+          <div class="hero-pills reveal reveal-delay-3">
+            <div class="pill">
+              <div class="pill-icon operate">&#9654;</div>
+              <div class="pill-text">
+                <strong>操作任意应用</strong>
+                <span>浏览、点击、输入，像你一样使用电脑</span>
+              </div>
             </div>
-          </a>
-          <nav class="nav" aria-label="Primary">
-            <a href="#showcase">Showcase</a>
-            <a href="#highlights">亮点</a>
-            <a href="#alpha">当前能力</a>
-            <a href="#layers">五层路线</a>
-            <a href="#routes">执行路线</a>
-            <a href="#start">开始使用</a>
-          </nav>
+            <div class="pill">
+              <div class="pill-icon learn">&#10003;</div>
+              <div class="pill-text">
+                <strong>跟你学</strong>
+                <span>演示一次，它就记住了</span>
+              </div>
+            </div>
+            <div class="pill">
+              <div class="pill-icon grow">&#8679;</div>
+              <div class="pill-text">
+                <strong>越用越好</strong>
+                <span>自动找到更快的方式完成任务</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </header>
+      </section>
 
-      <main id="top">
-        <section class="hero-wrap">
-          <div class="section hero">
-            <article class="hero-main reveal">
-              <div class="hero-top">
-                <span class="eyebrow">通用 Agent · Computer Use · 演示教学 · 8 渠道 · 本地运行 · 开源</span>
-                <a class="lang-link" href="../index.html">English</a>
-              </div>
-              <h1>你的电脑，由 Agent 来操作。</h1>
-              <p class="hero-lead">
-                Understudy 是一个通用、本地运行的电脑 Agent。先给它一句话，它就能做研究、浏览网页、操控应用、执行命令、管理文件，并通过你已有的渠道回传结果。它同时具备现代 Computer Use 能力，但不要求你购买订阅产品——自带模型/API key 即可使用。再往上，才是演示教学、日常 crystallization skill 和路线升级。
-              </p>
-              <div class="hero-actions">
-                <a class="button button-primary" href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">
-                  查看仓库
-                </a>
-                <a
-                  class="button button-secondary"
-                  href="https://github.com/understudy-ai/understudy/blob/main/docs/Product_Design.zh-CN.md"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  读产品设计
-                </a>
-              </div>
-              <div class="hero-tags">
-                <div class="tag">
-                  <strong>通用 Agent</strong>
-                  <span>研究、浏览器、Shell、文件、消息、调度和委派统一在一个本地 runtime 里。</span>
-                </div>
-                <div class="tag">
-                  <strong>Computer Use</strong>
-                  <span>通过截图 grounding 和原生输入操控桌面应用，同时继续使用你自己的模型/API key。</span>
-                </div>
-                <div class="tag">
-                  <strong>Teach + Crystallize + Upgrade</strong>
-                  <span>演示一次 workflow，然后把它固化成可复用 skill，并逐步减少不必要的 GUI 重放。</span>
-                </div>
-                <div class="tag">
-                  <strong>远程 Dispatch</strong>
-                  <span>从 Telegram、Slack、Discord、WhatsApp、Signal、LINE、iMessage 或 Web 控制。人在外面，Agent 在工作。</span>
-                </div>
-              </div>
+      <!-- 2. 它像你一样操作电脑 -->
+      <section id="features">
+        <div class="wrap">
+          <div class="section-header reveal">
+            <h2>它像你一样操作电脑</h2>
+            <p>一个本地 Agent，能看屏幕、开应用、浏览网页、跑命令、发消息——全部在一条指令里完成。</p>
+          </div>
+          <div class="scenarios">
+            <article class="scenario reveal reveal-delay-1">
+              <div class="scenario-icon">&#128187;</div>
+              <h3>桌面 Agent</h3>
+              <p>发一条消息，它就能查资料、生成文件、打开应用、交付结果。不用分步骤操作，不用来回切换工具。说一句话就行。</p>
             </article>
-
-            <aside class="hero-side reveal">
-              <div>
-                <h2 class="panel-title">Alpha 能力快照</h2>
-                <p class="panel-subtitle">
-                  页面内容基于仓库 README 与 Product Design 文档整理，突出已经具备的能力和清晰的产品演进方向。
-                </p>
-              </div>
-              <div class="metric-grid">
-                <div class="metric">
-                  <strong>8</strong>
-                  <span>可组合 GUI 原子工具，覆盖观察、点击、拖拽、滚动、输入、按键、等待与移动。</span>
-                </div>
-                <div class="metric">
-                  <strong>30/30</strong>
-                  <span>Grounding benchmark 全部命中，包含模糊目标与纯图标元素。</span>
-                </div>
-                <div class="metric">
-                  <strong>8</strong>
-                  <span>消息通道适配器，支持把 Agent 能力接到现有沟通入口。</span>
-                </div>
-                <div class="metric">
-                  <strong>自带</strong>
-                  <span>使用自己的模型/API key，而不是依赖打包好的订阅层。</span>
-                </div>
-              </div>
-              <div class="code-slice" aria-label="Product Snapshot">
-                <span class="accent">Operate</span> your computer natively
-                <br />
-                <span class="accent">Learn</span> from demonstrations
-                <br />
-                <span class="accent">Remember</span> successful paths
-                <br />
-                <span class="accent">Upgrade</span> to faster routes
-                <br />
-                <span class="accent">Act</span> proactively in its own workspace
-              </div>
-            </aside>
+            <article class="scenario reveal reveal-delay-2">
+              <div class="scenario-icon">&#128241;</div>
+              <h3>远程操控</h3>
+              <p>在手机上通过 Telegram、Slack 等发一条消息，Understudy 就在你的 Mac 上工作，做完再把结果发回来。人不在电脑前也没关系。</p>
+            </article>
+            <article class="scenario reveal reveal-delay-3">
+              <div class="scenario-icon">&#128172;</div>
+              <h3>8 个消息渠道</h3>
+              <p>Telegram、Slack、Discord、WhatsApp、Signal、LINE、iMessage、Web。用你已经在用的聊天工具来操控 Agent。</p>
+            </article>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section class="section" id="showcase">
-          <div class="section-head reveal">
-            <div>
-              <h2>Showcase</h2>
-            </div>
-            <p class="section-copy">
-              这 3 个 demo 按产品体验顺序排列：先是通用 Agent，再是 Computer Use，最后是 Teach 和长期学习。
-            </p>
+      <!-- 3. 演示 -->
+      <section id="showcase">
+        <div class="wrap">
+          <div class="section-header reveal">
+            <h2>看看它能做什么</h2>
+            <p>四个演示，展示 Understudy 的不同面向。</p>
           </div>
-          <div class="reveal">
-            <div class="showcase-video">
-              <iframe
-                src="https://www.youtube.com/embed/3d5cRGnlb_0"
-                title="Understudy Showcase"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen
-              ></iframe>
+          <div class="showcase-panel reveal">
+            <div class="showcase-tabs" role="tablist">
+              <button class="showcase-tab is-active" data-demo="general" role="tab">通用 Agent</button>
+              <button class="showcase-tab" data-demo="remote" role="tab">远程调度</button>
+              <button class="showcase-tab" data-demo="teach" role="tab">演示教学</button>
+              <button class="showcase-tab" data-demo="playbook" role="tab">Playbook</button>
             </div>
-            <p class="showcase-note">
-              以上视频经过加速处理。完整原速视频：
-              <a href="https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing" target="_blank" rel="noreferrer">Google Drive</a>
-            </p>
-            <p class="showcase-note">
-              这次 Showcase demo 生成出来的已发布 skill 产物放在
-              <a href="https://github.com/understudy-ai/understudy/blob/main/examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md" target="_blank" rel="noreferrer">examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md</a>，
-              可以直接查看最终产物。
-            </p>
-            <div class="card-grid" style="margin-top: 18px;">
-              <article class="card">
-                <span class="card-kicker">Demo 1 · 通用 Agent</span>
+
+            <!-- Demo 1: 通用 Agent -->
+            <div class="showcase-demo is-active" data-demo="general">
+              <div class="demo-content">
                 <h3>一句话触发多工具协作</h3>
-                <p>
-                  Agent 在一个本地 runtime 里完成研究、生成文件、产出交付物，而不是把工作拆成互不相干的脚本或表单。
-                </p>
-                <div class="list">
-                  <div><strong>重点：</strong>先证明它是通用 Agent</div>
-                  <div><strong>示例：</strong>从单条 prompt 生成研究结果和演示文稿</div>
-                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-general-agent/README.md" target="_blank" rel="noreferrer">打开 demo workspace</a></div>
-                </div>
-              </article>
-              <article class="card">
-                <span class="card-kicker">Demo 2 · Computer Use</span>
-                <h3>远程发消息，真实操作桌面</h3>
-                <p>
-                  手机发来一条消息，Understudy 在 Mac 上完成浏览器、GUI、Shell 和文件工作，再把结果回给用户已有的沟通渠道。
-                </p>
-                <div class="list">
-                  <div><strong>重点：</strong>展示 Cowork 这一类能力，但不依赖订阅锁定</div>
-                  <div><strong>示例：</strong>Telegram 触发浏览器和桌面工作流</div>
-                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-remote-dispatch/README.md" target="_blank" rel="noreferrer">打开 demo workspace</a></div>
-                </div>
-              </article>
-              <article class="card">
-                <span class="card-kicker">Demo 3 · Teach + Replay</span>
+                <p>Agent 在一个本地运行时里完成查资料、生成文件、打开应用、交付结果。不用分步骤操作，不用来回切换工具。说一句话就行。</p>
+                <div class="demo-example">示例："帮我做一份对比前 3 名 AI 编程工具的 PPT"</div>
+                <br>
+                <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-general-agent/README.md" target="_blank" rel="noreferrer">打开 demo workspace &rarr;</a>
+              </div>
+              <div class="demo-video-placeholder">演示视频即将上线</div>
+            </div>
+
+            <!-- Demo 2: 远程调度 -->
+            <div class="showcase-demo" data-demo="remote">
+              <div class="demo-content">
+                <h3>手机发消息，桌面出结果</h3>
+                <p>通过 Telegram、Slack 等 8 个渠道发一条消息，Understudy 在你的 Mac 上完成浏览器研究、GUI 操作、文件创建和命令行任务，再把结果通过同一个渠道发回来。</p>
+                <div class="demo-example">示例：Telegram 触发浏览器和桌面工作流</div>
+                <br>
+                <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-remote-dispatch/README.md" target="_blank" rel="noreferrer">打开 demo workspace &rarr;</a>
+              </div>
+              <div class="demo-video-placeholder">演示视频即将上线</div>
+            </div>
+
+            <!-- Demo 3: 演示教学 -->
+            <div class="showcase-demo" data-demo="teach">
+              <div class="demo-content">
                 <h3>演示一次，发布后再重放</h3>
-                <p>
-                  用户演示一次 workflow，发布学习产物，之后再自主重放。同一套机制也继续支撑日常 crystallization 和带路线信息的复用。
-                </p>
-                <div class="list">
-                  <div><strong>重点：</strong>演示教学和技能复用</div>
-                  <div><strong>示例：</strong>Pixelmator Pro 去背景后发到 Telegram</div>
-                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-teach/README.md" target="_blank" rel="noreferrer">打开 demo workspace</a></div>
-                </div>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section class="section" id="highlights">
-          <div class="section-head reveal">
-            <div>
-              <h2>一个产品，三层价值</h2>
-            </div>
-            <p class="section-copy">
-              Understudy 的重点不只是“能不能点按钮”。它首先是通用 Agent runtime，其次是现代 Computer Use 系统，最后才是带学习能力的执行平台。
-            </p>
-          </div>
-          <div class="card-grid">
-            <article class="card reveal">
-              <span class="card-kicker">通用 Agent</span>
-              <h3>不是单 surface copilot，而是真正的本地 Agent runtime</h3>
-              <p>
-                一次任务可以先网页检索，再运行本地命令，再切到原生桌面应用点击提交，最后通过消息通道把结果发出去。不是多个自动化脚本拼接，而是单一会话里的统一选路。
-              </p>
-              <div class="list">
-                <div><strong>统一规划：</strong>GUI、browser、shell、web、files、memory、schedule、subagents</div>
-                <div><strong>统一入口：</strong>chat、agent、dashboard、webchat、channels、automation</div>
-                <div><strong>统一结果：</strong>哪怕中途换路线，任务依然保持单一目标和单一会话</div>
+                <p>演示一个任务——Understudy 看着你做，理解你的<strong>意图</strong>，然后发布一个可复用的技能。它学的是你想做什么，不是你点了哪里。界面改版、窗口缩放、甚至换应用，技能照样能用。</p>
+                <div class="demo-example">示例：Pixelmator Pro 去背景后发到 Telegram</div>
+                <br>
+                <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-teach/README.md" target="_blank" rel="noreferrer">打开 demo workspace &rarr;</a>
               </div>
-            </article>
-
-            <article class="card reveal">
-              <span class="card-kicker">Computer Use</span>
-              <h3>桌面操作能力强，而且不被订阅产品绑住</h3>
-              <p>
-                Understudy 可以看屏幕、定目标、操作真实应用；在浏览器侧又支持 Chrome extension relay 附着真实标签页，或者走干净的 managed Playwright。
-              </p>
-              <div class="list">
-                <div><strong>GUI：</strong>screenshot grounding + 原生输入事件</div>
-                <div><strong>Browser：</strong>托管 Playwright 或通过 extension relay 附着真实 Chrome 标签页</div>
-                <div><strong>模型：</strong>使用你自己的 provider/API key，而不是绑定一个封闭订阅流程</div>
+              <div class="demo-video">
+                <iframe
+                  src="https://www.youtube.com/embed/3d5cRGnlb_0"
+                  title="Understudy 演示 — 演示教学"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowfullscreen
+                  loading="lazy"
+                ></iframe>
               </div>
-            </article>
-
-            <article class="card reveal">
-              <span class="card-kicker">Teach + Crystallize</span>
-              <h3>演示一次，然后持续把 workflow 硬化下来</h3>
-              <p>
-                显式 teach、日常 workflow crystallization 和带路线信息的 replay 都放在同一套机制里。今天已经能发布可复用产物，后续继续把重复工作推向更快路径。
-              </p>
-              <div class="list">
-                <div><strong>Teach：</strong>录制视频和语义事件，再发布可复用产物</div>
-                <div><strong>Crystallize：</strong>日常重复工作可以自动长成 workspace skill</div>
-                <div><strong>Upgrade：</strong>路线偏好和标注会减少不必要的 GUI 重放</div>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="section" id="alpha">
-          <div class="section-head reveal">
-            <div>
-              <h2>Understudy 当前已经能展示什么</h2>
-            </div>
-            <p class="section-copy">
-              这一部分只写当前文档里已经明确描述的能力，不把未来路线写成既成事实。
-            </p>
-          </div>
-          <div class="card-grid">
-            <article class="card reveal">
-              <span class="card-kicker">01 · Grounded GUI</span>
-              <h3>原生桌面操作链路完整</h3>
-              <p>
-                从截图、HiDPI 归一化、目标定位、点击点稳定化，到复杂模式下的模拟叠加验证和动作后截图校验，已经形成完整的 GUI 执行纪律。
-              </p>
-              <div class="list">
-                <div><strong>双模型分工：</strong> 主模型决定做什么，grounding 模型决定点哪里</div>
-                <div><strong>复杂目标处理：</strong> 小目标裁切放大、dense 区域 refinement、复杂模式验证</div>
-                <div><strong>运行时信号：</strong> observed / resolved / action_sent / condition_met</div>
-              </div>
-            </article>
-
-            <article class="card reveal">
-              <span class="card-kicker">02 · Teach Loop</span>
-              <h3>演示教学不是概念图，而是有指令流</h3>
-              <p>
-                `/teach start`、`/teach stop`、`/teach confirm`、`/teach validate`、`/teach publish` 已经形成产品接口，能把一次桌面操作演示整理成任务卡与技能文件。
-              </p>
-              <div class="list">
-                <div><strong>证据包：</strong> 场景变化、事件时间线、关键帧和可用能力快照</div>
-                <div><strong>澄清对话：</strong> 用自然语言补齐任务标题、参数和成功标准</div>
-                <div><strong>产物输出：</strong> 发布为可复用的 `skill`、`worker` 或 `playbook` workspace artifact</div>
-              </div>
-            </article>
-
-            <article class="card reveal">
-              <span class="card-kicker">03 · Unified Agent Surface</span>
-              <h3>已经不是单入口命令行工具</h3>
-              <p>
-                仓库里已经具备 daemon、chat、agent、dashboard、webchat、channels、schedule 等入口，说明它目标是一个可持续运行的本地 Agent 系统，而不是一次性脚本。
-              </p>
-              <div class="list">
-                <div><strong>消息通道：</strong> Telegram、Slack、Discord、WhatsApp、Signal、LINE、iMessage、Web</div>
-                <div><strong>自动化：</strong> cron 定时与 one-shot timers</div>
-                <div><strong>子 Agent：</strong> 复杂任务可拆成并行子会话处理</div>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="section" id="layers">
-          <div class="section-head reveal">
-            <div>
-              <h2>五层递进，不靠“全自动”口号跳级</h2>
-            </div>
-            <p class="section-copy">
-              Understudy 的产品叙事很清楚：先能做，再学会做，再记住怎么做，然后越来越快，最后才谈主动执行。
-            </p>
-          </div>
-          <div class="layer-grid">
-            <article class="layer-card reveal">
-              <span class="layer-status is-live">Layer 1 · 已具备</span>
-              <div class="layer-step">Operate Software Natively</div>
-              <h3>像人一样操作软件</h3>
-              <p>看、点、输、拖、滚、验证。任何有 GUI 的 macOS 软件都可以成为执行对象。</p>
-            </article>
-
-            <article class="layer-card reveal">
-              <span class="layer-status is-live">Layer 2 · 已具备</span>
-              <div class="layer-step">Learn from Demonstrations</div>
-              <h3>从演示中学任务</h3>
-              <p>不录坐标，录证据。把一次示范提炼成任务卡、路线选择和可复用技能。</p>
-            </article>
-
-            <article class="layer-card reveal">
-              <span class="layer-status is-build">Layer 3 · 已部分实现</span>
-              <div class="layer-step">Crystallized Memory</div>
-              <h3>把成功路径固定下来</h3>
-              <p>日常使用中自动识别重复工作，把成功路径固化为 workspace skill，不需要显式教学。</p>
-            </article>
-
-            <article class="layer-card reveal">
-              <span class="layer-status is-build">Layer 4 · 已部分实现</span>
-              <div class="layer-step">Route Optimization</div>
-              <h3>自动升级更快路线</h3>
-              <p>在 teach 的 prompt 和路线偏好里已经会推动任务走更快路径，虽然机制还比较简单，但这部分已经开始工作。</p>
-            </article>
-
-            <article class="layer-card reveal">
-              <span class="layer-status is-future">Layer 5 · North Star</span>
-              <div class="layer-step">Proactive Autonomy</div>
-              <h3>在独立空间里主动工作</h3>
-              <p>理解日常习惯、提出建议、在不打断用户的前提下完成常规任务。</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="section" id="routes">
-          <div class="section-head reveal">
-            <div>
-              <h2>执行路线金字塔</h2>
-            </div>
-            <p class="section-copy">
-              这个设计是 Understudy 最重要的产品亮点之一：GUI 是普适起点，但不是唯一答案。
-            </p>
-          </div>
-          <div class="route-grid">
-            <article class="route-card reveal">
-              <span class="route-rank">Fastest</span>
-              <h3>API / Direct Tool</h3>
-              <p>如果目标能力已经有直接工具或 API，就不应该绕回 GUI。毫秒级，最稳。</p>
-              <div class="route-note">适合消息发送、结构化数据操作、已有 MCP / tool surface 的任务。</div>
-            </article>
-
-            <article class="route-card reveal">
-              <span class="route-rank">Fast</span>
-              <h3>Shell / CLI</h3>
-              <p>调用本地命令行、脚本和文件系统，避免图形界面重复劳动。</p>
-              <div class="route-note">适合批量文件处理、开发工具链、系统命令和本地脚本。</div>
-            </article>
-
-            <article class="route-card reveal">
-              <span class="route-rank">Fallback+</span>
-              <h3>Browser</h3>
-              <p>当 Web 页面是最自然入口时，用 Playwright 或浏览器 relay 控制站点流程。</p>
-              <div class="route-note">适合登录态网页、表单、控制台和 SaaS 工作流。</div>
-            </article>
-
-            <article class="route-card reveal">
-              <span class="route-rank">Universal</span>
-              <h3>GUI</h3>
-              <p>任何有界面的应用都可被操作。这是 Understudy 能覆盖长尾软件与真实办公环境的基础。</p>
-              <div class="route-note">不是低级方案，而是系统具备通用性的关键保底能力。</div>
-            </article>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="architecture-panel reveal">
-            <h2 class="panel-title">一次任务，可能横跨整台电脑</h2>
-            <p>
-              这也是它和普通自动化脚本最大的区别：Planner 不是先决定“用哪个工具”，而是面向目标动态选路。一个任务可以查网页、读本地文件、点原生 App、再把结果发到消息通道里。
-            </p>
-            <div class="architecture-grid">
-              <div class="architecture-cell">
-                <strong>Observe</strong>
-                截图、读取网页、查本地状态、拉取上下文与历史记忆。
-              </div>
-              <div class="architecture-cell">
-                <strong>Resolve</strong>
-                判断当前步骤最适合走 API、CLI、Browser 还是 GUI。
-              </div>
-              <div class="architecture-cell">
-                <strong>Execute</strong>
-                调工具、调用脚本、浏览器操作、或执行原生输入事件。
-              </div>
-              <div class="architecture-cell">
-                <strong>Verify</strong>
-                动作后重新观察并给出结构化状态，供记忆与后续升级使用。
+              <div class="showcase-note">
+                以上视频经过加速。完整原速视频：
+                <a href="https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing" target="_blank" rel="noreferrer">Google Drive</a>。
+                已发布的技能产物：
+                <a href="https://github.com/understudy-ai/understudy/blob/main/examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md" target="_blank" rel="noreferrer">SKILL.md</a>。
               </div>
             </div>
-          </div>
-        </section>
 
-        <section class="section" id="start">
-          <div class="command-grid">
-            <article class="command-panel reveal">
-              <h2 class="panel-title">快速上手</h2>
-              <p>
-                当前 README 推荐的路径是先启动 daemon，再通过终端或 dashboard 与系统交互。项目目前处于 Alpha，主力开发与测试环境是 macOS。
-              </p>
-              <div class="terminal">
-                <strong>understudy daemon --start</strong>
-                <br />
-                understudy chat
-                <br />
-                understudy dashboard
-                <br />
-                understudy webchat
-                <br />
-                understudy agent --message "..."
+            <!-- Demo 4: Playbook -->
+            <div class="showcase-demo" data-demo="playbook">
+              <div class="demo-content">
+                <h3>结构化 Playbook 编排工作流</h3>
+                <p>一个通用 Playbook 编排 worker 和技能模块来完成多步骤工作流，附带完整的端到端测试。展示了 Understudy 技能如何组合成更大的自动化流程。</p>
+                <div class="demo-example">示例：Playbook + Worker + 技能包，含 E2E 测试</div>
+                <br>
+                <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/handwritten-playbook-demo/README.md" target="_blank" rel="noreferrer">打开 demo workspace &rarr;</a>
               </div>
-            </article>
-          </div>
-        </section>
-      </main>
-
-      <footer class="footer">
-        <div class="footer-inner">
-          <div>Understudy · 替角先观察，然后登台。</div>
-          <div class="footer-links">
-            <a href="../index.html">English</a>
-            <a href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">GitHub</a>
-            <a href="https://github.com/understudy-ai/understudy/blob/main/README.zh-CN.md" target="_blank" rel="noreferrer">README</a>
-            <a href="https://github.com/understudy-ai/understudy/blob/main/docs/Product_Design.zh-CN.md" target="_blank" rel="noreferrer">产品设计</a>
+              <div class="demo-video-placeholder">演示视频即将上线</div>
+            </div>
           </div>
         </div>
-      </footer>
-    </div>
+      </section>
+
+      <!-- 4. 越用越好 -->
+      <section>
+        <div class="wrap">
+          <div class="growth-section reveal">
+            <h2>它会越用越好</h2>
+            <p>就像一个新同事慢慢成长——Understudy 从听指令开始，逐渐学会你的习惯，找到更好的做事方式。</p>
+            <div class="timeline">
+              <div class="timeline-step">
+                <div class="timeline-when">第 1 天</div>
+                <div class="timeline-dot"></div>
+                <div>
+                  <div class="timeline-label">执行</div>
+                  <div class="timeline-desc">你说什么它做什么</div>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-when">第 1 周</div>
+                <div class="timeline-dot"></div>
+                <div>
+                  <div class="timeline-label">学习</div>
+                  <div class="timeline-desc">看着你做，记住流程</div>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-when">第 1 个月</div>
+                <div class="timeline-dot"></div>
+                <div>
+                  <div class="timeline-label">记住</div>
+                  <div class="timeline-desc">独立完成日常任务</div>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-when">第 3 个月</div>
+                <div class="timeline-dot"></div>
+                <div>
+                  <div class="timeline-label">优化</div>
+                  <div class="timeline-desc">自己找到更快的路</div>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-when">第 6 个月</div>
+                <div class="timeline-dot"></div>
+                <div>
+                  <div class="timeline-label">预判</div>
+                  <div class="timeline-desc">你还没开口它就做了</div>
+                </div>
+              </div>
+            </div>
+            <div class="growth-quote">
+              "在剧场里，替角先观察主角，学会角色，然后在需要时登台。"
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. 开源，用你自己的模型 -->
+      <section>
+        <div class="wrap">
+          <div class="section-header reveal">
+            <h2>开源免费，用你自己的模型</h2>
+            <p>不用订阅，不被绑定。在本地运行，数据完全可控，模型自己选。</p>
+          </div>
+          <div class="features">
+            <div class="feature reveal reveal-delay-1">
+              <div class="feature-icon">&#128275;</div>
+              <h3>完全开源</h3>
+              <p>MIT 协议，源码全部在 GitHub。可以自由查看、修改和贡献。</p>
+            </div>
+            <div class="feature reveal reveal-delay-1">
+              <div class="feature-icon">&#129520;</div>
+              <h3>自带模型</h3>
+              <p>支持 Anthropic、OpenAI、Google、MiniMax 等。用你自己的 API Key，不需要额外订阅。</p>
+            </div>
+            <div class="feature reveal reveal-delay-2">
+              <div class="feature-icon">&#128274;</div>
+              <h3>本地优先</h3>
+              <p>在你自己的电脑上运行。截图、录像、任务数据默认都存在本地。</p>
+            </div>
+            <div class="feature reveal reveal-delay-2">
+              <div class="feature-icon">&#128187;</div>
+              <h3>macOS 优先</h3>
+              <p>目前在 macOS 上支持完整的原生 GUI 自动化。Linux 和 Windows 支持计划中，欢迎贡献。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. 开始使用 -->
+      <section id="start">
+        <div class="wrap">
+          <div class="section-header reveal">
+            <h2>几分钟就能上手</h2>
+          </div>
+          <div class="start-grid">
+            <div class="start-card reveal">
+              <h3>快速开始</h3>
+              <p>通过 npm 安装，向导会带你完成配置。</p>
+              <div class="terminal">
+                <span class="comment"># 安装</span><br>
+                <span class="cmd">npm install -g @understudy-ai/understudy</span><br>
+                <span class="cmd">understudy wizard</span><br>
+                <br>
+                <span class="comment"># 启动</span><br>
+                <span class="cmd">understudy daemon --start</span><br>
+                <span class="cmd">understudy chat</span>
+              </div>
+            </div>
+            <div class="start-card reveal" id="roadmap">
+              <h3>发展路线</h3>
+              <p>五层能力，循序渐进。每一层都建立在前一层之上。</p>
+              <div class="roadmap">
+                <div class="roadmap-item">
+                  <div class="roadmap-badge badge-live">已实现</div>
+                  <strong>操作软件</strong>
+                  <span>看、点、输入，操作 macOS 应用</span>
+                </div>
+                <div class="roadmap-item">
+                  <div class="roadmap-badge badge-live">已实现</div>
+                  <strong>演示学习</strong>
+                  <span>演示教学，发布可复用技能</span>
+                </div>
+                <div class="roadmap-item">
+                  <div class="roadmap-badge badge-wip">开发中</div>
+                  <strong>记住</strong>
+                  <span>自动把成功路径固化下来</span>
+                </div>
+                <div class="roadmap-item">
+                  <div class="roadmap-badge badge-wip">开发中</div>
+                  <strong>加速</strong>
+                  <span>发现并升级到更快的执行方式</span>
+                </div>
+                <div class="roadmap-item">
+                  <div class="roadmap-badge badge-vision">远景</div>
+                  <strong>预判</strong>
+                  <span>在不打扰你的前提下主动行动</span>
+                </div>
+              </div>
+              <div class="models-bar">
+                <strong>支持的模型：</strong>Anthropic (Claude)、OpenAI (GPT / Codex)、Google (Gemini)、MiniMax 等，通过可配置的 provider 接入更多模型。
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div class="footer-left">
+          Understudy &middot; <span>替角先观察，然后登台。</span>
+        </div>
+        <div class="footer-links">
+          <a href="../index.html">English</a>
+          <a href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://discord.gg/eyR2dS3f" target="_blank" rel="noreferrer">Discord</a>
+          <a href="https://github.com/understudy-ai/understudy/blob/main/README.zh-CN.md" target="_blank" rel="noreferrer">README</a>
+          <a href="https://github.com/understudy-ai/understudy/blob/main/docs/Product_Design.zh-CN.md" target="_blank" rel="noreferrer">产品设计</a>
+        </div>
+      </div>
+    </footer>
 
     <script>
+      /* Scroll reveal */
       const revealNodes = document.querySelectorAll(".reveal");
       const observer = new IntersectionObserver(
         (entries) => {
@@ -1120,19 +1294,20 @@
             }
           }
         },
-        { threshold: 0.16 }
+        { threshold: 0.12 }
       );
+      for (const node of revealNodes) observer.observe(node);
 
-      for (const node of revealNodes) {
-        observer.observe(node);
-      }
+      /* Showcase tabs */
+      document.querySelectorAll(".showcase-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const demo = tab.dataset.demo;
+          document.querySelectorAll(".showcase-tab").forEach((t) => t.classList.remove("is-active"));
+          document.querySelectorAll(".showcase-demo").forEach((d) => d.classList.remove("is-active"));
+          tab.classList.add("is-active");
+          document.querySelector(`.showcase-demo[data-demo="${demo}"]`).classList.add("is-active");
+        });
+      });
     </script>
   </body>
 </html>
-      .hero-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        flex-wrap: wrap;
-      }
