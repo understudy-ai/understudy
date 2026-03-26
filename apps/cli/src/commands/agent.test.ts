@@ -77,12 +77,13 @@ describe("runAgentCommand", () => {
 		expect(mocks.rpcCall).toHaveBeenNthCalledWith(
 			1,
 			"chat.send",
-			{
+			expect.objectContaining({
 				text: `<file name="${imagePath}"></file>\ninspect this`,
 				cwd: tempDir,
 				channelId: "cli",
 				senderId: "understudy-cli",
 				forceNew: true,
+				executionScopeKey: expect.any(String),
 				waitForCompletion: false,
 				configOverride: {
 					defaultProvider: "openai",
@@ -96,7 +97,7 @@ describe("runAgentCommand", () => {
 						mimeType: "image/png",
 					},
 				],
-			},
+			}),
 			expect.any(Object),
 		);
 		expect(log).toHaveBeenCalledWith("remote reply");
@@ -133,6 +134,7 @@ describe("runAgentCommand", () => {
 			}),
 			expect.any(Object),
 		);
+		expect(mocks.rpcCall.mock.calls[0]?.[1]).not.toHaveProperty("executionScopeKey");
 		expect(log).toHaveBeenCalledWith("continued reply");
 	});
 

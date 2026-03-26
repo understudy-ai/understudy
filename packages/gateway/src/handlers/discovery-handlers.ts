@@ -99,12 +99,12 @@ export function createDiscoveryHandlers(deps: DiscoveryHandlerDeps = {}) {
 		// Return known model list as fallback
 		return {
 			id: request.id,
-			result: {
-				models: [
-					{ provider: "openai-codex", id: "gpt-5.4" },
-					{ provider: "anthropic", id: "claude-opus-4-20250514" },
-					{ provider: "anthropic", id: "claude-sonnet-4-6" },
-					{ provider: "anthropic", id: "claude-haiku-4-20250414" },
+				result: {
+					models: [
+						{ provider: "openai-codex", id: "gpt-5.4" },
+						{ provider: "anthropic", id: "claude-opus-4-20250514" },
+						{ provider: "anthropic", id: "claude-sonnet-4-6" },
+						{ provider: "anthropic", id: "claude-haiku-4-20250414" },
 					{ provider: "openai", id: "gpt-4o" },
 					{ provider: "openai", id: "gpt-4o-mini" },
 					{ provider: "google", id: "gemini-2.0-flash" },

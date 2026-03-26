@@ -1,6 +1,7 @@
 import {
 	buildWorkspaceSkillSnapshot,
 	type TaughtTaskExecutionRoute,
+	type WorkspaceArtifactKind,
 } from "@understudy/core";
 import type { UnderstudyConfig } from "@understudy/types";
 import { listGuiToolCatalog } from "./gui-tools.js";
@@ -18,6 +19,7 @@ export interface TeachCapabilityTool {
 export interface TeachCapabilitySkill {
 	name: string;
 	description?: string;
+	artifactKind?: WorkspaceArtifactKind;
 	allowedToolNames?: string[];
 	primaryEnv?: string;
 	requiredEnv?: string[];
@@ -109,6 +111,7 @@ export function buildTeachCapabilitySnapshot(params: {
 		skills: skillSnapshot.resolvedSkills.map((skill) => ({
 			name: skill.name,
 			...(skill.description?.trim() ? { description: skill.description.trim() } : {}),
+			...(skill.artifactKind ? { artifactKind: skill.artifactKind } : {}),
 			...(skill.allowedToolNames?.length ? { allowedToolNames: skill.allowedToolNames } : {}),
 			...(skill.primaryEnv ? { primaryEnv: skill.primaryEnv } : {}),
 			...(skill.requiredEnv?.length ? { requiredEnv: skill.requiredEnv } : {}),
@@ -142,7 +145,7 @@ export function formatTeachCapabilitySnapshotForPrompt(snapshot: TeachCapability
 		lines.push("Available workspace skills:");
 		for (const skill of snapshot.skills) {
 			lines.push(
-				`- ${skill.name}${skill.description ? `: ${truncateCapabilityText(skill.description, 180)}` : ""}${skill.allowedToolNames?.length ? ` (allowed tools: ${skill.allowedToolNames.join(", ")})` : ""}${skill.primaryEnv ? ` (primary env: ${skill.primaryEnv})` : ""}`,
+				`- ${skill.name}${skill.artifactKind ? ` [${skill.artifactKind}]` : ""}${skill.description ? `: ${truncateCapabilityText(skill.description, 180)}` : ""}${skill.allowedToolNames?.length ? ` (allowed tools: ${skill.allowedToolNames.join(", ")})` : ""}${skill.primaryEnv ? ` (primary env: ${skill.primaryEnv})` : ""}`,
 			);
 		}
 	}

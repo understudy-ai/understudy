@@ -1,19 +1,14 @@
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 
-// These aliases are intentional OpenClaw migration surfaces. They exist so
-// OpenClaw skills can move into Understudy without being rewritten, even when a
-// given runtime only exposes Understudy-native tool names. This is product
-// compatibility, not cleanup debt from an older Understudy implementation.
+// Keep a narrow exec->bash compatibility fallback for runtimes that expose
+// bash but not the native Understudy exec tool. Other OpenClaw aliases were
+// removed to simplify the public runtime surface.
 const OPENCLAW_COMPATIBILITY_ALIAS_TARGETS = {
-	message: "message_send",
-	cron: "schedule",
 	exec: "bash",
 } as const;
 
-const OPENCLAW_PROMPT_ALIAS_TARGETS = {
-	message: "message_send",
-} as const;
+const OPENCLAW_PROMPT_ALIAS_TARGETS = {} as const;
 
 const ExecCompatibilitySchema = Type.Object({
 	command: Type.String({
@@ -66,19 +61,6 @@ function prependCompatibilityNotice(
 	return {
 		...result,
 		content,
-	};
-}
-
-function cloneToolWithAlias(
-	target: AgentTool<any>,
-	aliasName: string,
-	description: string,
-): AgentTool<any> {
-	return {
-		...target,
-		name: aliasName,
-		label: aliasName,
-		description,
 	};
 }
 
@@ -177,28 +159,6 @@ export function createOpenClawCompatibilityToolAliases(
 		tools.map((tool) => [normalizeToolName(tool.name), tool] as const),
 	);
 	const aliases: Array<AgentTool<any>> = [];
-
-	const messageTarget = byName.get("message_send");
-	if (messageTarget && !byName.has("message")) {
-		aliases.push(
-			cloneToolWithAlias(
-				messageTarget,
-				"message",
-				"OpenClaw compatibility alias for Understudy message_send.",
-			),
-		);
-	}
-
-	const cronTarget = byName.get("schedule");
-	if (cronTarget && !byName.has("cron")) {
-		aliases.push(
-			cloneToolWithAlias(
-				cronTarget,
-				"cron",
-				"OpenClaw compatibility alias for Understudy schedule.",
-			),
-		);
-	}
 
 	const execTarget = byName.get("bash");
 	if (execTarget && !byName.has("exec")) {

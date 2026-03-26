@@ -3,6 +3,11 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promi
 import { join, resolve } from "node:path";
 import { resolveUnderstudyHomeDir } from "./runtime-paths.js";
 import { asNumber, asRecord, asString } from "./value-helpers.js";
+import {
+	normalizeWorkspacePlaybookApprovalGate,
+	type WorkspaceArtifactKind,
+	type WorkspacePlaybookApprovalGate,
+} from "./workspace-artifact-types.js";
 import { containsPath, normalizePath } from "./workspace-context.js";
 
 const DEFAULT_MAX_PROMPT_DRAFTS = 3;
@@ -190,6 +195,49 @@ export interface TaughtTaskSkillDependency {
 	required: boolean;
 }
 
+export interface TaughtTaskDraftChildArtifact {
+	id: string;
+	name: string;
+	artifactKind: Exclude<WorkspaceArtifactKind, "playbook">;
+	objective: string;
+	required: boolean;
+	reason?: string;
+}
+
+export type TaughtTaskPlaybookStageKind = "skill" | "worker" | "inline" | "approval";
+
+export interface TaughtTaskPlaybookStage {
+	id: string;
+	name: string;
+	kind: TaughtTaskPlaybookStageKind;
+	refName?: string;
+	objective: string;
+	inputs: string[];
+	outputs: string[];
+	budgetNotes: string[];
+	retryPolicy?: "retry_once" | "skip_with_note" | "pause_for_human";
+	approvalGate?: WorkspacePlaybookApprovalGate;
+}
+
+export interface TaughtTaskWorkerBudget {
+	maxMinutes?: number;
+	maxActions?: number;
+	maxScreenshots?: number;
+}
+
+export interface TaughtTaskWorkerContract {
+	goal: string;
+	scope?: string;
+	inputs: string[];
+	outputs: string[];
+	allowedRoutes: TaughtTaskExecutionRoute[];
+	allowedSurfaces: string[];
+	budget?: TaughtTaskWorkerBudget;
+	escalationPolicy: string[];
+	stopConditions: string[];
+	decisionHeuristics: string[];
+}
+
 export interface TaughtTaskDraftRevision {
 	revision: number;
 	timestamp: number;
@@ -205,6 +253,7 @@ export interface TaughtTaskDraftPublishedSkill {
 	skillDir: string;
 	skillPath: string;
 	publishedAt: number;
+	artifactKind?: WorkspaceArtifactKind;
 }
 
 export interface TaughtTaskDraftValidationCheck {
@@ -242,6 +291,7 @@ export interface TaughtTaskDraft {
 	createdAt: number;
 	updatedAt: number;
 	status: "draft" | "published";
+	artifactKind: WorkspaceArtifactKind;
 	title: string;
 	objective: string;
 	intent: string;
@@ -261,6 +311,9 @@ export interface TaughtTaskDraft {
 	replayPreconditions: string[];
 	resetSignals: string[];
 	skillDependencies: TaughtTaskSkillDependency[];
+	childArtifacts: TaughtTaskDraftChildArtifact[];
+	playbookStages: TaughtTaskPlaybookStage[];
+	workerContract?: TaughtTaskWorkerContract;
 	steps: TaughtTaskDraftStep[];
 	validation?: TaughtTaskDraftValidation;
 	revisions: TaughtTaskDraftRevision[];
@@ -356,6 +409,7 @@ export interface UpdatePersistedTaughtTaskDraftOptions {
 			title?: string;
 			intent?: string;
 			objective?: string;
+			artifactKind?: WorkspaceArtifactKind;
 			taskKind?: TaughtTaskKind;
 			parameterSlots?: Array<TaughtTaskDraftParameter | string>;
 			successCriteria?: string[];
@@ -368,6 +422,9 @@ export interface UpdatePersistedTaughtTaskDraftOptions {
 			replayPreconditions?: string[];
 			resetSignals?: string[];
 			skillDependencies?: Array<TaughtTaskSkillDependency | string>;
+			childArtifacts?: Array<Partial<TaughtTaskDraftChildArtifact>>;
+			playbookStages?: Array<Partial<TaughtTaskPlaybookStage>>;
+			workerContract?: Partial<TaughtTaskWorkerContract>;
 			steps?: Array<Partial<TaughtTaskDraftStep> | string>;
 			validation?: TaughtTaskDraftValidation;
 			note?: string;
@@ -846,6 +903,229 @@ function buildStagedWorkflowLines(procedure: TaughtTaskProcedureStep[]): string[
 	]);
 }
 
+function buildPlaybookStageLines(stages: TaughtTaskPlaybookStage[]): string[] {
+	return stages.map((stage, index) => {
+		const stageToken = stage.refName || sanitizeSkillNameSegment(stage.name) || `stage-${index + 1}`;
+		const refToken = ` ${stageToken}`;
+		const modifiers = [
+			stage.inputs.length > 0 ? `inputs: ${stage.inputs.join(", ")}` : undefined,
+			stage.outputs.length > 0 ? `outputs: ${stage.outputs.join(", ")}` : undefined,
+			stage.budgetNotes.length > 0 ? `budget: ${stage.budgetNotes.join(", ")}` : undefined,
+			stage.retryPolicy ? `retry: ${stage.retryPolicy}` : undefined,
+			stage.approvalGate ? `approval: ${stage.approvalGate}` : undefined,
+		].filter((entry): entry is string => Boolean(entry));
+		return `${index + 1}. [${stage.kind}]${refToken} -> ${stage.objective}${modifiers.length > 0 ? ` | ${modifiers.join(" | ")}` : ""}`;
+	});
+}
+
+function buildPublishedArtifactFrontmatterLines(params: {
+	draft: TaughtTaskDraft;
+	triggers: string[];
+}): string[] {
+	return [
+		"---",
+		...(params.triggers.length > 0
+			? [
+				"triggers:",
+				...params.triggers.map((trigger) => `  - ${quoteYamlString(trigger)}`),
+			]
+			: []),
+		"metadata:",
+		"  understudy:",
+		`    artifactKind: ${quoteYamlString(params.draft.artifactKind)}`,
+		"    taught: true",
+		`    workspaceDir: ${quoteYamlString(resolve(params.draft.workspaceDir))}`,
+		`    draftId: ${quoteYamlString(params.draft.id)}`,
+		`    runId: ${quoteYamlString(params.draft.runId)}`,
+		`    routeSignature: ${quoteYamlString(params.draft.routeSignature)}`,
+		...(params.draft.artifactKind === "playbook" && params.draft.childArtifacts.length > 0
+			? [
+				"    childArtifacts:",
+				...params.draft.childArtifacts.flatMap((artifact) => [
+					`      - name: ${quoteYamlString(artifact.name)}`,
+					`        artifactKind: ${quoteYamlString(artifact.artifactKind)}`,
+					`        required: ${artifact.required ? "true" : "false"}`,
+					...(artifact.reason ? [`        reason: ${quoteYamlString(artifact.reason)}`] : []),
+				]),
+			]
+			: []),
+	];
+}
+
+function buildPublishedPlaybookOutputContractLines(draft: TaughtTaskDraft): string[] {
+	const outputCandidates = Array.from(new Set([
+		...draft.playbookStages.flatMap((stage) => stage.outputs),
+		...draft.successCriteria,
+		...(draft.taskCard?.output ? [draft.taskCard.output] : []),
+	].map((entry) => entry.trim()).filter(Boolean)));
+	return outputCandidates.length > 0
+		? outputCandidates.map((entry) => `- ${entry}`)
+		: ["- Produce the expected deliverable artifacts before approval."];
+}
+
+function collectPlaybookApprovalGates(draft: TaughtTaskDraft): string[] {
+	return Array.from(new Set(
+		draft.playbookStages
+			.map((stage) => stage.approvalGate?.trim())
+			.filter((entry): entry is string => Boolean(entry) && entry !== "none"),
+	));
+}
+
+function buildPublishedPlaybookMarkdown(params: {
+	name: string;
+	draft: TaughtTaskDraft;
+}): string {
+	const { draft, name } = params;
+	const triggers = buildPublishedSkillTriggers(draft);
+	const frontmatterLines = buildPublishedArtifactFrontmatterLines({ draft, triggers });
+	const approvalGates = collectPlaybookApprovalGates(draft);
+	return [
+		...frontmatterLines.slice(0, 1),
+		`name: ${name}`,
+		`description: ${quoteYamlString(buildPublishedSkillDescription(draft))}`,
+		...frontmatterLines.slice(1),
+		"---",
+		"",
+		`# ${name}`,
+		"",
+		`This workspace playbook was taught from an explicit teach draft captured in \`${resolve(draft.workspaceDir)}\`.`,
+		"",
+		"## Goal",
+		"",
+		draft.taskCard?.goal ?? draft.objective ?? draft.intent ?? draft.title,
+		"",
+		"## Inputs",
+		"",
+		...(draft.parameterSlots.length > 0
+			? draft.parameterSlots.map((slot) => `- ${slot.label || slot.name}${slot.sampleValue ? ` (${slot.sampleValue})` : ""}`)
+			: ["- No parameter slots were captured. Confirm required inputs before running the playbook."]),
+		"",
+		"## Child Artifacts",
+		"",
+		...(draft.childArtifacts.length > 0
+			? draft.childArtifacts.map((artifact) =>
+				`- ${artifact.name} [${artifact.artifactKind}]${artifact.reason ? `: ${artifact.reason}` : ""}${artifact.required ? " (required)" : ""}`)
+			: ["- No child artifacts were captured yet."]),
+		"",
+		"## Stage Plan",
+		"",
+		...(draft.playbookStages.length > 0
+			? buildPlaybookStageLines(draft.playbookStages)
+			: ["1. No playbook stages were captured yet."]),
+		"",
+		"## Output Contract",
+		"",
+		...buildPublishedPlaybookOutputContractLines(draft),
+		"",
+		"## Approval Gates",
+		"",
+		...(draft.playbookStages.some((stage) => stage.kind === "approval" || Boolean(stage.approvalGate))
+			? [approvalGates.length > 0
+				? `- Human approval is required at these gates: ${approvalGates.join(", ")}.`
+				: "- Human approval is required before continuing past approval stages or other high-risk work."]
+			: ["- No explicit approval gates were captured."]),
+		"",
+		"## Failure Policy",
+		"",
+		...(draft.uncertainties.length > 0
+			? draft.uncertainties.map((entry) => `- ${entry}`)
+			: ["- Pause and escalate when a stage cannot preserve the intended outcome."]),
+		"",
+	].join("\n");
+}
+
+function buildPublishedWorkerBudgetLines(contract: TaughtTaskWorkerContract | undefined): string[] {
+	if (!contract?.budget) {
+		return ["- No explicit budget was captured yet. Confirm the worker budget before long exploratory runs."];
+	}
+	const lines = [
+		contract.budget.maxMinutes !== undefined ? `- maxMinutes=${contract.budget.maxMinutes}` : undefined,
+		contract.budget.maxActions !== undefined ? `- maxActions=${contract.budget.maxActions}` : undefined,
+		contract.budget.maxScreenshots !== undefined ? `- maxScreenshots=${contract.budget.maxScreenshots}` : undefined,
+	].filter((entry): entry is string => Boolean(entry));
+	return lines.length > 0
+		? lines
+		: ["- No explicit budget was captured yet. Confirm the worker budget before long exploratory runs."];
+}
+
+function buildPublishedWorkerMarkdown(params: {
+	name: string;
+	draft: TaughtTaskDraft;
+}): string {
+	const { draft, name } = params;
+	const triggers = buildPublishedSkillTriggers(draft);
+	const frontmatterLines = buildPublishedArtifactFrontmatterLines({ draft, triggers });
+	const contract = normalizeWorkerContract(
+		draft.workerContract,
+		buildWorkerContractFromDraftSeed({
+			title: draft.title,
+			objective: draft.objective || draft.intent || draft.title,
+			taskCard: draft.taskCard,
+			parameterSlots: draft.parameterSlots,
+			successCriteria: draft.successCriteria,
+			uncertainties: draft.uncertainties,
+			executionPolicy: draft.executionPolicy,
+		}),
+	);
+	return [
+		...frontmatterLines.slice(0, 1),
+		`name: ${name}`,
+		`description: ${quoteYamlString(buildPublishedSkillDescription(draft))}`,
+		...frontmatterLines.slice(1),
+		"---",
+		"",
+		`# ${name}`,
+		"",
+		`This workspace worker was taught from an explicit teach draft captured in \`${resolve(draft.workspaceDir)}\`.`,
+		"",
+		"## Goal",
+		"",
+		contract?.goal ?? draft.taskCard?.goal ?? draft.objective ?? draft.intent ?? draft.title,
+		"",
+		"## Operating Contract",
+		"",
+		...(contract
+			? [
+				`- Scope: ${contract.scope ?? "Goal-driven reusable worker."}`,
+				`- Allowed routes: ${contract.allowedRoutes.join(", ")}`,
+				`- Allowed surfaces: ${contract.allowedSurfaces.length > 0 ? contract.allowedSurfaces.join("; ") : "Not specified yet."}`,
+			]
+			: ["- No worker contract was captured yet."]),
+		"",
+		"## Inputs",
+		"",
+		...(contract?.inputs.length ? contract.inputs.map((entry) => `- ${entry}`) : ["- No explicit inputs were captured."]),
+		"",
+		"## Outputs",
+		"",
+		...(contract?.outputs.length ? contract.outputs.map((entry) => `- ${entry}`) : ["- No explicit outputs were captured."]),
+		"",
+		"## Budget",
+		"",
+		...buildPublishedWorkerBudgetLines(contract),
+		"",
+		"## Allowed Surfaces",
+		"",
+			...(contract?.allowedSurfaces.length ? contract.allowedSurfaces.map((entry) => `- ${entry}`) : [
+				"- Only the surfaces required to accomplish the assigned goal.",
+				"- Escalate before expanding to unrelated surfaces.",
+			]),
+		"",
+		"## Stop Conditions",
+		"",
+		...(contract?.stopConditions.length ? contract.stopConditions.map((entry) => `- ${entry}`) : ["- Stop once the required outputs are sufficiently supported."]),
+		"",
+		"## Decision Heuristics",
+		"",
+		...(contract?.decisionHeuristics.length ? contract.decisionHeuristics.map((entry) => `- ${entry}`) : ["- Prefer evidence-producing actions over exhaustive blind traversal."]),
+		"",
+		"## Failure Policy",
+		"",
+		...(contract?.escalationPolicy.length ? contract.escalationPolicy.map((entry) => `- ${entry}`) : ["- Escalate or pause when the worker cannot preserve the intended outcome."]),
+		"",
+	].join("\n");
+}
+
 function buildGuiReferencePathLines(params: {
 	draft: TaughtTaskDraft;
 	procedure: TaughtTaskProcedureStep[];
@@ -951,6 +1231,37 @@ function buildTaskCardFromDraftSeed(params: {
 		inputs,
 		extract: [],
 		...(output ? { output } : {}),
+	});
+}
+
+function buildWorkerContractFromDraftSeed(params: {
+	title: string;
+	objective: string;
+	taskCard?: TaughtTaskCard;
+	parameterSlots: TaughtTaskDraftParameter[];
+	successCriteria: string[];
+	uncertainties?: string[];
+	executionPolicy: TaughtTaskExecutionPolicy;
+}): TaughtTaskWorkerContract | undefined {
+	const goal = params.taskCard?.goal ?? params.objective ?? params.title;
+	const outputs = normalizeLineList([
+		...(params.taskCard?.extract ?? []),
+		...(params.taskCard?.output ? [params.taskCard.output] : []),
+		...params.successCriteria,
+	]);
+	return normalizeWorkerContract({
+		goal,
+		scope: params.taskCard?.scope ?? "Goal-driven reusable worker.",
+		inputs: params.parameterSlots.map((slot) => slot.label || humanizeLabel(slot.name)),
+		outputs,
+		allowedRoutes: params.executionPolicy.preferredRoutes,
+		allowedSurfaces: ["Current task surface", "Supporting workspace windows when required"],
+		escalationPolicy: normalizeLineList(params.uncertainties ?? []),
+		stopConditions: normalizeLineList(params.successCriteria),
+		decisionHeuristics: [
+			"Prefer evidence-producing actions over exhaustive blind traversal.",
+			"Stop once the required outputs are sufficiently supported.",
+		],
 	});
 }
 
@@ -1526,6 +1837,163 @@ function areSkillDependenciesEqual(left: TaughtTaskSkillDependency[], right: Tau
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function normalizeArtifactKind(value: WorkspaceArtifactKind | string | undefined): WorkspaceArtifactKind {
+	switch (value?.trim().toLowerCase()) {
+		case "worker":
+			return "worker";
+		case "playbook":
+			return "playbook";
+		default:
+			return "skill";
+	}
+}
+
+function normalizeChildArtifacts(
+	values: Array<Partial<TaughtTaskDraftChildArtifact>> | undefined,
+): TaughtTaskDraftChildArtifact[] {
+	const next: TaughtTaskDraftChildArtifact[] = [];
+	for (const [index, value] of (values ?? []).entries()) {
+		const name = value.name?.trim();
+		const objective = value.objective?.trim();
+		const artifactKind = normalizeArtifactKind(value.artifactKind);
+		if (!name || !objective || artifactKind === "playbook") {
+			continue;
+		}
+		next.push({
+			id: value.id?.trim() || `child-artifact-${index + 1}`,
+			name,
+			artifactKind,
+			objective,
+			required: value.required !== false,
+			...(value.reason?.trim() ? { reason: value.reason.trim() } : {}),
+		});
+	}
+	return next.slice(0, 16);
+}
+
+function areChildArtifactsEqual(
+	left: TaughtTaskDraftChildArtifact[],
+	right: TaughtTaskDraftChildArtifact[],
+): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function normalizePlaybookStageKind(
+	value: TaughtTaskPlaybookStageKind | string | undefined,
+): TaughtTaskPlaybookStageKind | undefined {
+	switch (value?.trim().toLowerCase()) {
+		case "skill":
+			return "skill";
+		case "worker":
+			return "worker";
+		case "inline":
+			return "inline";
+		case "approval":
+			return "approval";
+		default:
+			return undefined;
+	}
+}
+
+function normalizePlaybookStages(
+	values: Array<Partial<TaughtTaskPlaybookStage>> | undefined,
+): TaughtTaskPlaybookStage[] {
+	const next: TaughtTaskPlaybookStage[] = [];
+	for (const [index, value] of (values ?? []).entries()) {
+		const kind = normalizePlaybookStageKind(value.kind);
+		const name = value.name?.trim();
+		const objective = value.objective?.trim();
+		if (!kind || !name || !objective) {
+			continue;
+		}
+		const refName = value.refName?.trim() || undefined;
+		if ((kind === "skill" || kind === "worker") && !refName) {
+			continue;
+		}
+		const retryPolicy =
+			value.retryPolicy === "retry_once" ||
+			value.retryPolicy === "skip_with_note" ||
+			value.retryPolicy === "pause_for_human"
+				? value.retryPolicy
+				: undefined;
+		const approvalGate = normalizeWorkspacePlaybookApprovalGate(value.approvalGate);
+		next.push({
+			id: value.id?.trim() || `playbook-stage-${index + 1}`,
+			name,
+			kind,
+			...(refName ? { refName } : {}),
+			objective,
+			inputs: normalizeLineList(value.inputs ?? []),
+			outputs: normalizeLineList(value.outputs ?? []),
+			budgetNotes: normalizeLineList(value.budgetNotes ?? []),
+			...(retryPolicy ? { retryPolicy } : {}),
+			...(approvalGate ? { approvalGate } : {}),
+		});
+	}
+	return next.slice(0, 24);
+}
+
+function arePlaybookStagesEqual(left: TaughtTaskPlaybookStage[], right: TaughtTaskPlaybookStage[]): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function normalizeWorkerBudget(value: Partial<TaughtTaskWorkerBudget> | undefined): TaughtTaskWorkerBudget | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+	const asFiniteInt = (input: unknown): number | undefined =>
+		typeof input === "number" && Number.isFinite(input) && input >= 0
+			? Math.floor(input)
+			: undefined;
+	const budget = {
+		...(asFiniteInt(value.maxMinutes) !== undefined ? { maxMinutes: asFiniteInt(value.maxMinutes) } : {}),
+		...(asFiniteInt(value.maxActions) !== undefined ? { maxActions: asFiniteInt(value.maxActions) } : {}),
+		...(asFiniteInt(value.maxScreenshots) !== undefined ? { maxScreenshots: asFiniteInt(value.maxScreenshots) } : {}),
+	};
+	return Object.keys(budget).length > 0 ? budget : undefined;
+}
+
+function normalizeWorkerContract(
+	value: Partial<TaughtTaskWorkerContract> | undefined,
+	existing?: TaughtTaskWorkerContract,
+): TaughtTaskWorkerContract | undefined {
+	if (!value && !existing) {
+		return undefined;
+	}
+	const goal = value?.goal?.trim() || existing?.goal?.trim();
+	const scope = value?.scope?.trim() || existing?.scope?.trim() || undefined;
+	const inputs = normalizeLineList(value?.inputs ?? existing?.inputs ?? []);
+	const outputs = normalizeLineList(value?.outputs ?? existing?.outputs ?? []);
+	const allowedRoutes = normalizeExecutionRouteList(value?.allowedRoutes, existing?.allowedRoutes ?? DEFAULT_EXECUTION_ROUTE_ORDER);
+	const allowedSurfaces = normalizeLineList(value?.allowedSurfaces ?? existing?.allowedSurfaces ?? []);
+	const budget = normalizeWorkerBudget(value?.budget ?? existing?.budget);
+	const escalationPolicy = normalizeLineList(value?.escalationPolicy ?? existing?.escalationPolicy ?? []);
+	const stopConditions = normalizeLineList(value?.stopConditions ?? existing?.stopConditions ?? []);
+	const decisionHeuristics = normalizeLineList(value?.decisionHeuristics ?? existing?.decisionHeuristics ?? []);
+	if (!goal) {
+		return undefined;
+	}
+	return {
+		goal,
+		...(scope ? { scope } : {}),
+		inputs,
+		outputs,
+		allowedRoutes,
+		allowedSurfaces,
+		...(budget ? { budget } : {}),
+		escalationPolicy,
+		stopConditions,
+		decisionHeuristics,
+	};
+}
+
+function areWorkerContractsEqual(
+	left: TaughtTaskWorkerContract | undefined,
+	right: TaughtTaskWorkerContract | undefined,
+): boolean {
+	return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
 function areTaskCardsEqual(left: TaughtTaskCard | undefined, right: TaughtTaskCard | undefined): boolean {
 	return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
@@ -1706,6 +2174,24 @@ function areValidationEqual(left: TaughtTaskDraftValidation | undefined, right: 
 
 export function lintTaughtTaskDraft(draft: TaughtTaskDraft): TaughtTaskDraftLintIssue[] {
 	const issues: TaughtTaskDraftLintIssue[] = [];
+	if (draft.artifactKind === "playbook" && draft.playbookStages.length === 0) {
+		issues.push({
+			id: "artifact-kind:playbook-missing-stages",
+			summary: "Playbook drafts must declare at least one playbook stage.",
+		});
+	}
+	if (draft.artifactKind !== "playbook" && draft.childArtifacts.length > 0) {
+		issues.push({
+			id: "artifact-kind:child-artifacts-only-for-playbook",
+			summary: "Only playbook drafts may declare child artifacts.",
+		});
+	}
+	if (draft.artifactKind === "worker" && !draft.workerContract?.goal?.trim()) {
+		issues.push({
+			id: "artifact-kind:worker-missing-contract",
+			summary: "Worker drafts must define a worker contract with at least a goal.",
+		});
+	}
 	if (draft.taskKind === "fixed_demo" && draft.parameterSlots.length > 0) {
 		issues.push({
 			id: "task-kind:fixed-demo-parameters",
@@ -1765,6 +2251,7 @@ function summarizeRevisionChanges(params: {
 	nextTitle: string;
 	nextObjective: string;
 	nextIntent: string;
+	nextArtifactKind: WorkspaceArtifactKind;
 	nextTaskKind: TaughtTaskKind;
 	nextParameterSlots: TaughtTaskDraftParameter[];
 	nextSuccessCriteria: string[];
@@ -1777,6 +2264,9 @@ function summarizeRevisionChanges(params: {
 	nextReplayPreconditions: string[];
 	nextResetSignals: string[];
 	nextSkillDependencies: TaughtTaskSkillDependency[];
+	nextChildArtifacts: TaughtTaskDraftChildArtifact[];
+	nextPlaybookStages: TaughtTaskPlaybookStage[];
+	nextWorkerContract: TaughtTaskWorkerContract | undefined;
 	nextSteps: TaughtTaskDraftStep[];
 	nextValidation: TaughtTaskDraftValidation | undefined;
 }): string[] {
@@ -1786,6 +2276,9 @@ function summarizeRevisionChanges(params: {
 	}
 	if (params.current.objective !== params.nextObjective || params.current.intent !== params.nextIntent) {
 		changes.push("objective");
+	}
+	if (params.current.artifactKind !== params.nextArtifactKind) {
+		changes.push("artifact kind");
 	}
 	if (params.current.taskKind !== params.nextTaskKind) {
 		changes.push("task kind");
@@ -1823,6 +2316,15 @@ function summarizeRevisionChanges(params: {
 	if (!areSkillDependenciesEqual(params.current.skillDependencies, params.nextSkillDependencies)) {
 		changes.push("skill dependencies");
 	}
+	if (!areChildArtifactsEqual(params.current.childArtifacts, params.nextChildArtifacts)) {
+		changes.push("child artifacts");
+	}
+	if (!arePlaybookStagesEqual(params.current.playbookStages, params.nextPlaybookStages)) {
+		changes.push("playbook stages");
+	}
+	if (!areWorkerContractsEqual(params.current.workerContract, params.nextWorkerContract)) {
+		changes.push("worker contract");
+	}
 	if (!areStepsEqual(params.current.steps, params.nextSteps)) {
 		changes.push("steps");
 	}
@@ -1841,15 +2343,12 @@ function buildRevisionSummary(params: {
 	publishedSkillName?: string;
 }): string {
 	if (params.action === "created") {
-		if (params.draft.sourceKind === "video") {
-			return `Created teach draft from demo video ${params.sourceLabel ?? params.draft.sourceLabel ?? "input"}.`;
-		}
 		return `Created teach draft from traced run ${params.sourceLabel ?? params.draft.sourceRunId ?? params.draft.runId}.`;
 	}
 	if (params.action === "published") {
 		return params.publishedSkillName
-			? `Published teach draft to workspace skill ${params.publishedSkillName}.`
-			: "Published teach draft to workspace skills.";
+			? `Published teach draft to workspace ${params.draft.artifactKind} ${params.publishedSkillName}.`
+			: `Published teach draft to workspace ${params.draft.artifactKind}s.`;
 	}
 	if (params.action === "validated") {
 		return params.note?.trim() || "Validated teach draft replay readiness.";
@@ -1977,28 +2476,23 @@ function buildPublishedSkillMarkdown(params: {
 	draft: TaughtTaskDraft;
 }): string {
 	const { draft, name } = params;
+	if (draft.artifactKind === "worker") {
+		return buildPublishedWorkerMarkdown(params);
+	}
+	if (draft.artifactKind === "playbook") {
+		return buildPublishedPlaybookMarkdown(params);
+	}
 	const procedure = resolveDraftProcedure(draft);
 	const stagedWorkflowLines = buildStagedWorkflowLines(procedure);
 	const guiReferenceLines = buildGuiReferencePathLines({ draft, procedure });
 	const toolRouteReferenceLines = buildToolRouteReferenceLines({ draft, procedure });
 	const triggers = buildPublishedSkillTriggers(draft);
+	const frontmatterLines = buildPublishedArtifactFrontmatterLines({ draft, triggers });
 	return [
-		"---",
+		...frontmatterLines.slice(0, 1),
 		`name: ${name}`,
 		`description: ${quoteYamlString(buildPublishedSkillDescription(draft))}`,
-		...(triggers.length > 0
-			? [
-				"triggers:",
-				...triggers.map((trigger) => `  - ${quoteYamlString(trigger)}`),
-			]
-			: []),
-		"metadata:",
-		"  understudy:",
-		"    taught: true",
-		`    workspaceDir: ${quoteYamlString(resolve(draft.workspaceDir))}`,
-		`    draftId: ${quoteYamlString(draft.id)}`,
-		`    runId: ${quoteYamlString(draft.runId)}`,
-		`    routeSignature: ${quoteYamlString(draft.routeSignature)}`,
+		...frontmatterLines.slice(1),
 		"---",
 		"",
 		`# ${name}`,
@@ -2132,7 +2626,7 @@ function buildPublishedSkillMarkdown(params: {
 		"## Failure Policy",
 		"",
 		"- Use `gui_observe` before each `gui_click`/`gui_type` to confirm the target is visible on the current surface.",
-		"- Use `groundingMode: \"complex\"` after any grounding failure or when the UI is dense/ambiguous.",
+		"- Use `groundingMode: \"single\"` for clearly labeled one-match controls such as a top-menu item, dialog action, tab, or row. Escalate to `groundingMode: \"complex\"` after any grounding failure or when the UI is dense/ambiguous.",
 		"- Use `captureMode: \"display\"` for menu bar, Dock, or cross-window operations; `captureMode: \"window\"` for in-app work.",
 		"- Describe targets using visible text labels from the current screenshot, not memorized positions from the teach recording.",
 		"- Re-observe the UI after each significant state change.",
@@ -2192,6 +2686,18 @@ export function buildTaughtTaskDraftFromRun(
 		taskKind,
 		parameterSlots: effectiveParameterSlots,
 	});
+	const workerContract = normalizeWorkerContract(
+		undefined,
+		buildWorkerContractFromDraftSeed({
+			title,
+			objective,
+			taskCard,
+			parameterSlots: effectiveParameterSlots,
+			successCriteria,
+			uncertainties,
+			executionPolicy,
+		}),
+	);
 	return {
 		id: createHash("sha1")
 			.update(resolve(options.workspaceDir))
@@ -2210,6 +2716,7 @@ export function buildTaughtTaskDraftFromRun(
 		createdAt: now,
 		updatedAt: now,
 		status: "draft",
+		artifactKind: "skill",
 		title,
 		objective,
 		intent: objective,
@@ -2229,6 +2736,9 @@ export function buildTaughtTaskDraftFromRun(
 		replayPreconditions: [],
 		resetSignals: [],
 		skillDependencies: [],
+		childArtifacts: [],
+		playbookStages: [],
+		...(workerContract ? { workerContract } : {}),
 		steps,
 		validation: teachValidation
 			? normalizeValidation({
@@ -2278,6 +2788,182 @@ export function buildTaughtTaskDraftFromRun(
 			},
 		],
 	};
+}
+
+function hydrateTaughtTaskDraft(draft: TaughtTaskDraft): TaughtTaskDraft {
+	if (!draft.executionPolicy) {
+		throw new Error(`Teach draft ${draft.id} is missing executionPolicy.`);
+	}
+	if (!Array.isArray(draft.stepRouteOptions)) {
+		throw new Error(`Teach draft ${draft.id} is missing stepRouteOptions.`);
+	}
+	const steps = Array.isArray(draft.steps) ? draft.steps : [];
+	const procedureSeed = Array.isArray(draft.procedure) ? draft.procedure : [];
+	const procedure = normalizeProcedure(
+		procedureSeed,
+		buildProcedureFromSteps(steps),
+	);
+	const parameterSlots = normalizeParameterSlots(Array.isArray(draft.parameterSlots) ? draft.parameterSlots : []);
+	const taskKind = inferTaskKind({
+		taskKind: normalizeTaskKind(draft.taskKind),
+		objective: draft.objective || draft.intent || draft.title,
+		taskCard: draft.taskCard,
+		parameterSlots,
+		procedure,
+		steps,
+	});
+	const effectiveParameterSlots = taskKind === "fixed_demo" ? [] : parameterSlots;
+	const artifactKind = normalizeArtifactKind(draft.artifactKind);
+	const childArtifacts = artifactKind === "playbook"
+		? normalizeChildArtifacts(Array.isArray(draft.childArtifacts) ? draft.childArtifacts : [])
+		: [];
+	const playbookStages = artifactKind === "playbook"
+		? normalizePlaybookStages(Array.isArray(draft.playbookStages) ? draft.playbookStages : [])
+		: [];
+	const workerContract = artifactKind === "worker"
+		? normalizeWorkerContract(
+			draft.workerContract,
+			buildWorkerContractFromDraftSeed({
+				title: draft.title,
+				objective: draft.objective || draft.intent || draft.title,
+				taskCard: draft.taskCard,
+				parameterSlots: effectiveParameterSlots,
+				successCriteria: Array.isArray(draft.successCriteria) ? draft.successCriteria : [],
+				uncertainties: Array.isArray(draft.uncertainties) ? draft.uncertainties : [],
+				executionPolicy: normalizeExecutionPolicy(draft.executionPolicy, {
+					steps,
+					skillDependencies: normalizeSkillDependencies(draft.skillDependencies),
+				}),
+			}),
+		)
+		: undefined;
+	return {
+		...draft,
+		artifactKind,
+		taskKind,
+		parameterSlots: effectiveParameterSlots,
+		taskCard: alignTaskCardToTaskKind({
+			taskCard: normalizeTaskCard(
+				draft.taskCard,
+				buildTaskCardFromDraftSeed({
+					title: draft.title,
+					objective: draft.objective || draft.intent || draft.title,
+					parameterSlots: effectiveParameterSlots,
+					successCriteria: Array.isArray(draft.successCriteria) ? draft.successCriteria : [],
+					procedure,
+				}),
+			),
+			taskKind,
+			parameterSlots: effectiveParameterSlots,
+		}),
+		procedure,
+		replayPreconditions: normalizeReplayHintList(draft.replayPreconditions),
+		resetSignals: normalizeReplayHintList(draft.resetSignals),
+		skillDependencies: normalizeSkillDependencies(draft.skillDependencies),
+		childArtifacts,
+		playbookStages,
+		workerContract,
+		executionPolicy: normalizeExecutionPolicy(draft.executionPolicy, {
+			steps,
+			skillDependencies: normalizeSkillDependencies(draft.skillDependencies),
+		}),
+		stepRouteOptions: normalizeStepRouteOptions(draft.stepRouteOptions, {
+			procedure,
+			steps,
+			existing: draft.stepRouteOptions,
+		}),
+		steps,
+		validation: normalizeValidation(draft.validation),
+	};
+}
+
+async function persistTaughtTaskDraftLedger(
+	ledger: TaughtTaskDraftLedger,
+	learningDir?: string,
+): Promise<void> {
+	const ledgerPath = buildTaskDraftLedgerPath(ledger.workspaceDir, learningDir);
+	await mkdir(join(resolveLearningDir(learningDir), "task-drafts"), { recursive: true });
+	const tempLedgerPath = `${ledgerPath}.${process.pid}.${Date.now()}.tmp`;
+	await writeFile(
+		tempLedgerPath,
+		JSON.stringify(ledger, null, 2),
+		"utf8",
+	);
+	await rename(tempLedgerPath, ledgerPath);
+}
+
+export async function loadPersistedTaughtTaskDraftLedger(
+	options: LoadPersistedTaughtTaskDraftLedgerOptions,
+): Promise<TaughtTaskDraftLedger | undefined> {
+	const workspaceDir = resolve(options.workspaceDir);
+	const learningDir = resolveLearningDir(options.learningDir);
+	const ledgerPath = buildTaskDraftLedgerPath(workspaceDir, learningDir);
+	let payload = await readJsonIfExists<TaughtTaskDraftLedger>(ledgerPath);
+	if (!payload) {
+		payload = await loadBestMatchingPayload<TaughtTaskDraftLedger>({
+			dirPath: join(learningDir, "task-drafts"),
+			requestedWorkspaceDir: workspaceDir,
+		});
+	}
+	if (!payload) {
+		return undefined;
+	}
+	return {
+		updatedAt: payload.updatedAt ?? 0,
+		workspaceDir: payload.workspaceDir ?? workspaceDir,
+		repoRoot: payload.repoRoot,
+		drafts: Array.isArray(payload.drafts)
+			? payload.drafts
+				.filter((draft): draft is TaughtTaskDraft => Boolean(draft && typeof draft.id === "string"))
+				.flatMap((draft) => {
+					try {
+						return [hydrateTaughtTaskDraft(draft)];
+					} catch {
+						return [];
+					}
+				})
+				.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+			: [],
+	};
+}
+
+export async function persistTaughtTaskDraft(
+	draft: TaughtTaskDraft,
+	options: PersistTaughtTaskDraftOptions = {},
+): Promise<TaughtTaskDraftLedger> {
+	const hydratedDraft = hydrateTaughtTaskDraft(draft);
+	const current = await loadPersistedTaughtTaskDraftLedger({
+		workspaceDir: hydratedDraft.workspaceDir,
+		learningDir: options.learningDir,
+	});
+	const otherDrafts = (current?.drafts ?? []).filter((entry) => entry.id !== hydratedDraft.id);
+	const nextDrafts = [hydratedDraft, ...otherDrafts]
+		.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+		.slice(0, options.maxDraftsPerWorkspace ?? DEFAULT_MAX_DRAFTS_PER_WORKSPACE);
+	const nextLedger: TaughtTaskDraftLedger = {
+		updatedAt: Date.now(),
+		workspaceDir: resolve(hydratedDraft.workspaceDir),
+		repoRoot: hydratedDraft.repoRoot,
+		drafts: nextDrafts,
+	};
+	await persistTaughtTaskDraftLedger(nextLedger, options.learningDir);
+	return nextLedger;
+}
+
+export function createTaughtTaskDraft(options: CreateTaughtTaskDraftOptions): TaughtTaskDraft {
+	return buildTaughtTaskDraftFromRun({
+		workspaceDir: options.workspaceDir,
+		repoRoot: options.repoRoot,
+		sessionId: options.sessionId,
+		traceId: options.traceId,
+		runId: options.run.runId,
+		promptPreview: options.run.userPromptPreview,
+		responsePreview: options.run.responsePreview,
+		toolTrace: options.run.toolTrace,
+		teachValidation: options.run.teachValidation,
+		title: options.title,
+		objective: options.objective,
+	});
 }
 
 export function createTaughtTaskDraftFromVideo(
@@ -2386,6 +3072,7 @@ export function createTaughtTaskDraftFromVideo(
 		createdAt: now,
 		updatedAt: now,
 		status: "draft",
+		artifactKind: "skill",
 		title,
 		objective,
 		intent: objective,
@@ -2405,6 +3092,8 @@ export function createTaughtTaskDraftFromVideo(
 		replayPreconditions,
 		resetSignals,
 		skillDependencies,
+		childArtifacts: [],
+		playbookStages: [],
 		steps: normalizedSteps,
 		validation: normalizeValidation({
 			state: "unvalidated",
@@ -2425,154 +3114,6 @@ export function createTaughtTaskDraftFromVideo(
 			},
 		],
 	};
-}
-
-function hydrateTaughtTaskDraft(draft: TaughtTaskDraft): TaughtTaskDraft {
-	if (!draft.executionPolicy) {
-		throw new Error(`Teach draft ${draft.id} is missing executionPolicy.`);
-	}
-	if (!Array.isArray(draft.stepRouteOptions)) {
-		throw new Error(`Teach draft ${draft.id} is missing stepRouteOptions.`);
-	}
-	const steps = Array.isArray(draft.steps) ? draft.steps : [];
-	const procedureSeed = Array.isArray(draft.procedure) ? draft.procedure : [];
-	const procedure = normalizeProcedure(
-		procedureSeed,
-		buildProcedureFromSteps(steps),
-	);
-	const parameterSlots = normalizeParameterSlots(Array.isArray(draft.parameterSlots) ? draft.parameterSlots : []);
-	const taskKind = inferTaskKind({
-		taskKind: normalizeTaskKind(draft.taskKind),
-		objective: draft.objective || draft.intent || draft.title,
-		taskCard: draft.taskCard,
-		parameterSlots,
-		procedure,
-		steps,
-	});
-	const effectiveParameterSlots = taskKind === "fixed_demo" ? [] : parameterSlots;
-	return {
-		...draft,
-		taskKind,
-		parameterSlots: effectiveParameterSlots,
-		taskCard: alignTaskCardToTaskKind({
-			taskCard: normalizeTaskCard(
-				draft.taskCard,
-				buildTaskCardFromDraftSeed({
-					title: draft.title,
-					objective: draft.objective || draft.intent || draft.title,
-					parameterSlots: effectiveParameterSlots,
-					successCriteria: Array.isArray(draft.successCriteria) ? draft.successCriteria : [],
-					procedure,
-				}),
-			),
-			taskKind,
-			parameterSlots: effectiveParameterSlots,
-		}),
-		procedure,
-		replayPreconditions: normalizeReplayHintList(draft.replayPreconditions),
-		resetSignals: normalizeReplayHintList(draft.resetSignals),
-		skillDependencies: normalizeSkillDependencies(draft.skillDependencies),
-		executionPolicy: normalizeExecutionPolicy(draft.executionPolicy, {
-			steps,
-			skillDependencies: normalizeSkillDependencies(draft.skillDependencies),
-		}),
-		stepRouteOptions: normalizeStepRouteOptions(draft.stepRouteOptions, {
-			procedure,
-			steps,
-			existing: draft.stepRouteOptions,
-		}),
-		steps,
-		validation: normalizeValidation(draft.validation),
-	};
-}
-
-async function persistTaughtTaskDraftLedger(
-	ledger: TaughtTaskDraftLedger,
-	learningDir?: string,
-): Promise<void> {
-	const ledgerPath = buildTaskDraftLedgerPath(ledger.workspaceDir, learningDir);
-	await mkdir(join(resolveLearningDir(learningDir), "task-drafts"), { recursive: true });
-	const tempLedgerPath = `${ledgerPath}.${process.pid}.${Date.now()}.tmp`;
-	await writeFile(
-		tempLedgerPath,
-		JSON.stringify(ledger, null, 2),
-		"utf8",
-	);
-	await rename(tempLedgerPath, ledgerPath);
-}
-
-export async function loadPersistedTaughtTaskDraftLedger(
-	options: LoadPersistedTaughtTaskDraftLedgerOptions,
-): Promise<TaughtTaskDraftLedger | undefined> {
-	const workspaceDir = resolve(options.workspaceDir);
-	const learningDir = resolveLearningDir(options.learningDir);
-	const ledgerPath = buildTaskDraftLedgerPath(workspaceDir, learningDir);
-	let payload = await readJsonIfExists<TaughtTaskDraftLedger>(ledgerPath);
-	if (!payload) {
-		payload = await loadBestMatchingPayload<TaughtTaskDraftLedger>({
-			dirPath: join(learningDir, "task-drafts"),
-			requestedWorkspaceDir: workspaceDir,
-		});
-	}
-	if (!payload) {
-		return undefined;
-	}
-	return {
-		updatedAt: payload.updatedAt ?? 0,
-		workspaceDir: payload.workspaceDir ?? workspaceDir,
-		repoRoot: payload.repoRoot,
-		drafts: Array.isArray(payload.drafts)
-			? payload.drafts
-				.filter((draft): draft is TaughtTaskDraft => Boolean(draft && typeof draft.id === "string"))
-				.flatMap((draft) => {
-					try {
-						return [hydrateTaughtTaskDraft(draft)];
-					} catch {
-						return [];
-					}
-				})
-				.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
-			: [],
-	};
-}
-
-export async function persistTaughtTaskDraft(
-	draft: TaughtTaskDraft,
-	options: PersistTaughtTaskDraftOptions = {},
-): Promise<TaughtTaskDraftLedger> {
-	const hydratedDraft = hydrateTaughtTaskDraft(draft);
-	const current = await loadPersistedTaughtTaskDraftLedger({
-		workspaceDir: hydratedDraft.workspaceDir,
-		learningDir: options.learningDir,
-	});
-	const otherDrafts = (current?.drafts ?? []).filter((entry) => entry.id !== hydratedDraft.id);
-	const nextDrafts = [hydratedDraft, ...otherDrafts]
-		.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
-		.slice(0, options.maxDraftsPerWorkspace ?? DEFAULT_MAX_DRAFTS_PER_WORKSPACE);
-	const nextLedger: TaughtTaskDraftLedger = {
-		updatedAt: Date.now(),
-		workspaceDir: resolve(hydratedDraft.workspaceDir),
-		repoRoot: hydratedDraft.repoRoot,
-		drafts: nextDrafts,
-	};
-	await persistTaughtTaskDraftLedger(nextLedger, options.learningDir);
-	return nextLedger;
-}
-
-export function createTaughtTaskDraft(options: CreateTaughtTaskDraftOptions): TaughtTaskDraft {
-	return buildTaughtTaskDraftFromRun({
-		workspaceDir: options.workspaceDir,
-		repoRoot: options.repoRoot,
-		sessionId: options.sessionId,
-		traceId: options.traceId,
-		runId: options.run.runId,
-		promptPreview: options.run.userPromptPreview,
-		responsePreview: options.run.responsePreview,
-		toolTrace: options.run.toolTrace,
-		teachValidation: options.run.teachValidation,
-		title: options.title,
-		objective: options.objective,
-	});
 }
 
 export async function listTaughtTaskDrafts(
@@ -2611,6 +3152,9 @@ export async function updatePersistedTaughtTaskDraft(
 	const nextTitle = options.patch.title?.trim() || current.title;
 	const nextObjective = options.patch.objective?.trim() || options.patch.intent?.trim() || current.objective || current.intent;
 	const nextIntent = options.patch.intent?.trim() || options.patch.objective?.trim() || current.intent;
+	const nextArtifactKind = Object.prototype.hasOwnProperty.call(options.patch, "artifactKind")
+		? normalizeArtifactKind(options.patch.artifactKind)
+		: current.artifactKind;
 	const rawNextParameterSlots = Object.prototype.hasOwnProperty.call(options.patch, "parameterSlots")
 		? normalizeParameterSlots(options.patch.parameterSlots)
 		: current.parameterSlots;
@@ -2658,6 +3202,53 @@ export async function updatePersistedTaughtTaskDraft(
 	const nextSkillDependencies = Object.prototype.hasOwnProperty.call(options.patch, "skillDependencies")
 		? normalizeSkillDependencies(options.patch.skillDependencies)
 		: current.skillDependencies;
+	const nextChildArtifacts = nextArtifactKind === "playbook"
+		? (Object.prototype.hasOwnProperty.call(options.patch, "childArtifacts")
+			? normalizeChildArtifacts(options.patch.childArtifacts)
+			: current.childArtifacts)
+		: [];
+	const nextPlaybookStages = nextArtifactKind === "playbook"
+		? (Object.prototype.hasOwnProperty.call(options.patch, "playbookStages")
+			? normalizePlaybookStages(options.patch.playbookStages)
+			: current.playbookStages)
+		: [];
+	const nextWorkerContract = nextArtifactKind === "worker"
+		? (Object.prototype.hasOwnProperty.call(options.patch, "workerContract")
+			? normalizeWorkerContract(
+				options.patch.workerContract,
+				current.workerContract
+					?? buildWorkerContractFromDraftSeed({
+						title: nextTitle,
+						objective: nextObjective,
+						taskCard: nextTaskCard,
+						parameterSlots: nextParameterSlots,
+						successCriteria: nextSuccessCriteria,
+						uncertainties: nextUncertainties,
+						executionPolicy: normalizeExecutionPolicy(current.executionPolicy, {
+							steps: nextSteps,
+							skillDependencies: nextSkillDependencies,
+							existing: current.executionPolicy,
+						}),
+					}),
+			)
+			: normalizeWorkerContract(
+				current.workerContract,
+				current.workerContract
+					?? buildWorkerContractFromDraftSeed({
+						title: nextTitle,
+						objective: nextObjective,
+						taskCard: nextTaskCard,
+						parameterSlots: nextParameterSlots,
+						successCriteria: nextSuccessCriteria,
+						uncertainties: nextUncertainties,
+						executionPolicy: normalizeExecutionPolicy(current.executionPolicy, {
+							steps: nextSteps,
+							skillDependencies: nextSkillDependencies,
+							existing: current.executionPolicy,
+						}),
+					}),
+			))
+		: undefined;
 	const nextExecutionPolicy = Object.prototype.hasOwnProperty.call(options.patch, "executionPolicy")
 		? normalizeExecutionPolicy(options.patch.executionPolicy, {
 			steps: nextSteps,
@@ -2690,6 +3281,7 @@ export async function updatePersistedTaughtTaskDraft(
 			nextTitle,
 			nextObjective,
 			nextIntent,
+			nextArtifactKind,
 			nextTaskKind,
 			nextParameterSlots,
 			nextSuccessCriteria,
@@ -2702,6 +3294,9 @@ export async function updatePersistedTaughtTaskDraft(
 			nextReplayPreconditions,
 			nextResetSignals,
 			nextSkillDependencies,
+			nextChildArtifacts,
+			nextPlaybookStages,
+			nextWorkerContract,
 			nextSteps,
 			nextValidation,
 		})
@@ -2714,6 +3309,7 @@ export async function updatePersistedTaughtTaskDraft(
 		title: nextTitle,
 		objective: nextObjective,
 		intent: nextIntent,
+		artifactKind: nextArtifactKind,
 		taskKind: nextTaskKind,
 		parameterSlots: nextParameterSlots,
 		successCriteria: nextSuccessCriteria,
@@ -2726,6 +3322,9 @@ export async function updatePersistedTaughtTaskDraft(
 		replayPreconditions: nextReplayPreconditions,
 		resetSignals: nextResetSignals,
 		skillDependencies: nextSkillDependencies,
+		childArtifacts: nextChildArtifacts,
+		playbookStages: nextPlaybookStages,
+		workerContract: nextWorkerContract,
 		steps: nextSteps,
 		validation: nextValidation
 			? {
@@ -2820,6 +3419,7 @@ export async function publishTaughtTaskDraft(
 			skillDir,
 			skillPath,
 			publishedAt,
+			artifactKind: updatedDraft.artifactKind,
 		},
 	};
 	const revisionIndex = finalizedDraft.revisions.length - 1;
@@ -2876,6 +3476,7 @@ export function buildTaughtTaskDraftPromptContent(
 			return [
 					`- ${draft.title}`,
 					`  draft_id=${draft.id}`,
+					`  artifact_kind=${draft.artifactKind}`,
 					`  intent=${draft.objective || draft.intent}`,
 					`  route_signature=${draft.routeSignature}`,
 					`  execution_policy=${draft.executionPolicy.toolBinding}:${formatExecutionRouteOrder(draft.executionPolicy.preferredRoutes)}:${draft.executionPolicy.stepInterpretation}`,
@@ -2883,6 +3484,12 @@ export function buildTaughtTaskDraftPromptContent(
 					...(params.length > 0 ? [`  parameters=${params.join(", ")}`] : []),
 					...(success.length > 0 ? [`  success=${success.join(" | ")}`] : []),
 					...(uncertainties.length > 0 ? [`  uncertainties=${uncertainties.join(" | ")}`] : []),
+					...(draft.childArtifacts.length > 0
+						? [`  child_artifacts=${draft.childArtifacts.map((artifact) => `${artifact.name}[${artifact.artifactKind}]`).join(", ")}`]
+						: []),
+					...(draft.playbookStages.length > 0
+						? [`  playbook_stages=${draft.playbookStages.map((stage) => `${stage.kind}:${stage.name}`).join(" | ")}`]
+						: []),
 				...(routeOptions.length > 0 ? ["  step_route_options:", ...routeOptions] : []),
 				"  steps:",
 				...steps,

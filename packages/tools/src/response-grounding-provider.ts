@@ -713,6 +713,7 @@ export function buildGroundingValidationPrompt(params: {
 		"Rely on visible pixels in the screenshot and simulation overlay, not on any prior rationale.",
 		"Approve only if the simulated action lands on the exact requested target or on a safe actionable/editable surface that unambiguously corresponds to it.",
 		"Reject if the simulated action lands on whitespace, padding, decoration, generic container background, or on a neighboring control whose visible evidence does not match the request.",
+		"For drag source actions, a labeled card body or list item that matches the target description is a valid drag surface even without an explicit drag-handle icon. Do not reject solely because the element looks like a plain card or container if its label matches the requested target.",
 		"If a scope or location hint was provided, the candidate must be inside that scope/region. Two controls with identical labels in different panels should be distinguished by scope.",
 		"For subtle, tightly packed, or low-contrast controls, approve only when the marked point sits on the visible hit target itself. Minor positional offset within the control's visible hit area is acceptable as long as the click clearly lands on the correct control.",
 		"If you reject, explain the mistake in concrete visual terms so the next grounding round can avoid it.",
@@ -800,8 +801,9 @@ function actionSpecificGroundingInstructions(action: GuiGroundingActionIntent | 
 		case "drag_source":
 			return [
 				"Resolve the actual draggable surface itself, such as the slider thumb, drag handle, card body, file icon, or selected chip that should be pressed and held.",
+				"A labeled card body, list item, or text element that clearly represents a draggable object IS a valid drag source surface, even without an explicit drag handle icon. If the target description matches a visible labeled element, treat that element as the drag source.",
 				"Choose a click_point on the visible press-and-hold surface that should initiate the drag, not on surrounding whitespace, the track, or generic container background.",
-				"If you can identify only a broad region or container but not the actual draggable source surface, return status=\"not_found\".",
+				"Return status=\"not_found\" only if no element matching the target description is visible at all, not merely because the element lacks a drag-handle icon.",
 			];
 		case "drag_destination":
 			return [
@@ -1529,7 +1531,18 @@ export function createModelLoopGroundingProvider(
 							action: params.action,
 						});
 					if (!decision || decision.status === "not_found") {
-						return finalize(undefined);
+						const isDragAction = params.action === "drag_source" || params.action === "drag_destination";
+						if (!isDragAction || round >= maxRounds) {
+							return finalize(undefined);
+						}
+						retryFailures.push({
+							summary: "not_found — retrying with additional context for drag target",
+						});
+						retryNotes = [
+							...retryNotes,
+							"The previous round returned not_found. Look more carefully: labeled card bodies, list items, and text elements that match the target description are valid drag surfaces even without drag-handle icons. Identify the element by its visible text label and return a click_point centered on it.",
+						];
+						continue;
 					}
 					const resolved = normalizeResolvedAttempt({
 						decision,

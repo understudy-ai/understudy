@@ -6,7 +6,7 @@ Updated: 2026-03-12
 
 ## One-line Definition
 
-> **Understudy is a teachable desktop agent.** It operates your computer like a human colleague — GUI, browser, shell, file system — learns from demonstrations, turns successful paths into reusable skills, and keeps improving how it executes work.
+> **Understudy is a general-purpose local agent for your computer.** It operates your computer like a human colleague — GUI, browser, shell, file system — adds modern computer use on top, learns from demonstrations, turns successful paths into reusable artifacts, and keeps improving how it executes work.
 
 ## Core Architecture: Five Layers
 
@@ -336,9 +336,9 @@ This is the baseline steering: the planner is instructed to prefer higher-level 
 
 #### 2. Route Guard Policy
 
-The route guard (`route-guard-policy`) tracks consecutive failures per route category. Currently tracked routes: `gui`, `browser`, `web`, `shell`, `process`.
+The runtime design includes a failure-driven route guard (`route-guard-policy`) for tracking consecutive failures per route category: `gui`, `browser`, `web`, `shell`, `process`. In the current mainline-style branch, however, default behavior relies more on preference steering, teach route annotations, browser auto-fallback, and capability gating; the dedicated route guard remains experimental rather than a stable always-on default.
 
-How it works:
+When enabled, it works like this:
 
 - Every tool call result is classified into its route category
 - Failed results increment a per-route failure counter
@@ -393,7 +393,7 @@ Layer 3 crystallization and Layer 4 route optimization are complementary:
 - **Layer 3** identifies *what work is repeated* and extracts it into a reusable skill
 - **Layer 4** identifies *how each step of that work can be executed faster*
 
-In practice, a crystallized skill from Layer 3 starts with whatever routes were observed during the original work. Over time, Layer 4 mechanisms (route guard, preference steering, teach annotations) push the same skill toward faster execution paths.
+In practice, a crystallized skill from Layer 3 starts with whatever routes were observed during the original work. Over time, Layer 4 mechanisms (preference steering, teach annotations, browser auto-fallback, and eventually dedicated route guard policies) push the same skill toward faster execution paths.
 
 The current boundary: Layer 3 can crystallize a skill, but the routes inside that skill are still mostly inherited from observation rather than actively optimized. Full route optimization within crystallized skills is a future goal.
 
@@ -512,7 +512,7 @@ Promotion criteria: N consecutive successful executions of the same skill + no u
 
 **Honest about what's not done:**
 
-- Layer 4 route discovery — route preferences, route guard, teach route annotations, and browser auto-fallback implemented; active route promotion and automatic route discovery are future work
+- Layer 4 route discovery — route preferences, teach route annotations, browser auto-fallback, and capability-aware routing implemented; dedicated route guard remains experimental, while active route promotion and automatic route discovery are future work
 - Layer 5 passive observation — demonstration recorder can capture global events, but continuous background observation and pattern discovery not yet implemented
 - Layer 5 proactive suggestions — scheduled triggers available, observation-based proactive suggestions not yet shipped
 - Layer 5 isolated workspace — currently executes in foreground window, second desktop/headless approach is planned

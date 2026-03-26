@@ -15,12 +15,14 @@ import {
 	readSkillFrontmatterInfo,
 	type UnderstudySkill,
 } from "./frontmatter.js";
+import type { WorkspaceArtifactKind } from "../workspace-artifact-types.js";
 
 export interface SkillSnapshot {
 	prompt: string;
 	resolvedSkills: UnderstudySkill[];
 	skills: Array<{
 		name: string;
+		artifactKind?: WorkspaceArtifactKind;
 		skillKey?: string;
 		primaryEnv?: string;
 		requiredEnv?: string[];
@@ -106,7 +108,10 @@ function compactSkillPaths(skills: UnderstudySkill[]): UnderstudySkill[] {
 }
 
 function buildPromptSkillDescription(skill: UnderstudySkill): string {
-	const base = skill.description.trim();
+	const label = skill.artifactKind && skill.artifactKind !== "skill"
+		? `${skill.artifactKind[0].toUpperCase()}${skill.artifactKind.slice(1)}`
+		: undefined;
+	const base = [label ? `${label}.` : undefined, skill.description.trim()].filter(Boolean).join(" ");
 	const triggers = Array.from(
 		new Set((skill.triggers ?? []).map((entry) => entry.trim()).filter(Boolean)),
 	).slice(0, 4);
@@ -307,6 +312,7 @@ export function buildWorkspaceSkillSnapshot(params: {
 		resolvedSkills: merged,
 		skills: merged.map((skill) => ({
 			name: skill.name,
+			...(skill.artifactKind ? { artifactKind: skill.artifactKind } : {}),
 			...(skill.skillKey ? { skillKey: skill.skillKey } : {}),
 			...(skill.primaryEnv ? { primaryEnv: skill.primaryEnv } : {}),
 			...(skill.requiredEnv?.length ? { requiredEnv: skill.requiredEnv } : {}),

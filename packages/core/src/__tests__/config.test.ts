@@ -31,11 +31,10 @@ describe("ConfigManager", () => {
 		expect(config.agent.runtimePolicies?.modules?.map((module) => module.name)).toEqual([
 			"sanitize_tool_params",
 			"normalize_tool_result",
-			"route_retry_guard",
 			"strip_assistant_directive_tags",
 			"guard_assistant_reply",
 		]);
-		expect(config.agent.runtimePolicies?.modules?.find((module) => module.name === "route_retry_guard")?.enabled).toBe(false);
+		expect(config.agent.runtimePolicies?.modules?.every((module) => module.enabled !== false)).toBe(true);
 	});
 
 	it("merges overrides with defaults", () => {

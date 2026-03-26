@@ -68,7 +68,6 @@ describe("createRuntimeToolset", () => {
 			"memory_manage",
 			"message_send",
 			"schedule",
-			"cron",
 			"sessions_list",
 			"sessions_history",
 			"session_status",
@@ -83,7 +82,7 @@ describe("createRuntimeToolset", () => {
 		}
 	});
 
-	it("exposes both schedule and the OpenClaw cron migration surface when only the gateway bridge is available", () => {
+	it("exposes the native schedule tool when only the gateway bridge is available", () => {
 		const tools = createRuntimeToolset({
 			cwd: "/tmp/workspace",
 			gatewayUrl: "http://127.0.0.1:23333",
@@ -91,7 +90,7 @@ describe("createRuntimeToolset", () => {
 		const names = tools.map((tool) => tool.name);
 
 		expect(names).toContain("schedule");
-		expect(names).toContain("cron");
+		expect(names).not.toContain("cron");
 	});
 
 	it("passes the current channel session as the default schedule delivery target", async () => {

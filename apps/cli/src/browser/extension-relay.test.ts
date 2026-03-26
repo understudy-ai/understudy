@@ -11,6 +11,7 @@ import {
 } from "./extension-relay.js";
 
 const originalGatewayToken = process.env.UNDERSTUDY_GATEWAY_TOKEN;
+const originalGatewayAuthMode = process.env.UNDERSTUDY_GATEWAY_AUTH_MODE;
 
 async function allocatePort(): Promise<number> {
 	return await new Promise<number>((resolve, reject) => {
@@ -36,6 +37,7 @@ async function allocatePort(): Promise<number> {
 describe("Understudy extension relay server", () => {
 	beforeEach(() => {
 		process.env.UNDERSTUDY_GATEWAY_TOKEN = "test-gateway-token";
+		process.env.UNDERSTUDY_GATEWAY_AUTH_MODE = "token";
 	});
 
 	afterEach(async () => {
@@ -43,6 +45,11 @@ describe("Understudy extension relay server", () => {
 			delete process.env.UNDERSTUDY_GATEWAY_TOKEN;
 		} else {
 			process.env.UNDERSTUDY_GATEWAY_TOKEN = originalGatewayToken;
+		}
+		if (originalGatewayAuthMode === undefined) {
+			delete process.env.UNDERSTUDY_GATEWAY_AUTH_MODE;
+		} else {
+			process.env.UNDERSTUDY_GATEWAY_AUTH_MODE = originalGatewayAuthMode;
 		}
 	});
 
@@ -65,6 +72,7 @@ describe("Understudy extension relay server", () => {
 
 	it("can start with an explicit gateway token before config is saved", async () => {
 		delete process.env.UNDERSTUDY_GATEWAY_TOKEN;
+		process.env.UNDERSTUDY_GATEWAY_AUTH_MODE = "token";
 		const port = await allocatePort();
 		const cdpUrl = `http://127.0.0.1:${port}`;
 		const relay = await ensureUnderstudyChromeExtensionRelayServer({
@@ -79,6 +87,18 @@ describe("Understudy extension relay server", () => {
 			headers: getUnderstudyChromeExtensionRelayRuntimeHeaders(relay.baseUrl),
 		});
 		expect(authorized.status).toBe(200);
+
+		await stopUnderstudyChromeExtensionRelayServer({ cdpUrl });
+	});
+
+	it("allows unauthenticated relay probes when gateway auth mode is none", async () => {
+		process.env.UNDERSTUDY_GATEWAY_AUTH_MODE = "none";
+		const port = await allocatePort();
+		const cdpUrl = `http://127.0.0.1:${port}`;
+		const relay = await ensureUnderstudyChromeExtensionRelayServer({ cdpUrl });
+
+		const version = await fetch(`${relay.baseUrl}/json/version`);
+		expect(version.status).toBe(200);
 
 		await stopUnderstudyChromeExtensionRelayServer({ cdpUrl });
 	});

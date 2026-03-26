@@ -10,7 +10,7 @@ triggers:
 metadata:
   understudy:
     taught: true
-    workspaceDir: "/Users/songliang/workspace/Understudy/understudy"
+    workspaceDir: "<your-workspace-dir>"
     draftId: "09519568afd5"
     runId: "video-c6e4cd2253bd"
     routeSignature: "gui -> gui -> gui -> gui -> gui -> gui -> gui -> gui"
@@ -20,7 +20,7 @@ metadata:
 
 > Example published skill artifact. This file lives under `examples/` so it is not auto-loaded as a real workspace skill.
 
-This workspace skill was taught from an explicit teach draft captured in `/Users/songliang/workspace/Understudy/understudy`.
+This workspace skill was taught from an explicit teach draft captured in the Understudy workspace.
 
 ## Overall Goal
 

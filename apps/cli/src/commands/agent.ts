@@ -2,6 +2,7 @@
  * Agent command: single-shot agent turn through the gateway.
  */
 
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import { createRpcClient } from "../rpc-client.js";
@@ -87,6 +88,8 @@ export async function runAgentCommand(opts: AgentOptions = {}): Promise<void> {
 			token,
 			timeout,
 		});
+		const forceNew = opts.continue !== true;
+		const executionScopeKey = forceNew ? randomUUID() : undefined;
 
 		const startTimeout = Math.max(1_000, Math.min(timeout, 30_000));
 		const started = await client.call<any>(
@@ -96,7 +99,8 @@ export async function runAgentCommand(opts: AgentOptions = {}): Promise<void> {
 				cwd,
 				channelId: CLI_GATEWAY_CHANNEL_ID,
 				senderId: CLI_GATEWAY_SENDER_ID,
-				forceNew: opts.continue !== true,
+				forceNew,
+				...(executionScopeKey ? { executionScopeKey } : {}),
 				waitForCompletion: false,
 				...(configOverride ? { configOverride } : {}),
 				...(promptInput.images?.length ? { images: promptInput.images } : {}),

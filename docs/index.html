@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Understudy | A Teachable Desktop Agent</title>
+    <title>Understudy | Universal Agent with Computer Use, Teach, and Multi-Channel Dispatch</title>
     <meta
       name="description"
-      content="Understudy is a teachable desktop agent. It operates your computer like a human colleague, learns from demonstrations, turns successful paths into reusable skills, and keeps getting faster over time."
+      content="Understudy is a universal local agent for your computer: general agent workflows first, modern computer use with your own API key second, and teach-by-demonstration plus crystallized skills and route upgrades on top."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -695,7 +695,7 @@
             <div class="brand-mark">U</div>
             <div class="brand-copy">
               <strong>Understudy</strong>
-              <span>Teachable Desktop Agent</span>
+              <span>Universal Desktop Agent</span>
             </div>
           </a>
           <nav class="nav" aria-label="Primary">
@@ -714,12 +714,12 @@
           <div class="section hero">
             <article class="hero-main reveal">
               <div class="hero-top">
-                <span class="eyebrow">macOS today · Local-first · Teachable</span>
+                <span class="eyebrow">Universal Agent · Computer Use · Teach · 8 Channels · Local-first · Open Source</span>
                 <a class="lang-link" href="./zh-CN/index.html">中文</a>
               </div>
-              <h1>Watch once. Then take the stage.</h1>
+              <h1>Your computer, operated by an agent.</h1>
               <p class="hero-lead">
-                Understudy is a teachable desktop agent. It operates your computer like a human colleague across GUI, browser, shell, files, and messaging. You demonstrate a task once, it learns the intent, remembers successful paths, and gradually upgrades to faster execution routes.
+                Understudy is a general-purpose local agent for your computer. Start with one instruction and it can research, browse, click through apps, run commands, manage files, and reply through your existing channels. It also has modern computer-use capability without a subscription product — bring your own model/API key. Then it goes further with teach-by-demonstration, crystallized daily skills, and route upgrades over time.
               </p>
               <div class="hero-actions">
                 <a class="button button-primary" href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">
@@ -736,20 +736,20 @@
               </div>
               <div class="hero-tags">
                 <div class="tag">
-                  <strong>Unified desktop execution</strong>
-                  <span>One task can mix GUI, browser, terminal, web search, and local files inside one agent session.</span>
+                  <strong>Universal agent</strong>
+                  <span>Research, browser work, shell commands, files, messaging, scheduling, and delegation in one local runtime.</span>
                 </div>
                 <div class="tag">
-                  <strong>Not a macro recorder</strong>
-                  <span>It learns task intent, parameter slots, and success criteria, not fixed coordinates.</span>
+                  <strong>Computer use</strong>
+                  <span>See and operate desktop apps through screenshot grounding and native input, while using your own model/API key.</span>
                 </div>
                 <div class="tag">
-                  <strong>Gets sharper with use</strong>
-                  <span>Successful paths become reusable skills, reducing randomness and repeat exploration.</span>
+                  <strong>Teach, crystallize, upgrade</strong>
+                  <span>Show a workflow once, then keep hardening it into reusable skills and faster routes instead of replaying brittle coordinates.</span>
                 </div>
                 <div class="tag">
-                  <strong>Upgrades to faster routes</strong>
-                  <span>Start with GUI if needed, then graduate toward browser, CLI, or API execution when verified.</span>
+                  <strong>Dispatch from anywhere</strong>
+                  <span>Control it from Telegram, Slack, Discord, WhatsApp, Signal, LINE, iMessage, or the web. Your agent works while you're away.</span>
                 </div>
               </div>
             </article>
@@ -775,8 +775,8 @@
                   <span>Messaging channel adapters for connecting agent workflows to existing communication surfaces.</span>
                 </div>
                 <div class="metric">
-                  <strong>5</strong>
-                  <span>Product layers from “can do” to “acts proactively,” instead of a single automation feature.</span>
+                  <strong>BYO</strong>
+                  <span>Use your own model/API key instead of paying for a bundled subscription tier.</span>
                 </div>
               </div>
               <div class="code-slice" aria-label="Product Snapshot">
@@ -800,7 +800,7 @@
               <h2>Showcase</h2>
             </div>
             <p class="section-copy">
-              See Understudy in action — operating desktop apps, browsers, and terminal in a single agent session.
+              The demos map to the product in the same order users feel it: first a general agent, then modern computer use, then teach and long-term learning.
             </p>
           </div>
           <div class="reveal">
@@ -820,55 +820,93 @@
               The published skill artifact generated from this showcase demo is available at
               <a href="https://github.com/understudy-ai/understudy/blob/main/examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md" target="_blank" rel="noreferrer">examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md</a>.
             </p>
+            <div class="card-grid" style="margin-top: 18px;">
+              <article class="card">
+                <span class="card-kicker">Demo 1 · General Agent</span>
+                <h3>One message, multi-tool execution</h3>
+                <p>
+                  The agent researches, creates files, builds deliverables, and keeps the whole task inside one local runtime instead of splitting work across separate tools.
+                </p>
+                <div class="list">
+                  <div><strong>Focus:</strong> general-purpose agent behavior first</div>
+                  <div><strong>Example:</strong> research plus slide generation from a single prompt</div>
+                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-general-agent/README.md" target="_blank" rel="noreferrer">Open demo workspace</a></div>
+                </div>
+              </article>
+              <article class="card">
+                <span class="card-kicker">Demo 2 · Computer Use</span>
+                <h3>Remote message, real desktop execution</h3>
+                <p>
+                  A phone message triggers browser, GUI, shell, and file work on the Mac, then the result is sent back through the user’s existing channel.
+                </p>
+                <div class="list">
+                  <div><strong>Focus:</strong> Cowork-style computer use without subscription lock-in</div>
+                  <div><strong>Example:</strong> Telegram-triggered browser and desktop workflow</div>
+                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-remote-dispatch/README.md" target="_blank" rel="noreferrer">Open demo workspace</a></div>
+                </div>
+              </article>
+              <article class="card">
+                <span class="card-kicker">Demo 3 · Teach + Replay</span>
+                <h3>Show once, publish, replay later</h3>
+                <p>
+                  The user demonstrates a workflow once, publishes the learned artifact, and replays it later. The same machinery also powers daily crystallization and route-aware reuse.
+                </p>
+                <div class="list">
+                  <div><strong>Focus:</strong> teach-by-demonstration and learned skill reuse</div>
+                  <div><strong>Example:</strong> photo cutout in Pixelmator Pro, then send through Telegram</div>
+                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-teach/README.md" target="_blank" rel="noreferrer">Open demo workspace</a></div>
+                </div>
+              </article>
+            </div>
           </div>
         </section>
 
         <section class="section" id="highlights">
           <div class="section-head reveal">
             <div>
-              <h2>Why This Is More Than Another GUI Clicker</h2>
+              <h2>One Product, Three Layers of Value</h2>
             </div>
             <p class="section-copy">
-              Understudy is not interesting because it can press buttons. It is interesting because native desktop execution, teach-by-demonstration, memory crystallization, and route upgrades live inside one agent runtime.
+              The point is not just that Understudy can click. It is a general agent runtime first, a modern computer-use system second, and a learning system on top.
             </p>
           </div>
           <div class="card-grid">
             <article class="card reveal">
-              <span class="card-kicker">Native Runtime</span>
-              <h3>One planner across GUI, browser, shell, web, and memory</h3>
+              <span class="card-kicker">General Agent</span>
+              <h3>A real local agent runtime, not a single-surface copilot</h3>
               <p>
-                A single task can search the web, run a local command, switch to a native app, click through a workflow, and send the result through a messaging channel. This is not stitched-together automation. It is one routed agent loop.
+                A single task can search the web, run a local command, switch to a native app, create files, and send the result through a messaging channel. This is not stitched-together automation. It is one routed agent loop.
+              </p>
+              <div class="list">
+                <div><strong>One planner:</strong> GUI, browser, shell, web, files, memory, scheduling, and subagents</div>
+                <div><strong>One runtime:</strong> chat, agent, dashboard, webchat, channels, and automation surfaces</div>
+                <div><strong>One result:</strong> the task stays coherent even when routes change step by step</div>
+              </div>
+            </article>
+
+            <article class="card reveal">
+              <span class="card-kicker">Computer Use</span>
+              <h3>Grounded desktop operation without subscription lock-in</h3>
+              <p>
+                Understudy can see the screen, resolve targets, and operate real apps, while also supporting browser attachment through Chrome extension relay or clean managed Playwright sessions when that is the better route.
               </p>
               <div class="list">
                 <div><strong>GUI:</strong> screenshot grounding plus native input events</div>
-                <div><strong>Browser:</strong> Playwright plus Chrome extension relay</div>
-                <div><strong>Shell / Files:</strong> local execution and filesystem access</div>
+                <div><strong>Browser:</strong> managed Playwright or attached Chrome tab through the extension relay</div>
+                <div><strong>Models:</strong> bring your own provider/API key instead of paying for a closed subscription workflow</div>
               </div>
             </article>
 
             <article class="card reveal">
-              <span class="card-kicker">Teach By Demonstration</span>
-              <h3>Show the task once, extract a reusable skill</h3>
+              <span class="card-kicker">Teach + Crystallize</span>
+              <h3>Show once, then keep hardening the workflow</h3>
               <p>
-                Understudy records video and semantic events, then learns workflow intent rather than a coordinate trace. Scene detection, event clustering, keyframe extraction, evidence pack analysis, and teach drafts are already part of the product model.
+                Explicit teach, daily workflow crystallization, and route-aware replay all sit on the same stack. The system can publish reusable artifacts today and keep pushing recurring work toward faster paths over time.
               </p>
               <div class="list">
-                <div><strong>Dual-track recording:</strong> screen capture plus Swift global event monitor</div>
-                <div><strong>AI analysis:</strong> parameters, steps, success criteria, and route preferences</div>
-                <div><strong>Validation loop:</strong> replay the learned task and analyze the trace</div>
-              </div>
-            </article>
-
-            <article class="card reveal">
-              <span class="card-kicker">Path Upgrade</span>
-              <h3>Day one fallback, long-term acceleration</h3>
-              <p>
-                GUI is the universal fallback, not the permanent destination. Understudy can begin with GUI execution and later promote the same task toward browser, CLI, or API routes after repeated verified success.
-              </p>
-              <div class="list">
-                <div><strong>Day 1:</strong> GUI fallback means any visible software can be operated</div>
-                <div><strong>Week 1:</strong> remembered paths reduce repeated exploration</div>
-                <div><strong>Month 1+:</strong> faster routes become stable defaults</div>
+                <div><strong>Teach:</strong> capture video plus semantic events, then publish reusable artifacts</div>
+                <div><strong>Crystallize:</strong> repeated daily work can become workspace skills without explicit teaching</div>
+                <div><strong>Upgrade:</strong> route preferences and annotations reduce unnecessary GUI replay</div>
               </div>
             </article>
           </div>
@@ -877,10 +915,10 @@
         <section class="section" id="alpha">
           <div class="section-head reveal">
             <div>
-              <h2>What Understudy Already Demonstrates</h2>
+              <h2>What Works Today</h2>
             </div>
             <p class="section-copy">
-              This section stays intentionally strict: it reflects capabilities explicitly described in the docs today, without presenting future layers as already shipped.
+              These capabilities are implemented and working in the current release — not roadmap items.
             </p>
           </div>
           <div class="card-grid">
@@ -906,7 +944,7 @@
               <div class="list">
                 <div><strong>Evidence pack:</strong> scene changes, event timelines, keyframes, and capability snapshots</div>
                 <div><strong>Clarification dialog:</strong> refine title, parameters, and success criteria in natural language</div>
-                <div><strong>Skill output:</strong> publish to a three-layer `SKILL.md` abstraction</div>
+                <div><strong>Artifact output:</strong> publish reusable `skill`, `worker`, or `playbook` workspace artifacts</div>
               </div>
             </article>
 

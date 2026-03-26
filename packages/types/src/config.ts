@@ -46,6 +46,10 @@ export interface AgentConfig {
 	runtimeBackend?: "embedded" | "acp";
 	/** Dedicated GUI grounding thinking level override */
 	guiGroundingThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	/** Dedicated GUI grounding provider (e.g. "openai"). Falls back to main model if unset. */
+	guiGroundingProvider?: string;
+	/** Dedicated GUI grounding model ID (e.g. "gpt-5.4"). Only used when guiGroundingProvider is set. */
+	guiGroundingModel?: string;
 	/** ACP runtime bridge configuration */
 	acp?: AgentAcpConfig;
 	/** Shell sandbox execution settings for high-risk commands */
@@ -322,7 +326,6 @@ export const DEFAULT_CONFIG: UnderstudyConfig = {
 			modules: [
 				{ name: "sanitize_tool_params", enabled: true },
 				{ name: "normalize_tool_result", enabled: true },
-				{ name: "route_retry_guard", enabled: false },
 				{ name: "strip_assistant_directive_tags", enabled: true },
 				{ name: "guard_assistant_reply", enabled: true },
 			],
@@ -337,7 +340,7 @@ export const DEFAULT_CONFIG: UnderstudyConfig = {
 		enabled: false,
 	},
 	browser: {
-		connectionMode: "managed",
+		connectionMode: "auto",
 		cdpUrl: DEFAULT_BROWSER_EXTENSION_CDP_URL,
 	},
 	gateway: {

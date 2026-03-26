@@ -389,7 +389,7 @@ describe("createUnderstudySession", () => {
 		expect(rawToolExecute).toHaveBeenCalledTimes(1);
 	});
 
-	it("registers OpenClaw compatibility aliases without advertising them when canonical tools exist", async () => {
+	it("keeps only the exec compatibility fallback when canonical tools exist", async () => {
 		const messageTool: AgentTool<any> = {
 			name: "message_send",
 			label: "Message",
@@ -426,48 +426,17 @@ describe("createUnderstudySession", () => {
 		const customToolNames = args.customTools.map((tool: any) => tool.name);
 		expect(customToolNames).toContain("message_send");
 		expect(customToolNames).toContain("schedule");
-		expect(customToolNames).toContain("message");
-		expect(customToolNames).toContain("cron");
 		expect(customToolNames).toContain("exec");
+		expect(customToolNames).not.toContain("message");
+		expect(customToolNames).not.toContain("cron");
 
 		const prompt = mocks.setSystemPrompt.mock.calls[0][0] as string;
 		expect(prompt).toContain("message_send");
 		expect(prompt).toContain("schedule");
 		expect(prompt).toContain("bash");
-		expect(prompt).not.toContain("- message:");
-		expect(prompt).toContain("- cron:");
 		expect(prompt).toContain("- exec:");
-	});
-
-	it("still advertises an OpenClaw alias when the alias is the only allowed tool", async () => {
-		const messageTool: AgentTool<any> = {
-			name: "message_send",
-			label: "Message",
-			description: "Send messages",
-			parameters: Type.Object({ text: Type.String() }),
-			execute: vi.fn(async () => ({
-				content: [{ type: "text" as const, text: "sent" }],
-				details: {},
-			})),
-		};
-
-		await createUnderstudySession({
-			cwd: "/tmp/understudy",
-			config: {
-				defaultThinkingLevel: "off",
-				agent: {
-					identity: "Understudy",
-				},
-			},
-			extraTools: [messageTool],
-			allowedToolNames: ["message"],
-		});
-
-		const args = mocks.createAgentSession.mock.calls[0][0] as any;
-		expect(args.customTools.map((tool: any) => tool.name)).toEqual(["message"]);
-
-		const prompt = mocks.setSystemPrompt.mock.calls[0][0] as string;
-		expect(prompt).toContain("- message:");
+		expect(prompt).not.toContain("- message:");
+		expect(prompt).not.toContain("- cron:");
 	});
 
 	it("passes prompt override options into the built system prompt", async () => {

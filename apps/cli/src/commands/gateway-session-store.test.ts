@@ -21,7 +21,7 @@ describe("gateway session store", () => {
 		const tempDir = await createTempDir("understudy-gateway-session-store-");
 		const storePath = join(tempDir, "state.json");
 
-	await saveGatewaySessionState({
+		await saveGatewaySessionState({
 			storePath,
 			sessionEntries: new Map([
 				["session-1", {
@@ -84,5 +84,77 @@ describe("gateway session store", () => {
 				sessionId: "session-1",
 			},
 		]);
+	});
+
+	it("omits bulky image payloads from persisted run snapshots", async () => {
+		const tempDir = await createTempDir("understudy-gateway-session-store-runs-");
+		const storePath = join(tempDir, "state.json");
+		const giantBase64 = "a".repeat(200_000);
+		const giantText = "b".repeat(20_000);
+
+		await saveGatewaySessionState({
+			storePath,
+			sessionEntries: new Map(),
+			agentRuns: new Map([
+				["run-1", {
+					runId: "run-1",
+					threadId: "thread-1",
+					status: "running",
+					response: giantText,
+					images: [
+						{
+							type: "image",
+							mimeType: "image/png",
+							data: giantBase64,
+						},
+					],
+					meta: {
+						latestToolResult: {
+							images: [
+								{
+									type: "image",
+									mimeType: "image/png",
+									data: giantBase64,
+								},
+							],
+							nested: {
+								imageData: giantBase64,
+								text: giantText,
+							},
+						},
+					},
+				} as any],
+			]),
+			activeSessionBindings: new Map(),
+		});
+
+		const raw = JSON.parse(await readFile(storePath, "utf8")) as {
+			runs?: Array<Record<string, unknown>>;
+		};
+		const run = raw.runs?.[0];
+		expect(run).toBeDefined();
+		expect((run?.response as string).length).toBeLessThan(17_000);
+		expect(run?.images).toEqual([
+			{
+				type: "image",
+				mimeType: "image/png",
+				data: "[image payload omitted]",
+			},
+		]);
+		expect(run?.meta).toMatchObject({
+			latestToolResult: {
+				images: [
+					{
+						type: "image",
+						mimeType: "image/png",
+						note: "image payload omitted from persisted gateway state",
+					},
+				],
+				nested: {
+					imageData: "[image payload omitted]",
+				},
+			},
+		});
+		expect(((run?.meta as any).latestToolResult.nested.text as string).length).toBeLessThan(17_000);
 	});
 });

@@ -8,7 +8,7 @@ import {
 	ModelRegistry,
 	type AuthCredential,
 } from "@mariozechner/pi-coding-agent";
-import type { Model } from "@mariozechner/pi-ai";
+import { getModel, type Model } from "@mariozechner/pi-ai";
 import { join } from "node:path";
 import { readResolvedCredentialMap, type StoredCredential } from "./auth-records.js";
 import { resolveUnderstudyAgentDir } from "./runtime-paths.js";
@@ -170,7 +170,14 @@ export class AuthManager {
 
 	/** Find a model by provider and ID */
 	findModel(provider: string, modelId: string): Model<any> | undefined {
-		return this.modelRegistry.find(provider, modelId);
+		return this.modelRegistry.find(provider, modelId)
+			?? (() => {
+				try {
+					return getModel(provider as any, modelId as any);
+				} catch {
+					return undefined;
+				}
+			})();
 	}
 
 	/** Get API key for a model */
@@ -182,6 +189,26 @@ export class AuthManager {
 	setApiKey(provider: string, apiKey: string): void {
 		this.authStorage.setRuntimeApiKey(provider, apiKey);
 	}
+}
+
+export function resolveProviderApiKey(
+	provider: string,
+	options: {
+		agentDir?: string;
+	} = {},
+): string | undefined {
+	const agentDir = options.agentDir?.trim() || resolveUnderstudyAgentDir();
+	const credential = readResolvedCredentialMap(agentDir)[provider];
+	if (credential?.type === "api_key" && typeof credential.key === "string" && credential.key.trim()) {
+		return credential.key.trim();
+	}
+	for (const envKey of resolveProviderEnvKeys(provider)) {
+		const value = process.env[envKey]?.trim();
+		if (value) {
+			return value;
+		}
+	}
+	return undefined;
 }
 
 export function inspectProviderAuthStatus(

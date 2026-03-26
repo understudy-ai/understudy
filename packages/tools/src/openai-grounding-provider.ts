@@ -19,6 +19,7 @@ export function createOpenAIGroundingProvider(
 	const model = options.model?.trim() || DEFAULT_OPENAI_GROUNDING_MODEL;
 	return createResponsesApiGroundingProvider({
 		...options,
+		apiKey: options.apiKey,
 		baseUrl: options.baseUrl?.trim() || DEFAULT_OPENAI_BASE_URL,
 		model,
 		providerName: options.providerName?.trim() || `openai:${model}`,

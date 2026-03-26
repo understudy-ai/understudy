@@ -12,6 +12,7 @@ vi.mock("@understudy/core", async () => {
 	return {
 		...actual,
 		createUnderstudySession: coreMocks.createUnderstudySession,
+		normalizeWorkspacePlaybookApprovalGate: actual.normalizeWorkspacePlaybookApprovalGate,
 	};
 });
 
@@ -510,6 +511,234 @@ copyFileSync(fixturePath, outputPath);
 		expect(analysis.title).toBe("Publish the dashboard review");
 	});
 
+	it("parses playbook artifact fields from the analysis response", async () => {
+		const dir = await createTempDir("understudy-video-teach-playbook-");
+		const frameA = join(dir, "frame-a.png");
+		await writeFile(frameA, Buffer.from(TINY_PNG, "base64"));
+
+		const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+			output_text: JSON.stringify({
+				title: "Produce a reusable target brief",
+				objective: "Produce a publishable first-pass target brief.",
+				artifactKind: "playbook",
+				taskKind: "parameterized_workflow",
+				parameterSlots: [
+					{ name: "target_name", sampleValue: "Northwind Portal", required: true },
+				],
+				successCriteria: ["Delivery preview is ready for human approval."],
+				childArtifacts: [
+					{
+						id: "child-1",
+						name: "collect-target-context",
+						artifactKind: "skill",
+						objective: "Collect baseline target context into the artifacts root.",
+						required: true,
+					},
+					{
+						id: "child-2",
+						name: "explore-unfamiliar-target",
+						artifactKind: "worker",
+						objective: "Explore the unfamiliar target and capture evidence.",
+						required: true,
+					},
+				],
+				playbookStages: [
+					{
+						id: "stage-1",
+						name: "Collect Baseline",
+						kind: "skill",
+						refName: "collect-target-context",
+						objective: "Collect baseline target context into the artifacts root.",
+						inputs: ["target_name", "artifacts_root_dir"],
+						outputs: ["target.json", "context.md"],
+						retryPolicy: "retry_once",
+					},
+					{
+						id: "stage-2",
+						name: "Explore Target",
+						kind: "worker",
+						refName: "explore-unfamiliar-target",
+						objective: "Explore the unfamiliar target and capture evidence.",
+						inputs: ["target_name", "artifacts_root_dir"],
+						outputs: ["findings.md", "highlights.json"],
+						retryPolicy: "pause_for_human",
+					},
+					{
+						id: "stage-3",
+						name: "Delivery Preview",
+						kind: "approval",
+						objective: "Wait for human approval before delivery.",
+						outputs: ["approval.state"],
+						approvalGate: "delivery_preview",
+					},
+				],
+				steps: [
+					{
+						route: "gui",
+						toolName: "gui_click",
+						instruction: 'Open the result for "Northwind Portal".',
+						target: 'row containing "Northwind Portal"',
+						captureMode: "window",
+					},
+				],
+			}),
+		}), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		}));
+
+		const analyzer = createResponsesApiVideoTeachAnalyzer({
+			apiKey: "ark-key",
+			baseUrl: "https://example.com/responses",
+			model: "doubao-seed-2-0-lite-260215",
+			providerName: "ark:doubao-seed-2-0-lite-260215",
+			fetchImpl: fetchImpl as unknown as typeof fetch,
+			evidenceBuilder: async () => ({
+				videoPath: "/tmp/demo.mp4",
+				sourceLabel: "demo.mp4",
+				durationMs: 12_000,
+				analysisMode: "event_guided_evidence_pack",
+				events: [],
+				episodes: [
+					{
+						id: "episode-01",
+						startMs: 600,
+						endMs: 2_500,
+						centerMs: 1_000,
+						label: "Target list: Northwind Portal",
+						triggerTypes: ["mouse_up"],
+						source: "event",
+						app: "Target Browser",
+						keyframes: [
+							{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+						],
+					},
+				],
+				keyframes: [
+					{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+				],
+				summary: "Built event-guided evidence pack, 1 episode, 1 keyframe from demo.mp4.",
+				tempDir: dir,
+			}),
+		});
+
+		const analysis = await analyzer.analyze({
+			videoPath: "/tmp/demo.mp4",
+			sourceLabel: "demo.mp4",
+		});
+
+		expect(analysis.artifactKind).toBe("playbook");
+		expect(analysis.childArtifacts).toHaveLength(2);
+		expect(analysis.playbookStages).toHaveLength(3);
+		expect(analysis.playbookStages?.[1]).toMatchObject({
+			kind: "worker",
+			refName: "explore-unfamiliar-target",
+			retryPolicy: "pause_for_human",
+		});
+		expect(analysis.playbookStages?.[2]).toMatchObject({
+			kind: "approval",
+			approvalGate: "delivery_preview",
+		});
+	});
+
+	it("parses worker contract fields from the analysis response", async () => {
+		const dir = await createTempDir("understudy-video-teach-worker-");
+		const frameA = join(dir, "frame-a.png");
+		await writeFile(frameA, Buffer.from(TINY_PNG, "base64"));
+
+		const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+			output_text: JSON.stringify({
+				title: "Explore an unfamiliar target",
+				objective: "Explore the unfamiliar target and capture a reusable evidence bundle.",
+				artifactKind: "worker",
+				taskKind: "parameterized_workflow",
+				parameterSlots: [
+					{ name: "target_name", sampleValue: "Northwind Portal", required: true },
+				],
+				successCriteria: ["Worker summary is written to the artifacts root."],
+				workerContract: {
+					goal: "Explore the unfamiliar target currently assigned to the run.",
+					scope: "Capture enough evidence for a short evidence brief.",
+					inputs: ["targetName", "artifactsRootDir", "analysisFocus"],
+					outputs: ["findings.md", "worker-summary.json"],
+					allowedRoutes: ["gui", "browser"],
+					allowedSurfaces: ["Only the assigned target surfaces"],
+					budget: {
+						maxMinutes: 12,
+						maxActions: 60,
+						maxScreenshots: 12,
+					},
+					escalationPolicy: ["Payment is required."],
+					stopConditions: ["Enough evidence exists for highlights and limitations."],
+					decisionHeuristics: ["Prefer user-visible features over settings-only screens."],
+				},
+				steps: [
+					{
+						route: "gui",
+						toolName: "gui_click",
+						instruction: 'Open the result for "Northwind Portal".',
+						target: 'row containing "Northwind Portal"',
+						captureMode: "window",
+					},
+				],
+			}),
+		}), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		}));
+
+		const analyzer = createResponsesApiVideoTeachAnalyzer({
+			apiKey: "ark-key",
+			baseUrl: "https://example.com/responses",
+			model: "doubao-seed-2-0-lite-260215",
+			providerName: "ark:doubao-seed-2-0-lite-260215",
+			fetchImpl: fetchImpl as unknown as typeof fetch,
+			evidenceBuilder: async () => ({
+				videoPath: "/tmp/demo.mp4",
+				sourceLabel: "demo.mp4",
+				durationMs: 12_000,
+				analysisMode: "event_guided_evidence_pack",
+				events: [],
+				episodes: [
+					{
+						id: "episode-01",
+						startMs: 600,
+						endMs: 2_500,
+						centerMs: 1_000,
+						label: "Target list: Northwind Portal",
+						triggerTypes: ["mouse_up"],
+						source: "event",
+						app: "Target Browser",
+						keyframes: [
+							{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+						],
+					},
+				],
+				keyframes: [
+					{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+				],
+				summary: "Built event-guided evidence pack, 1 episode, 1 keyframe from demo.mp4.",
+				tempDir: dir,
+			}),
+		});
+
+		const analysis = await analyzer.analyze({
+			videoPath: "/tmp/demo.mp4",
+			sourceLabel: "demo.mp4",
+		});
+
+		expect(analysis.artifactKind).toBe("worker");
+		expect(analysis.workerContract).toMatchObject({
+			goal: "Explore the unfamiliar target currently assigned to the run.",
+			allowedRoutes: ["gui", "browser"],
+		});
+		expect(analysis.workerContract?.budget).toMatchObject({
+			maxMinutes: 12,
+			maxActions: 60,
+			maxScreenshots: 12,
+		});
+	});
+
 	it("retries transient video teach request failures up to three attempts", async () => {
 		const dir = await createTempDir("understudy-video-teach-http-retry-");
 		const frameA = join(dir, "frame-a.png");
@@ -684,6 +913,8 @@ copyFileSync(fixturePath, outputPath);
 				defaultModel: "gpt-5.4",
 				defaultThinkingLevel: "off",
 			}),
+			allowedToolNames: [],
+			promptMode: "none",
 		}));
 		expect(prompt).toHaveBeenCalledTimes(1);
 		expect(close).toHaveBeenCalledTimes(1);
@@ -694,5 +925,219 @@ copyFileSync(fixturePath, outputPath);
 			model: "gpt-5.4",
 			sourceLabel: "demo.mp4",
 		});
+	});
+
+	it("keeps adaptive evidence budgets for session-backed analysis by default", async () => {
+		let observedImageCount = 0;
+		const prompt = vi.fn(async (_text: string, options?: Record<string, unknown>) => {
+			observedImageCount = Array.isArray(options?.images) ? options.images.length : 0;
+			session.agent.state.messages.push({
+				role: "assistant",
+				content: JSON.stringify({
+					title: "Create and deliver the cutout image",
+					objective: "Find the image, remove the background, export it, and send it.",
+					parameterSlots: [],
+					successCriteria: ["The exported image is sent in Telegram."],
+					openQuestions: [],
+					steps: [
+						{
+							route: "gui",
+							toolName: "gui_click",
+							instruction: "Send the exported image in Telegram.",
+							target: "Send button",
+						},
+					],
+				}),
+			});
+		});
+		const session = {
+			agent: {
+				state: {
+					messages: [] as Array<Record<string, unknown>>,
+				},
+			},
+			prompt,
+		};
+		const close = vi.fn(async () => {});
+		coreMocks.createUnderstudySession.mockResolvedValue({
+			session,
+			runtimeSession: { close },
+		});
+
+		const analyzer = createSessionVideoTeachAnalyzer({
+			config: {
+				defaultProvider: "openai-codex",
+				defaultModel: "gpt-5.4",
+				defaultThinkingLevel: "off",
+			} as any,
+			cwd: "/tmp/understudy",
+			durationProbe: async () => 180_000,
+			sceneDetector: async () => [
+				5_000,
+				15_000,
+				25_000,
+				35_000,
+				45_000,
+				55_000,
+				65_000,
+				75_000,
+				85_000,
+				95_000,
+				105_000,
+				115_000,
+			],
+			frameExtractor: async ({ outputPath }) => {
+				await writeFile(outputPath, Buffer.from(TINY_PNG, "base64"));
+			},
+		});
+
+		await analyzer.analyze({
+			videoPath: "/tmp/demo.mp4",
+			sourceLabel: "demo.mp4",
+			events: [
+				{ type: "app_activated", timestampMs: 2_000, app: "Google Chrome", windowTitle: "Google Images" },
+				{ type: "key_down", timestampMs: 10_000, app: "Google Chrome", target: "Google Images search box" },
+				{ type: "mouse_up", timestampMs: 20_000, app: "Google Chrome", target: "Sam Altman image result" },
+				{ type: "app_activated", timestampMs: 40_000, app: "Pixelmator Pro" },
+				{ type: "menu_opened", timestampMs: 50_000, app: "Pixelmator Pro", target: "Remove Background" },
+				{ type: "mouse_up", timestampMs: 65_000, app: "Pixelmator Pro", target: "Export button" },
+				{ type: "app_activated", timestampMs: 80_000, app: "Telegram" },
+				{ type: "mouse_up", timestampMs: 100_000, app: "Telegram", target: "Send button" },
+			],
+		});
+
+		expect(prompt).toHaveBeenCalledTimes(1);
+		expect(observedImageCount).toBeGreaterThan(6);
+		expect(close).toHaveBeenCalledTimes(1);
+	});
+
+	it("filters Understudy teach scaffolding events from the evidence pack", async () => {
+		const pack = await buildDemonstrationEvidencePack({
+			videoPath: "/tmp/demo.mp4",
+			sourceLabel: "demo.mp4",
+			events: [
+				{
+					type: "recording_started",
+					timestampMs: 0,
+					app: "iTerm2",
+					windowTitle: "Understudy - understudy",
+					detail: "Global demonstration event capture started",
+					target: "Type / for commands. Common flows: /teach start, /attach <path>, /quit.",
+				},
+				{
+					type: "window_focused",
+					timestampMs: 1,
+					app: "iTerm2",
+					windowTitle: "Understudy - understudy",
+					detail: "Initial frontmost window at recording start",
+					target: "Started teach recording for this workspace session.",
+				},
+				{ type: "app_activated", timestampMs: 2_000, app: "Google Chrome", windowTitle: "Google Images" },
+				{ type: "mouse_up", timestampMs: 8_000, app: "Google Chrome", target: "Search result" },
+				{ type: "app_activated", timestampMs: 25_000, app: "Pixelmator Pro", windowTitle: "Editor" },
+				{ type: "mouse_up", timestampMs: 42_000, app: "Pixelmator Pro", target: "Remove Background" },
+				{ type: "app_activated", timestampMs: 58_000, app: "Telegram", windowTitle: "Telegram @ sth" },
+				{ type: "mouse_up", timestampMs: 64_000, app: "Telegram", target: "Send button" },
+				{
+					type: "app_activated",
+					timestampMs: 68_000,
+					app: "iTerm2",
+					windowTitle: "Understudy - understudy",
+					target: "/teach stop\nTeach stop received. Stopping the recording and preparing the demo analysis...",
+				},
+				{
+					type: "recording_stopped",
+					timestampMs: 69_000,
+					app: "iTerm2",
+					windowTitle: "Understudy - understudy",
+					detail: "Received SIGINT",
+					target: "/teach stop",
+				},
+			],
+			maxEpisodes: 6,
+			maxKeyframes: 18,
+		}, {
+			durationProbe: async () => 70_000,
+			sceneDetector: async () => [],
+			frameExtractor: async ({ outputPath }) => {
+				await writeFile(outputPath, Buffer.from(TINY_PNG, "base64"));
+			},
+		});
+		if (pack.tempDir) {
+			cleanupDirs.push(pack.tempDir);
+		}
+
+		expect(pack.events.map((event) => event.type)).not.toContain("recording_started");
+		expect(pack.events.map((event) => event.type)).not.toContain("recording_stopped");
+		expect(pack.events.some((event) => event.windowTitle === "Understudy - understudy")).toBe(false);
+		expect(pack.episodes.some((episode) => episode.app === "iTerm2")).toBe(false);
+	});
+
+	it("times out hung session-backed video teach analysis requests", async () => {
+		const dir = await createTempDir("understudy-video-teach-session-timeout-");
+		const frameA = join(dir, "frame-a.png");
+		await writeFile(frameA, Buffer.from(TINY_PNG, "base64"));
+
+		const prompt = vi.fn(async () => {
+			await new Promise(() => {});
+		});
+		const session = {
+			agent: {
+				state: {
+					messages: [] as Array<Record<string, unknown>>,
+				},
+			},
+			prompt,
+		};
+		const close = vi.fn(async () => {});
+		coreMocks.createUnderstudySession.mockResolvedValue({
+			session,
+			runtimeSession: { close },
+		});
+
+		const analyzer = createSessionVideoTeachAnalyzer({
+			config: {
+				defaultProvider: "openai-codex",
+				defaultModel: "gpt-5.4",
+				defaultThinkingLevel: "off",
+			} as any,
+			cwd: "/tmp/understudy",
+			timeoutMs: 1_000,
+			evidenceBuilder: async () => ({
+				videoPath: "/tmp/demo.mp4",
+				sourceLabel: "demo.mp4",
+				durationMs: 12_000,
+				analysisMode: "event_guided_evidence_pack",
+				events: [],
+				episodes: [
+					{
+						id: "episode-01",
+						startMs: 600,
+						endMs: 2_500,
+						centerMs: 1_000,
+						label: "Browser: Publish button",
+						triggerTypes: ["mouse_up"],
+						source: "event",
+						app: "Browser",
+						keyframes: [
+							{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+						],
+					},
+				],
+				keyframes: [
+					{ path: frameA, mimeType: "image/png", timestampMs: 800, kind: "before_action", label: "Before click", episodeId: "episode-01" },
+				],
+				summary: "Built event-guided evidence pack, 1 episode, 1 keyframe from demo.mp4.",
+				tempDir: dir,
+			}),
+		});
+
+		await expect(analyzer.analyze({
+			videoPath: "/tmp/demo.mp4",
+			sourceLabel: "demo.mp4",
+		})).rejects.toThrow("video teach analysis timed out");
+
+		expect(prompt).toHaveBeenCalledTimes(1);
+		expect(close).toHaveBeenCalled();
 	});
 });

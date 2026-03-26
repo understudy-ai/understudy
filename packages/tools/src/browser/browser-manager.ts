@@ -35,7 +35,10 @@ function resolveConnectionMode(explicitMode?: BrowserConnectionMode): BrowserCon
 	if (normalized === "extension") {
 		return "extension";
 	}
-	return "managed";
+	if (normalized === "managed") {
+		return "managed";
+	}
+	return "auto";
 }
 
 function resolveExtensionCdpUrl(explicitUrl?: string): string {

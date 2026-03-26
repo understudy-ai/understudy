@@ -2,6 +2,7 @@ import fs from "node:fs";
 import YAML from "yaml";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import { expandOpenClawCompatibleToolNames } from "../openclaw-compat.js";
+import type { WorkspaceArtifactChildRef, WorkspaceArtifactKind } from "../workspace-artifact-types.js";
 
 export type SkillRuntimeRequires = {
 	bins?: string[];
@@ -27,6 +28,8 @@ export type SkillRuntimeMetadata = {
 	homepage?: string;
 	skillKey?: string;
 	primaryEnv?: string;
+	artifactKind?: WorkspaceArtifactKind;
+	childArtifacts?: WorkspaceArtifactChildRef[];
 };
 
 export type UnderstudySkill = Skill & {
@@ -38,6 +41,8 @@ export type UnderstudySkill = Skill & {
 	emoji?: string;
 	homepage?: string;
 	triggers?: string[];
+	artifactKind?: WorkspaceArtifactKind;
+	childArtifacts?: WorkspaceArtifactChildRef[];
 };
 
 export interface SkillFrontmatterInfo {
@@ -84,12 +89,55 @@ function normalizeInstallHints(input: unknown): SkillInstallHint[] | undefined {
 	return normalized.length > 0 ? normalized : undefined;
 }
 
+function normalizeArtifactKind(input: unknown): WorkspaceArtifactKind | undefined {
+	if (typeof input !== "string") {
+		return undefined;
+	}
+	switch (input.trim().toLowerCase()) {
+		case "worker":
+			return "worker";
+		case "playbook":
+			return "playbook";
+		case "skill":
+			return "skill";
+		default:
+			return undefined;
+	}
+}
+
+function normalizeChildArtifacts(input: unknown): WorkspaceArtifactChildRef[] | undefined {
+	if (!Array.isArray(input)) {
+		return undefined;
+	}
+	const normalized = input
+		.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+		.map((entry) => {
+			const name = typeof entry.name === "string" ? entry.name.trim() : "";
+			const artifactKind = normalizeArtifactKind(entry.artifactKind);
+			if (!name || !artifactKind || artifactKind === "playbook") {
+				return undefined;
+			}
+			return {
+				name,
+				artifactKind,
+				required: entry.required !== false,
+				...(typeof entry.reason === "string" && entry.reason.trim().length > 0
+					? { reason: entry.reason.trim() }
+					: {}),
+			} satisfies WorkspaceArtifactChildRef;
+		})
+		.filter((entry): entry is WorkspaceArtifactChildRef => Boolean(entry));
+	return normalized.length > 0 ? normalized : undefined;
+}
+
 function normalizeMetadata(input: unknown): SkillRuntimeMetadata | undefined {
 	if (!input || typeof input !== "object") return undefined;
 	const record = input as Record<string, unknown>;
 	const os = normalizeStringArray(record.os);
 	const requires = normalizeRequires(record.requires);
 	const install = normalizeInstallHints(record.install);
+	const artifactKind = normalizeArtifactKind(record.artifactKind);
+	const childArtifacts = normalizeChildArtifacts(record.childArtifacts);
 	return {
 		...(os.length > 0 ? { os } : {}),
 		...(record.always === true ? { always: true } : {}),
@@ -107,6 +155,8 @@ function normalizeMetadata(input: unknown): SkillRuntimeMetadata | undefined {
 		...(typeof record.primaryEnv === "string" && record.primaryEnv.trim().length > 0
 			? { primaryEnv: record.primaryEnv.trim() }
 			: {}),
+		...(artifactKind ? { artifactKind } : {}),
+		...(childArtifacts ? { childArtifacts } : {}),
 	};
 }
 
@@ -145,6 +195,12 @@ function mergeMetadata(
 		...(base.primaryEnv || next.primaryEnv
 			? { primaryEnv: next.primaryEnv ?? base.primaryEnv }
 			: {}),
+		...(base.artifactKind || next.artifactKind
+			? { artifactKind: next.artifactKind ?? base.artifactKind }
+			: {}),
+		...(base.childArtifacts || next.childArtifacts
+			? { childArtifacts: next.childArtifacts ?? base.childArtifacts }
+			: {}),
 	};
 }
 
@@ -154,7 +210,6 @@ function extractMetadata(frontmatter: Record<string, unknown>): SkillRuntimeMeta
 	const candidates = [
 		normalizeMetadata(frontmatter),
 		normalizeMetadata(metadataRecord),
-		normalizeMetadata(metadataRecord?.openclaw),
 		normalizeMetadata(metadataRecord?.understudy),
 	];
 	return candidates.reduce<SkillRuntimeMetadata | undefined>(
@@ -228,6 +283,8 @@ export function hydrateSkillFromFrontmatter(
 		...(metadata?.emoji ? { emoji: metadata.emoji } : {}),
 		...(metadata?.homepage ? { homepage: metadata.homepage } : {}),
 		...(info?.triggers.length ? { triggers: info.triggers.slice() } : {}),
+		...(metadata?.artifactKind ? { artifactKind: metadata.artifactKind } : {}),
+		...(metadata?.childArtifacts?.length ? { childArtifacts: metadata.childArtifacts } : {}),
 	};
 }
 

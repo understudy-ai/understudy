@@ -44,6 +44,8 @@ const AgentConfigSchema = strictObject({
 	runtimeProfile: RuntimeProfile.optional(),
 	runtimeBackend: RuntimeBackend.optional(),
 	guiGroundingThinkingLevel: ThinkingLevel.optional(),
+	guiGroundingProvider: z.string().optional(),
+	guiGroundingModel: z.string().optional(),
 	acp: AgentAcpConfigSchema.optional(),
 	sandbox: AgentSandboxConfigSchema.optional(),
 	modelFallbacks: z.array(z.string()).optional(),

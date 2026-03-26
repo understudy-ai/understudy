@@ -516,6 +516,73 @@ describe("createRuntimeGroundingProvider", () => {
 		});
 	});
 
+	it("retries a runtime assistant stopReason error in-place without recreating the session", async () => {
+		const imagePath = await createTestImage(1280, 920, "runtime-stopreason-error-retry.png");
+		const promptCalls: Array<{ text: string; options: any }> = [];
+		const assistantTexts = [
+			undefined,
+			'{"status":"resolved","confidence":0.9,"reason":"matched downloads item","coordinate_space":"image_pixels","click_point":{"x":148,"y":160},"bbox":{"x1":44,"y1":138,"x2":252,"y2":182}}',
+			'{"status":"pass","approved":true,"confidence":0.94,"reason":"downloads row confirmed"}',
+		];
+		const session = {
+			agent: {
+				setSystemPrompt: vi.fn(),
+				state: { messages: [] as Array<Record<string, unknown>> },
+			},
+			prompt: vi.fn(async (text: string, options?: unknown) => {
+				promptCalls.push({ text, options });
+				if (promptCalls.length === 1) {
+					session.agent.state.messages = [{
+						role: "assistant",
+						stopReason: "error",
+						errorMessage: 'Codex error: {"type":"error","error":{"message":"plain failure"}}',
+						content: [],
+						provider: "openai-codex",
+						model: "gpt-5.4",
+					}];
+				}
+			}),
+			getLastAssistantText: vi.fn(() => assistantTexts.shift()),
+			newSession: vi.fn(async () => true),
+			abort: vi.fn(async () => {}),
+			dispose: vi.fn(async () => {}),
+		};
+		const createAgentSessionImpl = vi.fn(async () => ({ session, extensionsResult: {} })) as any;
+		const simulationImageImpl = vi.fn(async (params: { width: number; height: number }) => ({
+			imagePath: await createTestImage(params.width, params.height, `simulation-stopreason-error-${params.width}x${params.height}.png`),
+			cleanup: async () => {},
+		}));
+		const provider = createRuntimeGroundingProvider({
+			authManager: { authStorage: {}, modelRegistry: {} } as any,
+			model: { provider: "openai-codex", id: "gpt-5.4", input: ["text", "image"] } as any,
+			providerName: "main:openai-codex/gpt-5.4",
+			createAgentSessionImpl,
+			timeoutMs: 5_000,
+			simulationImageImpl,
+		});
+
+		const grounded = await provider?.ground({
+			imagePath,
+			target: "Downloads item",
+			scope: "left sidebar",
+			action: "click",
+			groundingMode: "complex",
+			locationHint: "upper-left sidebar column",
+		});
+
+		expect(createAgentSessionImpl).toHaveBeenCalledTimes(1);
+		expect(session.abort).toHaveBeenCalledTimes(1);
+		expect(session.newSession).toHaveBeenCalledTimes(2);
+		expect(promptCalls).toHaveLength(3);
+		expect(grounded).toMatchObject({
+			point: { x: 148, y: 160 },
+			raw: {
+				selected_attempt: "validated",
+				grounding_selected_round: 1,
+			},
+		});
+	});
+
 	it("recreates the runtime session after repeated transient server errors", async () => {
 		const imagePath = await createTestImage(1280, 920, "runtime-server-error-recreate.png");
 		const firstPromptCalls: Array<{ text: string; options: any }> = [];

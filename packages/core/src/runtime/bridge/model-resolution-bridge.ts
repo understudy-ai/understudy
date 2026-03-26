@@ -91,6 +91,16 @@ export function resolveRuntimeModelCandidates(
 
 		try {
 			const model = resolveModelFn(parsed.provider, parsed.modelId);
+			if (!model) {
+				attempts.push({
+					modelRef,
+					status: "unavailable",
+					provider: parsed.provider,
+					modelId: parsed.modelId,
+					error: "model not found in registry",
+				});
+				continue;
+			}
 			attempts.push({
 				modelRef,
 				status: "resolved",

@@ -112,7 +112,7 @@ The real GUI benchmark exercises a stable set of scenarios per execution family:
 - `hybrid`: `type_targeted`
 - `keyboard_only`: `key_enter`, `key_shift_k`
 
-The benchmark lives in [runtime.real.test.ts](/Users/songliang/workspace/Understudy/understudy/packages/gui/src/__tests__/runtime.real.test.ts) and is opt-in so regular CI and local unit runs stay fast.
+The benchmark lives in [runtime.real.test.ts](../packages/gui/src/__tests__/runtime.real.test.ts) and is opt-in so regular CI and local unit runs stay fast.
 
 There is also a separate opt-in end-to-end validation path that uses the real OpenAI grounding provider instead of the in-test Playwright DOM fixture. That flow is meant for capability checks, not for the repeated benchmark loop.
 

@@ -198,7 +198,15 @@ export interface GuiTypeParams {
 	captureMode?: GuiCaptureMode;
 	windowTitle?: string;
 	windowSelector?: GuiWindowSelector;
-	value: string;
+	value?: string;
+	secretEnvVar?: string;
+	secretCommandEnvVar?: string;
+	typeStrategy?:
+		| "physical_keys"
+		| "clipboard_paste"
+		| "system_events_paste"
+		| "system_events_keystroke"
+		| "system_events_keystroke_chars";
 	replace?: boolean;
 	submit?: boolean;
 }

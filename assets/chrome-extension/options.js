@@ -1,14 +1,6 @@
 import { deriveRelayToken } from './background-utils.js'
+import { clampPort, persistBundledInstallDefaults } from './install-config.js'
 import { classifyRelayCheckException, classifyRelayCheckResponse } from './options-validation.js'
-
-const DEFAULT_PORT = 23336
-
-function clampPort(value) {
-  const n = Number.parseInt(String(value || ''), 10)
-  if (!Number.isFinite(n)) return DEFAULT_PORT
-  if (n <= 0 || n > 65535) return DEFAULT_PORT
-  return n
-}
 
 function updateRelayUrl(port) {
   const el = document.getElementById('relay-url')
@@ -49,9 +41,9 @@ async function checkRelayReachable(port, token) {
 }
 
 async function load() {
-  const stored = await chrome.storage.local.get(['relayPort', 'gatewayToken'])
-  const port = clampPort(stored.relayPort)
-  const token = String(stored.gatewayToken || '').trim()
+  const resolved = await persistBundledInstallDefaults()
+  const port = clampPort(resolved.relayPort)
+  const token = String(resolved.gatewayToken || '').trim()
   document.getElementById('port').value = String(port)
   document.getElementById('token').value = token
   updateRelayUrl(port)

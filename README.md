@@ -18,9 +18,29 @@
 
 ---
 
-AI tools are changing how we use software — but they still cover only a fraction of our work. Our daily tasks are scattered across browsers, desktop apps, terminals, and messaging tools — each with its own interface and habits, disconnected from each other.
+AI agents are getting better at terminals, but real work still spans browsers, desktop apps, files, and messaging tools — all with different interfaces, states, and habits.
 
-**Understudy is a teachable desktop agent.** It operates your computer like a human colleague — GUI, browser, shell, file system, all in one local runtime. You show it a task once, it extracts the intent (not just the coordinates), remembers the successful path, discovers faster execution routes over time, and eventually handles routine work on its own. No API integrations required. No workflow builders. Just demonstrate once.
+**Understudy is a general-purpose local agent for your computer.** Give it one instruction and it can research, browse, click through apps, run commands, manage files, and reply through your existing channels.
+
+**It also brings modern computer-use capability without locking you into a subscription product.** Understudy can see the screen and operate software through grounded GUI actions, while still letting you use your own model/API key.
+
+**What makes it distinctive after that is the learning loop.** You can teach by demonstration, let repeated daily work crystallize into reusable skills, and gradually promote faster execution routes over time.
+
+- **General agent first** — one runtime across GUI, browser, shell, web, files, memory, messaging, scheduling, and subagents.
+- **Computer use built in** — Cowork-style desktop operation, but local-first and bring-your-own model/API key.
+- **Teach + crystallize + upgrade** — explicit teaching, automatic daily workflow crystallization, and route-aware replay in one system.
+
+### Why Understudy?
+
+| Capability | Cowork | OpenClaw | Claude Code | Understudy |
+|---|---|---|---|---|
+| GUI / Computer Use | Yes (macOS) | Limited | No | **Yes (macOS, Windows planned)** |
+| Teach by Demonstration | No | No | No | **Yes** |
+| Self-Improving (5 layers) | No | No | No | **Yes** |
+| Multi-Channel Dispatch | Slack only | 6 channels | No | **8 channels** |
+| Local-First / Private | Cloud | Local | Cloud | **Local** |
+| Open Source | No | Yes | Partial | **Yes** |
+| Pricing | Subscription | API | Subscription | **API (bring your own key)** |
 
 ## The Five Layers
 
@@ -56,13 +76,42 @@ Every layer depends on the one below it. No shortcuts — the system earns its w
 
 ## Showcase
 
-> **Demo environment:** macOS + GPT-5.4 via Codex. See [Supported Models](#supported-models) for all providers.
+> **Demo environment:** macOS + Claude Sonnet 4.6 (Anthropic). All demos also run on GPT-5.4 via Codex. See [Supported Models](#supported-models) for all providers.
 
-[![Understudy Showcase](https://img.youtube.com/vi/3d5cRGnlb_0/maxresdefault.jpg)](https://www.youtube.com/watch?v=3d5cRGnlb_0)
+The demos below map to the product story in order: general agent first, computer use next, then teach and long-term learning.
 
-> *The video has been sped up. Full-length original: [Google Drive](https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing). For inline playback, visit the [Overview page](https://understudy-ai.github.io/understudy/#showcase).*
+### General Agent — One Message, Done
 
-> *The published skill artifact generated from this showcase demo is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md), so you can inspect the exact output directly.*
+<!-- TODO: embed demo video -->
+
+This is the starting point: Understudy is first a general-purpose agent. Create a presentation with images and tables, summarize research, generate code — the full range of agent capabilities triggered by a single instruction. No staging, no multi-step prompting. Just say what you need.
+
+> *Example prompt: "Create a slide deck comparing the top 3 AI coding agents, include a feature matrix table and architecture diagrams."*
+
+### Computer Use + Remote Dispatch — Agent on Desktop, You on Phone
+
+<!-- TODO: embed demo video -->
+
+This is computer use in practice: send a message from Telegram, Discord, Slack, or any of 8 channels, and Understudy receives it on your desktop, executes multi-step tasks — browser research, GUI automation, file creation, shell commands — and replies with the result. All while you're away from your computer.
+
+Unlike [Claude Dispatch](https://www.anthropic.com/news/cowork), which requires the Claude iOS app, Understudy works with the messaging apps you already use: Telegram, Discord, Slack, WhatsApp, Signal, LINE, iMessage, and Web.
+
+### Teach — Show Once, Automate Forever
+
+<!-- TODO: embed new English demo video -->
+
+Teach a task by demonstrating it once. Understudy learns the **intent**, not the coordinates — so the skill survives UI redesigns, window resizing, even switching to a different app. The same stack also feeds daily workflow crystallization and route-aware replay over time.
+
+> *Demo flow: search for a photo → open in Pixelmator Pro → remove background → send via Telegram. Taught once, replayed autonomously.*
+
+> *The published skill artifact from this demo is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md).*
+
+### Example Workspaces
+
+- [examples/demo-general-agent](./examples/demo-general-agent/README.md) — one-message general agent flow
+- [examples/demo-remote-dispatch](./examples/demo-remote-dispatch/README.md) — remote execution from messaging channels
+- [examples/demo-teach](./examples/demo-teach/README.md) — teach-by-demonstration walkthrough
+- [examples/handwritten-playbook-demo](./examples/handwritten-playbook-demo/README.md) — generic playbook + worker + skills bundle with E2E harness
 
 ## What It Can Do Today
 
@@ -75,7 +124,7 @@ Understudy is not just a GUI clicker. It's a unified desktop runtime that mixes 
 | Route | Implementation | What it covers |
 |-------|---------------|----------------|
 | **GUI** | 8 tools + screenshot grounding + native input | Any macOS desktop app |
-| **Browser** | Playwright managed + Chrome extension relay | Any website, with login sessions |
+| **Browser** | Managed Playwright + Chrome extension relay attach | Any website, either in a clean managed browser or an attached real Chrome tab |
 | **Shell** | `bash` tool with full local access | CLI tools, scripts, file system |
 | **Web** | `web_search` + `web_fetch` | Real-time information retrieval |
 | **Memory** | Semantic memory across sessions | Persistent context and preferences |
@@ -111,6 +160,8 @@ For implementation details (coordinate spaces, stabilization, capture modes), se
 > **Teach privacy note:** demonstration videos, event logs, and traces are stored locally by default. However, teach analysis and GUI grounding may send selected screenshots, keyframes, or other image evidence to your configured model provider.
 
 The published SKILL.md is a three-layer abstraction: intent procedure (natural language steps), route options (preferred / fallback paths), and GUI replay hints (last resort only, re-grounded from the current screenshot each time). UI redesigns, window resizing, even switching to a similar app — as long as the semantic target still exists, the skill works.
+
+The draft/publish pipeline is no longer limited to one artifact shape. The current schema can publish `skill`, `worker`, and `playbook` workspace artifacts, although teach-by-demonstration most commonly produces reusable skills today.
 
 A real published output example is available at [examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md](./examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md). It is kept under `examples/` on purpose, so the repo documents the artifact format without auto-loading it as a real workspace skill.
 
@@ -148,7 +199,7 @@ For the implementation details (crystallization pipeline, segmentation, clusteri
 
 ### Layer 4 — Get Faster Over Time
 
-**Status:** partially implemented. Route preferences, route guard policies, and teach route annotations are working today. Fully automatic route discovery and promotion are still in progress.
+**Status:** partially implemented. Route preferences, teach route annotations, browser auto-fallback, and capability-aware routing are working today. Fully automatic route discovery, promotion, and failure-driven route policies are still in progress.
 
 The same feature can be accomplished in multiple ways. Take "send a Slack message" as an example:
 
@@ -164,23 +215,9 @@ Starts at GUI on Day 1 — because GUI is the universal fallback that works with
 **What the user experiences today**
 
 - The system prompt explicitly steers the agent toward faster routes: direct tool/API > Shell/CLI > browser > GUI.
-- A route guard tracks consecutive failures per route. If one route keeps failing (e.g., GUI grounding is unreliable for a particular app), the agent is prompted to switch to an alternative.
 - Teach-produced skills annotate each step with `preferred` / `fallback` / `observed` routes, so the agent can skip GUI when a faster path is available.
-- Browser mode auto-falls back: tries Chrome extension relay first, switches to managed Playwright if that fails.
+- Browser mode supports both managed Playwright and Chrome extension relay; in `auto` mode it tries the relay first, then falls back to managed Playwright if needed.
 - The GUI capability matrix dynamically enables/disables tool subsets based on available permissions, so the agent never attempts a route it can't execute.
-
-**What this looks like in practice**
-
-- A newly learned task may start with GUI as the observed fallback path.
-- Over time, the agent starts preferring higher-level routes — an existing skill, browser flow, or shell command — when those preserve the same result.
-- In practice this usually feels like fewer brittle GUI steps, faster execution, and fewer repeated detours.
-- When a better route is uncertain, the agent falls back to the slower but safer path rather than risk a failure.
-
-**Current boundaries**
-
-- Route optimization today is guidance and safe preference ordering, not a fully autonomous optimizer.
-- The agent can prefer a known faster route, but does not yet run a broad automatic search over all possible routes for every recurring task.
-- Automatic route promotion (discover → verify → promote to default) is designed but not yet fully implemented.
 
 For the full route selection mechanisms, upgrade policy, and future direction, see [Product Design](./docs/Product_Design.md).
 
@@ -189,20 +226,6 @@ For the full route selection mechanisms, upgrade policy, and future direction, s
 **Status:** mostly vision today. Scheduling and runtime surfaces exist, but passive observation, isolated workspace, and proactive autonomy are still ahead.
 
 Earned, not assumed. Understudy's ultimate goal isn't "wait for instructions" — it's becoming a colleague that observes long-term, acts proactively.
-
-**Long-term observation and learning** — beyond explicit teach, Understudy passively observes your daily operations, analyzes recurring patterns, and understands your work habits and preferences. It's not recording every click — it's understanding what you do each day, when you do it, and which tools you use.
-
-**Proactive suggestions** — based on accumulated observations, proactively suggests what to do next: emails to process, tasks to follow up on, reports to run. Suggestions are presented non-intrusively; only executed after you confirm.
-
-**Isolated workspace** — executes tasks in its own desktop, without occupying your screen:
-
-| Phase | Implementation | User Experience |
-|-------|---------------|-----------------|
-| Current | Controlled foreground window + app focus | AI completes tasks reliably |
-| Near-term | macOS second desktop / headless window | User can switch to view AI work |
-| Long-term | Docker + VNC / cloud VM | AI works 24/7 |
-
-**Cross-app orchestration** — the isolated workspace unlocks true multi-app parallel operation. In its own desktop, Understudy can control multiple apps simultaneously, coordinating data flow between them — extract info from email into a spreadsheet, update the calendar, and send results via Slack. No longer a single-threaded, one-window-at-a-time model.
 
 **Progressive trust model** — each skill starts at `manual`, promoted only through sustained success:
 

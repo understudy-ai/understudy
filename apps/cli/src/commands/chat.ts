@@ -170,7 +170,7 @@ async function probeGatewayHealth(gatewayUrl: string): Promise<boolean> {
 				return true;
 			}
 		} catch {
-			// retry once
+			// Retry once for cold starts and transient local stalls.
 		}
 	}
 	return false;

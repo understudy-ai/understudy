@@ -10,7 +10,9 @@ Agent session runtime core for Understudy.
 - **Skills**: SKILL.md parsing, multi-source skill loading, eligibility filtering, and workspace snapshot building
 - **Policy pipeline**: `beforeTool` / `afterTool` hooks for safety, trust, logging, and rate limiting
 - **Session orchestration**: agent turn execution, tool binding, trace recording
-- **Task drafts**: teach draft data model, persistence, and publish flow
+- **Task drafts**: teach draft data model, persistence, and publish flow for `skill`, `worker`, and `playbook` artifacts
+- **Workspace artifacts**: parsing and loading reusable workspace `skill`, `worker`, and `playbook` definitions
+- **Playbook runs**: persisted run records, stage state, artifact roots, approvals, and resume metadata
 - **Runtime composition**: canonical Understudy tool registration, filtering, and prompt assembly
 
 ## Usage

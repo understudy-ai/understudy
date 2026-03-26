@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 		args: string[];
 		env: Record<string, string | undefined>;
 	}>,
+	failAppleScriptType: false,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -103,6 +104,8 @@ function actionKindForMode(mode: string | undefined): string {
 			return "cg_drag";
 		case "scroll":
 			return "cg_scroll";
+		case "type_text":
+			return "cg_type_text";
 		default:
 			return "cg_event";
 	}
@@ -133,6 +136,7 @@ describe("ComputerUseGuiRuntime", () => {
 			windowCount: 1,
 			windowCaptureStrategy: "main_window",
 		};
+		mocks.failAppleScriptType = false;
 		mocks.execFile.mockImplementation((file: string, args: unknown, options: unknown, callback?: (...cbArgs: unknown[]) => void) => {
 			const cb = (typeof options === "function" ? options : callback) as ((...cbArgs: unknown[]) => void) | undefined;
 			if (!cb) {
@@ -155,6 +159,15 @@ describe("ComputerUseGuiRuntime", () => {
 			}
 			if (file === "sips") {
 				cb(null, { stdout: "", stderr: "" });
+				return {} as any;
+			}
+			if (file === "zsh") {
+				const shellCommand = resolvedArgs[1] ?? "";
+				if (shellCommand === "printf 'secret-from-command\\n'") {
+					cb(null, { stdout: "secret-from-command\n", stderr: "" });
+					return {} as any;
+				}
+				cb(new Error(`Unexpected shell command: ${shellCommand}`));
 				return {} as any;
 			}
 			if (file === MOCK_NATIVE_HELPER_PATH) {
@@ -184,6 +197,13 @@ describe("ComputerUseGuiRuntime", () => {
 			if (file === "osascript") {
 				const argvIndex = resolvedArgs.indexOf("--");
 				const typedText = argvIndex >= 0 ? resolvedArgs[argvIndex + 1] : undefined;
+				if ((typedText !== undefined || env.UNDERSTUDY_GUI_TEXT !== undefined) && mocks.failAppleScriptType) {
+					const failure = Object.assign(new Error("osascript type failed"), {
+						stderr: "osascript type failed",
+					});
+					cb(failure);
+					return {} as any;
+				}
 				const stdout = typedText !== undefined || env.UNDERSTUDY_GUI_TEXT !== undefined
 					? "typed\n"
 					: env.UNDERSTUDY_GUI_KEY !== undefined || env.UNDERSTUDY_GUI_KEY_CODE !== undefined
@@ -201,6 +221,8 @@ describe("ComputerUseGuiRuntime", () => {
 		Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
 		delete process.env.UNDERSTUDY_GUI_NATIVE_HELPER_PATH;
 		delete process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS;
+		delete process.env.UNDERSTUDY_TEST_GUI_SECRET;
+		delete process.env.UNDERSTUDY_TEST_GUI_SECRET_COMMAND;
 	});
 
 	it("describes capabilities conservatively when Screen Recording is unavailable", () => {
@@ -830,7 +852,7 @@ describe("ComputerUseGuiRuntime", () => {
 		}
 	});
 
-	it("defaults to a 1.5s settle delay before capturing post-action evidence", async () => {
+	it("defaults to a 3s settle delay before capturing post-action evidence", async () => {
 		vi.useFakeTimers();
 		let clickPromise: Promise<Awaited<ReturnType<ComputerUseGuiRuntime["click"]>>> | undefined;
 		try {
@@ -854,7 +876,7 @@ describe("ComputerUseGuiRuntime", () => {
 			expect(settled).toBe(false);
 			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
 
-			await vi.advanceTimersByTimeAsync(1_499);
+			await vi.advanceTimersByTimeAsync(2_999);
 			expect(settled).toBe(false);
 			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(1);
 
@@ -864,7 +886,7 @@ describe("ComputerUseGuiRuntime", () => {
 			expect(settled).toBe(true);
 			expect(mocks.execCalls.filter((call) => call.file === "screencapture")).toHaveLength(2);
 			expect(result.details).toMatchObject({
-				post_action_capture_settle_ms: 1_500,
+				post_action_capture_settle_ms: 3_000,
 			});
 		} finally {
 			if (clickPromise) {
@@ -1363,6 +1385,389 @@ describe("ComputerUseGuiRuntime", () => {
 		);
 		expect(typeCall?.env.UNDERSTUDY_GUI_TEXT).toBeUndefined();
 		expect(typeCall?.args.slice(-2)).toEqual(["--", "你好，世界"]);
+	});
+
+	it("uses physical_keys native text entry when typeStrategy is set", async () => {
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			value: "flow free",
+			typeStrategy: "physical_keys",
+			submit: true,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_type_text",
+			grounding_method: "targetless",
+			app: "SomeApp",
+		});
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text",
+		);
+		expect(nativeTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "flow free",
+			UNDERSTUDY_GUI_REPLACE: "1",
+			UNDERSTUDY_GUI_SUBMIT: "1",
+			UNDERSTUDY_GUI_TYPE_STRATEGY: "physical_keys",
+			UNDERSTUDY_GUI_CLEAR_REPEAT: "48",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.args.includes("--") &&
+			call.args[call.args.indexOf("--") + 1] === "flow free",
+		);
+		expect(appleScriptTypeCall).toBeUndefined();
+	});
+
+	it("uses clipboard_paste native text entry when typeStrategy is set", async () => {
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			value: "倒数日",
+			typeStrategy: "clipboard_paste",
+			submit: true,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_type_text",
+			grounding_method: "targetless",
+			app: "SomeApp",
+		});
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "倒数日",
+		);
+		expect(nativeTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "倒数日",
+			UNDERSTUDY_GUI_REPLACE: "1",
+			UNDERSTUDY_GUI_SUBMIT: "1",
+			UNDERSTUDY_GUI_TYPE_STRATEGY: "clipboard_paste",
+			UNDERSTUDY_GUI_CLEAR_REPEAT: "48",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.args.includes("--") &&
+			call.args.at(-1) === "倒数日",
+		);
+		expect(appleScriptTypeCall).toBeUndefined();
+	});
+
+	it("uses system_events_paste without exposing the text as an osascript argv value", async () => {
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			value: "S3cret!Pass",
+			typeStrategy: "system_events_paste",
+			submit: false,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			grounding_method: "targetless",
+			app: "SomeApp",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "S3cret!Pass",
+		);
+		expect(appleScriptTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "S3cret!Pass",
+			UNDERSTUDY_GUI_REPLACE: "1",
+			UNDERSTUDY_GUI_SUBMIT: "0",
+			UNDERSTUDY_GUI_PASTE_PRE_DELAY_MS: "220",
+			UNDERSTUDY_GUI_PASTE_POST_DELAY_MS: "650",
+		});
+		expect(appleScriptTypeCall?.args).not.toContain("S3cret!Pass");
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "S3cret!Pass",
+		);
+		expect(nativeTypeCall).toBeUndefined();
+	});
+
+	it("uses system_events_keystroke without exposing the text as an osascript argv value", async () => {
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			value: "S3cret!Pass",
+			typeStrategy: "system_events_keystroke",
+			replace: false,
+			submit: false,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			grounding_method: "targetless",
+			app: "SomeApp",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "S3cret!Pass" &&
+			call.env.UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY === "keystroke",
+		);
+		expect(appleScriptTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "S3cret!Pass",
+			UNDERSTUDY_GUI_REPLACE: "0",
+			UNDERSTUDY_GUI_SUBMIT: "0",
+			UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY: "keystroke",
+			UNDERSTUDY_GUI_PASTE_PRE_DELAY_MS: "220",
+			UNDERSTUDY_GUI_PASTE_POST_DELAY_MS: "650",
+		});
+		expect(appleScriptTypeCall?.args).not.toContain("S3cret!Pass");
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "S3cret!Pass",
+		);
+		expect(nativeTypeCall).toBeUndefined();
+	});
+
+	it("uses system_events_keystroke_chars without exposing the text as an osascript argv value", async () => {
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			value: "Aa#%1@Bb",
+			typeStrategy: "system_events_keystroke_chars",
+			replace: false,
+			submit: false,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			grounding_method: "targetless",
+			app: "SomeApp",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "Aa#%1@Bb" &&
+			call.env.UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY === "keystroke_chars",
+		);
+		expect(appleScriptTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "Aa#%1@Bb",
+			UNDERSTUDY_GUI_REPLACE: "0",
+			UNDERSTUDY_GUI_SUBMIT: "0",
+			UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY: "keystroke_chars",
+			UNDERSTUDY_GUI_KEYSTROKE_CHAR_DELAY_MS: "55",
+		});
+		expect(appleScriptTypeCall?.args).not.toContain("Aa#%1@Bb");
+	});
+
+	it("types text from a secret env var without requiring a literal gui_type value", async () => {
+		process.env.UNDERSTUDY_TEST_GUI_SECRET = "secret-from-env";
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			secretEnvVar: "UNDERSTUDY_TEST_GUI_SECRET",
+			typeStrategy: "physical_keys",
+			submit: true,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_type_text",
+			grounding_method: "targetless",
+			app: "SomeApp",
+			input_source: "secret_env",
+		});
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "secret-from-env",
+		);
+		expect(nativeTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_TEXT: "secret-from-env",
+			UNDERSTUDY_GUI_SUBMIT: "1",
+		});
+	});
+
+	it("types text from a secret command env var without exposing a literal gui_type value", async () => {
+		process.env.UNDERSTUDY_TEST_GUI_SECRET_COMMAND = "printf 'secret-from-command\\n'";
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			secretCommandEnvVar: "UNDERSTUDY_TEST_GUI_SECRET_COMMAND",
+			typeStrategy: "clipboard_paste",
+			submit: true,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_type_text",
+			grounding_method: "targetless",
+			app: "SomeApp",
+			input_source: "secret_command_env",
+		});
+		expect(mocks.execCalls.find((call) =>
+			call.file === "zsh" &&
+			call.args[0] === "-lc" &&
+			call.args[1] === "printf 'secret-from-command\\n'",
+		)).toBeTruthy();
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "secret-from-command",
+		);
+		expect(nativeTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_TEXT: "secret-from-command",
+			UNDERSTUDY_GUI_SUBMIT: "1",
+		});
+	});
+
+	it("types secret env text through system_events_paste without placing the secret on osascript argv", async () => {
+		process.env.UNDERSTUDY_TEST_GUI_SECRET = "secret-from-env";
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			secretEnvVar: "UNDERSTUDY_TEST_GUI_SECRET",
+			typeStrategy: "system_events_paste",
+			submit: false,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			grounding_method: "targetless",
+			app: "SomeApp",
+			input_source: "secret_env",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "secret-from-env",
+		);
+		expect(appleScriptTypeCall?.args).not.toContain("secret-from-env");
+		expect(appleScriptTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "secret-from-env",
+			UNDERSTUDY_GUI_SUBMIT: "0",
+		});
+	});
+
+	it("types secret env text through system_events_keystroke without placing the secret on osascript argv", async () => {
+		process.env.UNDERSTUDY_TEST_GUI_SECRET = "secret-from-env";
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			secretEnvVar: "UNDERSTUDY_TEST_GUI_SECRET",
+			typeStrategy: "system_events_keystroke",
+			replace: false,
+			submit: false,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			grounding_method: "targetless",
+			app: "SomeApp",
+			input_source: "secret_env",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "secret-from-env" &&
+			call.env.UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY === "keystroke",
+		);
+		expect(appleScriptTypeCall?.args).not.toContain("secret-from-env");
+		expect(appleScriptTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "secret-from-env",
+			UNDERSTUDY_GUI_REPLACE: "0",
+			UNDERSTUDY_GUI_SUBMIT: "0",
+			UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY: "keystroke",
+		});
+	});
+
+	it("types secret env text through system_events_keystroke_chars without placing the secret on osascript argv", async () => {
+		process.env.UNDERSTUDY_TEST_GUI_SECRET = "secret-from-env";
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "SomeApp",
+			secretEnvVar: "UNDERSTUDY_TEST_GUI_SECRET",
+			typeStrategy: "system_events_keystroke_chars",
+			replace: false,
+			submit: false,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			grounding_method: "targetless",
+			app: "SomeApp",
+			input_source: "secret_env",
+		});
+		const appleScriptTypeCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "secret-from-env" &&
+			call.env.UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY === "keystroke_chars",
+		);
+		expect(appleScriptTypeCall?.args).not.toContain("secret-from-env");
+		expect(appleScriptTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "SomeApp",
+			UNDERSTUDY_GUI_TEXT: "secret-from-env",
+			UNDERSTUDY_GUI_REPLACE: "0",
+			UNDERSTUDY_GUI_SUBMIT: "0",
+			UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY: "keystroke_chars",
+			UNDERSTUDY_GUI_KEYSTROKE_CHAR_DELAY_MS: "55",
+		});
+	});
+
+	it("falls back to native text entry when AppleScript typing fails", async () => {
+		mocks.failAppleScriptType = true;
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			app: "Mail",
+			value: "flow free",
+			submit: true,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_type_text",
+			grounding_method: "targetless",
+			app: "Mail",
+		});
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text" &&
+			call.env.UNDERSTUDY_GUI_APP === "Mail",
+		);
+		expect(nativeTypeCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "Mail",
+			UNDERSTUDY_GUI_TEXT: "flow free",
+			UNDERSTUDY_GUI_REPLACE: "1",
+			UNDERSTUDY_GUI_SUBMIT: "1",
+		});
+		expect(nativeTypeCall?.env.UNDERSTUDY_GUI_TYPE_STRATEGY).toBeUndefined();
+		expect(nativeTypeCall?.env.UNDERSTUDY_GUI_CLEAR_REPEAT).toBeUndefined();
 	});
 
 	it("sends key actions with modifiers", async () => {

@@ -6,6 +6,8 @@ import {
 	buildWorkspaceSkillSnapshot,
 	buildSessionResetPrompt,
 	lintTaughtTaskDraft,
+	listPlaybookRuns,
+	loadPlaybookRun,
 	loadPersistedWorkflowCrystallizationLedger,
 	loadPersistedTaughtTaskDraftLedger,
 	normalizeAssistantDisplayText,
@@ -20,6 +22,8 @@ import {
 	updatePersistedWorkflowCrystallizationLedger,
 	withTimeout,
 	extractTaughtTaskToolArgumentsFromRecord,
+	type PlaybookRunInputValue,
+	type PlaybookRunRecord,
 	type TaughtTaskDraftParameter,
 	type TaughtTaskCard,
 	type TaughtTaskDraft,
@@ -49,7 +53,7 @@ import {
 	type GuiDemonstrationRecordingSession,
 } from "@understudy/gui";
 import { getModel, type ImageContent, type Model } from "@mariozechner/pi-ai";
-import type { TeachCapabilitySnapshot, VideoTeachAnalyzer } from "@understudy/tools";
+import type { TeachCapabilitySnapshot } from "@understudy/tools";
 import { buildTeachCapabilitySnapshot, extractJsonObject, formatTeachCapabilitySnapshotForPrompt } from "@understudy/tools";
 import type { Attachment, UnderstudyConfig } from "@understudy/types";
 import { createHash, randomUUID } from "node:crypto";
@@ -81,6 +85,12 @@ import {
 import { createGatewayTaskDraftHandlers } from "./task-drafts.js";
 import { asBoolean, asNumber, asRecord, asString, normalizeComparableText, sanitizePathSegment } from "./value-coerce.js";
 import { mergeUnderstudyConfigOverride } from "./channel-policy.js";
+import {
+	completePlaybookStage,
+	resumePlaybookRun,
+	runPlaybookNextStage,
+	startPlaybookRun,
+} from "./playbook-runtime.js";
 
 export interface SessionEntry {
 	id: string;
@@ -302,7 +312,6 @@ interface CreateGatewaySessionRuntimeParams {
 		sessionId: string;
 	}) => Promise<void>;
 	onStateChanged?: () => void;
-	videoTeachAnalyzer?: VideoTeachAnalyzer;
 	demonstrationRecorder?: GuiDemonstrationRecorder;
 	validateTeachDraft?: (params: {
 		entry: SessionEntry;
@@ -712,6 +721,7 @@ type TeachClarificationPayload = {
 	title?: string;
 	intent?: string;
 	objective?: string;
+	artifactKind?: "skill" | "worker" | "playbook";
 	taskKind?: TaughtTaskKind;
 	parameterSlots?: Array<Record<string, unknown> | string>;
 	successCriteria?: string[];
@@ -723,6 +733,9 @@ type TeachClarificationPayload = {
 	replayPreconditions?: string[];
 	resetSignals?: string[];
 	skillDependencies?: Array<Record<string, unknown> | string>;
+	childArtifacts?: Array<Record<string, unknown>>;
+	playbookStages?: Array<Record<string, unknown>>;
+	workerContract?: Record<string, unknown>;
 	steps?: Array<Record<string, unknown> | string>;
 	summary?: string;
 	nextQuestion?: string;
@@ -950,6 +963,19 @@ function normalizeTeachTaskKind(value: unknown): TaughtTaskKind | undefined {
 			return "parameterized_workflow";
 		case "batch_workflow":
 			return "batch_workflow";
+		default:
+			return undefined;
+	}
+}
+
+function normalizeTeachArtifactKind(value: unknown): "skill" | "worker" | "playbook" | undefined {
+	switch (trimToUndefined(asString(value))?.toLowerCase()) {
+		case "skill":
+			return "skill";
+		case "worker":
+			return "worker";
+		case "playbook":
+			return "playbook";
 		default:
 			return undefined;
 	}
@@ -1704,6 +1730,7 @@ function buildTeachClarificationPrompt(params: {
 		title: params.draft.title,
 		intent: params.draft.intent,
 		objective: params.draft.objective,
+		artifactKind: params.draft.artifactKind,
 		taskKind: params.draft.taskKind,
 		parameterSlots: params.draft.parameterSlots,
 		successCriteria: params.draft.successCriteria,
@@ -1716,6 +1743,9 @@ function buildTeachClarificationPrompt(params: {
 		replayPreconditions: params.draft.replayPreconditions,
 		resetSignals: params.draft.resetSignals,
 		skillDependencies: params.draft.skillDependencies,
+		childArtifacts: params.draft.childArtifacts,
+		playbookStages: params.draft.playbookStages,
+		workerContract: params.draft.workerContract,
 		steps: params.draft.steps.map((step) => summarizeTeachStepForPrompt(step)),
 	};
 	return [
@@ -1751,8 +1781,12 @@ function buildTeachClarificationPrompt(params: {
 			"Teach confirmation is controlled only by the `/teach confirm` slash command.",
 			"When the task card is ready, set readyForConfirmation to true, clear openQuestions and uncertainties, and leave nextQuestion empty.",
 			"Use openQuestions and uncertainties as the canonical outstanding issues. nextQuestion is optional shorthand only when a single question is enough.",
+			"Choose artifactKind explicitly when the taught result is more than a basic workflow skill. Use playbook for staged orchestration and worker for goal-driven open-ended work.",
+			"If artifactKind is worker, provide workerContract with goal, inputs, outputs, allowed routes and surfaces, budget, escalation policy, stop conditions, and decision heuristics.",
+			"If artifactKind is playbook, provide childArtifacts and playbookStages. childArtifacts may reference skill or worker artifacts only.",
+			"If a playbook stage needs approval, use approvalGate as a short reusable gate name such as delivery_preview, publish_preview, payment_review, or legal_review. Use none only when the stage does not need a named gate.",
 			"Return strict JSON only.",
-			'Schema: {"title":"...","intent":"...","objective":"...","taskKind":"fixed_demo|parameterized_workflow|batch_workflow","parameterSlots":[{"name":"...","label":"...","sampleValue":"...","required":true,"notes":"..."}],"successCriteria":["..."],"openQuestions":["..."],"uncertainties":["..."],"procedure":[{"instruction":"...","kind":"navigate|extract|transform|filter|output|skill|check","skillName":"optional-skill-name","notes":"...","uncertain":false}],"executionPolicy":{"toolBinding":"adaptive|fixed","preferredRoutes":["skill","browser","shell","gui"],"stepInterpretation":"evidence|fallback_replay|strict_contract","notes":["..."]},"stepRouteOptions":[{"procedureStepId":"procedure-1","route":"skill|browser|shell|gui","preference":"preferred|fallback|observed","instruction":"...","toolName":"exact-available-tool-name","skillName":"optional-skill-name","when":"...","notes":"..."}],"replayPreconditions":["..."],"resetSignals":["..."],"skillDependencies":[{"name":"...","reason":"...","required":true}],"steps":[{"route":"gui|browser|shell|web|workspace|memory|messaging|automation|system|custom","toolName":"exact-available-tool-name","instruction":"...","summary":"...","target":"...","app":"...","scope":"...","locationHint":"...","windowTitle":"...","captureMode":"window|display","groundingMode":"single|complex","inputs":{"key":"value"},"toolArgs":{"button":"right","windowSelector":{"titleContains":"Draft"}},"verificationSummary":"...","uncertain":false}],"taskCard":{"goal":"...","scope":"...","loopOver":"...","inputs":["..."],"extract":["..."],"formula":"...","filter":"...","output":"..."},"summary":"...","nextQuestion":"...","readyForConfirmation":false,"excludedDemoSteps":["..."]}',
+			'Schema: {"title":"...","intent":"...","objective":"...","artifactKind":"skill|worker|playbook","taskKind":"fixed_demo|parameterized_workflow|batch_workflow","parameterSlots":[{"name":"...","label":"...","sampleValue":"...","required":true,"notes":"..."}],"successCriteria":["..."],"openQuestions":["..."],"uncertainties":["..."],"procedure":[{"instruction":"...","kind":"navigate|extract|transform|filter|output|skill|check","skillName":"optional-skill-name","notes":"...","uncertain":false}],"executionPolicy":{"toolBinding":"adaptive|fixed","preferredRoutes":["skill","browser","shell","gui"],"stepInterpretation":"evidence|fallback_replay|strict_contract","notes":["..."]},"stepRouteOptions":[{"procedureStepId":"procedure-1","route":"skill|browser|shell|gui","preference":"preferred|fallback|observed","instruction":"...","toolName":"exact-available-tool-name","skillName":"optional-skill-name","when":"...","notes":"..."}],"replayPreconditions":["..."],"resetSignals":["..."],"skillDependencies":[{"name":"...","reason":"...","required":true}],"childArtifacts":[{"id":"child-1","name":"...","artifactKind":"skill|worker","objective":"...","required":true,"reason":"..."}],"playbookStages":[{"id":"stage-1","name":"...","kind":"skill|worker|inline|approval","refName":"optional-child-name","objective":"...","inputs":["..."],"outputs":["..."],"budgetNotes":["..."],"retryPolicy":"retry_once|skip_with_note|pause_for_human","approvalGate":"none|delivery_preview|publish_preview|payment_review"}],"workerContract":{"goal":"...","scope":"...","inputs":["..."],"outputs":["..."],"allowedRoutes":["skill","browser","shell","gui"],"allowedSurfaces":["..."],"budget":{"maxMinutes":12,"maxActions":60,"maxScreenshots":12},"escalationPolicy":["..."],"stopConditions":["..."],"decisionHeuristics":["..."]},"steps":[{"route":"gui|browser|shell|web|workspace|memory|messaging|automation|system|custom","toolName":"exact-available-tool-name","instruction":"...","summary":"...","target":"...","app":"...","scope":"...","locationHint":"...","windowTitle":"...","captureMode":"window|display","groundingMode":"single|complex","inputs":{"key":"value"},"toolArgs":{"button":"right","windowSelector":{"titleContains":"Draft"}},"verificationSummary":"...","uncertain":false}],"taskCard":{"goal":"...","scope":"...","loopOver":"...","inputs":["..."],"extract":["..."],"formula":"...","filter":"...","output":"..."},"summary":"...","nextQuestion":"...","readyForConfirmation":false,"excludedDemoSteps":["..."]}',
 			"Keep the task card concise and reusable.",
 		"Current draft JSON:",
 		JSON.stringify(draftSummary, null, 2),
@@ -1796,6 +1830,7 @@ function normalizeTeachClarificationPayload(payload: Record<string, unknown>): T
 		title: trimToUndefined(asString(payload.title)),
 		intent: trimToUndefined(asString(payload.intent)),
 		objective: trimToUndefined(asString(payload.objective)),
+		artifactKind: normalizeTeachArtifactKind(payload.artifactKind),
 		taskKind: normalizeTeachTaskKind(payload.taskKind),
 		parameterSlots: Array.isArray(parameterSlots)
 			? parameterSlots.filter((entry): entry is Record<string, unknown> | string =>
@@ -1816,6 +1851,15 @@ function normalizeTeachClarificationPayload(payload: Record<string, unknown>): T
 			? skillDependencies.filter((entry): entry is Record<string, unknown> | string =>
 					typeof entry === "string" || Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
 			: undefined,
+		childArtifacts: Array.isArray(payload.childArtifacts)
+			? payload.childArtifacts.filter((entry): entry is Record<string, unknown> =>
+				Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
+			: undefined,
+		playbookStages: Array.isArray(payload.playbookStages)
+			? payload.playbookStages.filter((entry): entry is Record<string, unknown> =>
+				Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
+			: undefined,
+		workerContract: asRecord(payload.workerContract),
 		steps: Array.isArray(payload.steps)
 			? payload.steps.filter((entry): entry is Record<string, unknown> | string =>
 				typeof entry === "string" || Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
@@ -2507,7 +2551,6 @@ export function createGatewaySessionRuntime(
 		persistSessionRunTrace,
 		deletePersistedSession,
 		onStateChanged,
-		videoTeachAnalyzer,
 		demonstrationRecorder = createMacosDemonstrationRecorder(),
 		validateTeachDraft = defaultTeachDraftValidator,
 		notifyUser,
@@ -2581,7 +2624,6 @@ export function createGatewaySessionRuntime(
 
 	const taskDraftHandlers = createGatewayTaskDraftHandlers({
 		sessionEntries,
-		videoTeachAnalyzer,
 		config,
 	});
 	const applyPromptSectionToWorkspaceSessions = (params: {
@@ -4515,6 +4557,9 @@ export function createGatewaySessionRuntime(
 		if (mergedObjective && mergedObjective !== draft.objective) {
 			patch.objective = mergedObjective;
 		}
+		if (payload.artifactKind !== undefined && payload.artifactKind !== draft.artifactKind) {
+			patch.artifactKind = payload.artifactKind;
+		}
 		if (payload.taskKind !== undefined && payload.taskKind !== draft.taskKind) {
 			patch.taskKind = payload.taskKind;
 		}
@@ -4555,6 +4600,50 @@ export function createGatewaySessionRuntime(
 					required: asBoolean(entry.required) !== false,
 				};
 			});
+		}
+		if (payload.childArtifacts !== undefined) {
+			patch.childArtifacts = payload.childArtifacts.map((entry, index) => ({
+				id: asString(entry.id) ?? `child-artifact-${index + 1}`,
+				name: asString(entry.name),
+				artifactKind: normalizeTeachArtifactKind(entry.artifactKind),
+				objective: asString(entry.objective),
+				required: asBoolean(entry.required) !== false,
+				reason: asString(entry.reason),
+			}));
+		}
+		if (payload.playbookStages !== undefined) {
+			patch.playbookStages = payload.playbookStages.map((entry, index) => ({
+				id: asString(entry.id) ?? `playbook-stage-${index + 1}`,
+				name: asString(entry.name),
+				kind: asString(entry.kind),
+				refName: asString(entry.refName),
+				objective: asString(entry.objective),
+				inputs: Array.isArray(entry.inputs) ? asStringList(entry.inputs) : [],
+				outputs: Array.isArray(entry.outputs) ? asStringList(entry.outputs) : [],
+				budgetNotes: Array.isArray(entry.budgetNotes) ? asStringList(entry.budgetNotes) : [],
+				retryPolicy: asString(entry.retryPolicy),
+				approvalGate: asString(entry.approvalGate),
+			}));
+		}
+		if (payload.workerContract !== undefined) {
+			patch.workerContract = {
+				goal: asString(payload.workerContract.goal),
+				scope: asString(payload.workerContract.scope),
+				inputs: Array.isArray(payload.workerContract.inputs) ? asStringList(payload.workerContract.inputs) : [],
+				outputs: Array.isArray(payload.workerContract.outputs) ? asStringList(payload.workerContract.outputs) : [],
+				allowedRoutes: Array.isArray(payload.workerContract.allowedRoutes) ? asStringList(payload.workerContract.allowedRoutes) : [],
+				allowedSurfaces: Array.isArray(payload.workerContract.allowedSurfaces) ? asStringList(payload.workerContract.allowedSurfaces) : [],
+				budget: asRecord(payload.workerContract.budget)
+					? {
+						maxMinutes: asNumber(asRecord(payload.workerContract.budget)?.maxMinutes),
+						maxActions: asNumber(asRecord(payload.workerContract.budget)?.maxActions),
+						maxScreenshots: asNumber(asRecord(payload.workerContract.budget)?.maxScreenshots),
+					}
+					: undefined,
+				escalationPolicy: Array.isArray(payload.workerContract.escalationPolicy) ? asStringList(payload.workerContract.escalationPolicy) : [],
+				stopConditions: Array.isArray(payload.workerContract.stopConditions) ? asStringList(payload.workerContract.stopConditions) : [],
+				decisionHeuristics: Array.isArray(payload.workerContract.decisionHeuristics) ? asStringList(payload.workerContract.decisionHeuristics) : [],
+			};
 		}
 		if (payload.procedure !== undefined) {
 			patch.procedure = payload.procedure.map((entry) => {
@@ -5450,6 +5539,8 @@ export function createGatewaySessionRuntime(
 		channelId?: string;
 		promptOptions?: Record<string, unknown>;
 		runPromise: Promise<{ response: string; runId: string; images?: ImageContent[]; meta?: Record<string, unknown> }>;
+		tracePrompt?: string;
+		allowEmptyReplyRecovery?: boolean;
 		}): Promise<RunTurnResult> => {
 			const promptResult = await params.runPromise;
 			const assistantImages =
@@ -5461,6 +5552,33 @@ export function createGatewaySessionRuntime(
 				{ images: assistantImages },
 			));
 			const visibleResponse = assistantResult.text;
+			if (
+				(params.allowEmptyReplyRecovery ?? true) &&
+				!assistantResult.silent &&
+				visibleResponse.trim().length === 0
+			) {
+				const recoveryPrompt = [
+					"System note: your previous turn ended with an empty <final> after tool use.",
+					"Continue the same task from the current state.",
+					"Do not repeat completed setup.",
+					"Either keep working, or if the task is complete or blocked, say that explicitly in <final>.",
+					"Do not return an empty <final>.",
+				].join(" ");
+				const recoveryRunPromise = promptSession(
+					params.entry,
+					recoveryPrompt,
+					promptResult.runId,
+					params.promptOptions,
+				);
+				void recoveryRunPromise.catch(() => {});
+				return await finalizePromptRun({
+					...params,
+					effectiveText: recoveryPrompt,
+					runPromise: recoveryRunPromise,
+					tracePrompt: params.tracePrompt ?? params.effectiveText,
+					allowEmptyReplyRecovery: false,
+				});
+			}
 			if (!assistantResult.silent) {
 				appendHistory(
 					params.entry,
@@ -5472,7 +5590,7 @@ export function createGatewaySessionRuntime(
 			}
 			const runTrace = storeSessionRunTrace(params.entry, {
 				runId: promptResult.runId,
-				userPrompt: params.effectiveText,
+				userPrompt: params.tracePrompt ?? params.effectiveText,
 			response: visibleResponse,
 			meta: promptResult.meta,
 		});
@@ -5820,6 +5938,125 @@ export function createGatewaySessionRuntime(
 		});
 	};
 
+		const resolvePlaybookWorkspaceDir = (params?: Record<string, unknown>): string =>
+			resolve(resolveRequestedWorkspaceDir(params) ?? config.agent.cwd ?? process.cwd());
+
+	const normalizePlaybookRunInputValue = (value: unknown): PlaybookRunInputValue | undefined => {
+		if (typeof value === "string") {
+			const trimmed = value.trim();
+			return trimmed.length > 0 ? trimmed : undefined;
+		}
+		if (typeof value === "number" || typeof value === "boolean") {
+			return value;
+		}
+		return undefined;
+	};
+
+		const readPlaybookRunInputs = (params?: Record<string, unknown>): Record<string, PlaybookRunInputValue> | undefined => {
+			const inputs = asRecord(params?.inputs);
+			if (!inputs) {
+				return undefined;
+			}
+		const normalized = Object.fromEntries(
+			Object.entries(inputs)
+				.map(([key, value]) => [key, normalizePlaybookRunInputValue(value)] as const)
+				.filter((entry): entry is [string, PlaybookRunInputValue] => entry[1] !== undefined),
+			);
+			return Object.keys(normalized).length > 0 ? normalized : undefined;
+		};
+
+		const summarizePlaybookRun = (run: PlaybookRunRecord) => {
+		const runningStage = run.stages?.find((stage) => stage.status === "running");
+		const nextStage = runningStage ?? run.stages?.find((stage) => stage.status === "pending");
+		const latestChild = [...run.childSessions].reverse()[0];
+		return {
+			id: run.id,
+			playbookName: run.playbookName,
+			status: run.status,
+			inputs: run.inputs,
+			createdAt: run.createdAt,
+			updatedAt: run.updatedAt,
+			approval: run.approval,
+			artifactsRootDir: run.artifacts.rootDir,
+			currentStage: nextStage
+				? {
+					id: nextStage.id,
+					name: nextStage.name,
+					kind: nextStage.kind,
+					status: nextStage.status,
+				}
+				: null,
+			childSession: latestChild
+				? {
+					label: latestChild.label,
+					sessionId: latestChild.sessionId,
+					status: latestChild.status,
+					runtime: latestChild.runtime,
+					updatedAt: latestChild.updatedAt,
+				}
+				: null,
+			workerBudget: run.budgets?.worker ?? null,
+		};
+	};
+
+	const dispatchSubagentRun = async (params?: Record<string, unknown>) => {
+		const parentSessionId = asString(params?.parentSessionId);
+		const task = asString(params?.task);
+		if (!parentSessionId) {
+			throw new Error("parentSessionId is required");
+		}
+		if (!task) {
+			throw new Error("task is required");
+		}
+		const prepared = await prepareSubagentSession({
+			parentSessionId,
+			task,
+			label: asString(params?.label),
+			runtime: asString(params?.runtime),
+			agentId: asString(params?.agentId),
+			model: asString(params?.model),
+			thinking: asString(params?.thinking),
+			cwd: asString(params?.cwd),
+			thread: asBoolean(params?.thread) === true,
+			mode: asString(params?.mode),
+			cleanup: asString(params?.cleanup),
+			sandbox: asString(params?.sandbox),
+			sessionId: asString(params?.childSessionId),
+			timeoutMs: asNumber(params?.timeoutMs),
+			runTimeoutSeconds: asNumber(params?.runTimeoutSeconds),
+			attachments: Array.isArray(params?.attachments) ? params.attachments as Attachment[] : undefined,
+		});
+		const promptInput = await buildPromptInputFromMedia({
+			text: task,
+			attachments: prepared.attachments,
+		});
+		const historyMedia = resolveHistoryMedia({
+			promptOptions: promptInput.promptOptions,
+			attachments: prepared.attachments,
+		});
+		const turn = await dispatchPromptTurn({
+			entry: prepared.child,
+			userText: task,
+			effectiveText: promptInput.text,
+			channelId: prepared.child.channelId,
+			waitForCompletion: false,
+			promptOptions: promptInput.promptOptions,
+			historyMedia,
+		});
+		return {
+			status: turn.status,
+			parentSessionId: prepared.parent.id,
+			childSessionId: prepared.child.id,
+			sessionId: prepared.child.id,
+			runId: turn.runId,
+			runtime: prepared.child.subagentMeta?.runtime ?? "subagent",
+			mode: prepared.child.subagentMeta?.mode ?? "run",
+			created: prepared.created,
+			reused: !prepared.created,
+			notes: prepared.notes,
+		};
+	};
+
 	const sessionHandlers: SessionHandlers = {
 		list: async (params) => {
 			const channelFilter = asString(params?.channelId);
@@ -5953,38 +6190,138 @@ export function createGatewaySessionRuntime(
 				...(activeRun ? { activeRun } : {}),
 			};
 		},
+		playbookRunList: async (params) => {
+			const workspaceDir = resolvePlaybookWorkspaceDir(params);
+			const limit = Math.max(1, asNumber(params?.limit) ?? 20);
+			const runs = await listPlaybookRuns(workspaceDir);
+			return {
+				workspaceDir,
+				runs: runs.slice(0, limit).map((run) => summarizePlaybookRun(run)),
+			};
+		},
+		playbookRunGet: async (params) => {
+			const runId = asString(params?.runId);
+			if (!runId) {
+				throw new Error("runId is required");
+			}
+			const workspaceDir = resolvePlaybookWorkspaceDir(params);
+			const run = await loadPlaybookRun(workspaceDir, runId);
+			if (!run) {
+				return null;
+			}
+			return {
+				workspaceDir,
+				run,
+				summary: summarizePlaybookRun(run),
+			};
+		},
+		playbookRunStart: async (params) => {
+			const playbookName = asString(params?.playbookName);
+			if (!playbookName) {
+				throw new Error("playbookName is required");
+			}
+			const workspaceDir = resolvePlaybookWorkspaceDir(params);
+			return await startPlaybookRun({
+				workspaceDir,
+				playbookName,
+				inputs: readPlaybookRunInputs(params),
+				runId: asString(params?.runId),
+				now: asNumber(params?.now),
+			});
+		},
+		playbookRunResume: async (params) => {
+			const runId = asString(params?.runId);
+			if (!runId) {
+				throw new Error("runId is required");
+			}
+			return await resumePlaybookRun({
+				workspaceDir: resolvePlaybookWorkspaceDir(params),
+				runId,
+				playbookName: asString(params?.playbookName),
+			});
+		},
+		playbookRunNext: async (params) => {
+			const runId = asString(params?.runId);
+			if (!runId) {
+				throw new Error("runId is required");
+			}
+			const parentSessionId = asString(params?.parentSessionId);
+			if (!parentSessionId) {
+				throw new Error("parentSessionId is required");
+			}
+			return await runPlaybookNextStage({
+				workspaceDir: resolvePlaybookWorkspaceDir(params),
+				runId,
+				parentSessionId,
+				now: asNumber(params?.now),
+				contextNotes: asStringList(params?.contextNotes),
+				spawnSubagent: dispatchSubagentRun,
+			});
+		},
+			playbookRunStageComplete: async (params) => {
+				const runId = asString(params?.runId);
+				const stageId = asString(params?.stageId);
+				const summary = asString(params?.summary);
+			if (!runId) {
+				throw new Error("runId is required");
+			}
+			if (!stageId) {
+				throw new Error("stageId is required");
+			}
+			if (!summary) {
+				throw new Error("summary is required");
+			}
+			const status = asString(params?.status);
+			if (status !== "completed" && status !== "failed" && status !== "skipped") {
+				throw new Error("status must be completed, failed, or skipped");
+			}
+				return await completePlaybookStage({
+					workspaceDir: resolvePlaybookWorkspaceDir(params),
+					runId,
+					stageId,
+					status,
+					summary,
+					artifactPaths: asStringList(params?.artifactPaths),
+					approvalState: (() => {
+						const approvalState = asString(params?.approvalState);
+						return approvalState === "approved" || approvalState === "rejected" ? approvalState : undefined;
+					})(),
+					approvalNote: asString(params?.approvalNote),
+					now: asNumber(params?.now),
+				});
+			},
 			teachList: async (params?: Record<string, unknown>) => await taskDraftHandlers.list(params),
-			teachCreate: async (params?: Record<string, unknown>) => (await taskDraftHandlers.create(params)).draft,
-			teachRecordStart: async (params?: Record<string, unknown>) => {
-				const entry = requireSessionEntry(params);
-				return await startTeachRecordingFromCommand(entry, params);
-			},
-			teachRecordStatus: async (params?: Record<string, unknown>) => {
-				const entry = requireSessionEntry(params);
-				return {
-					sessionId: entry.id,
-					recording: activeTeachRecordings.get(entry.id)?.status() ?? null,
-				};
-			},
-			teachRecordStop: async (params?: Record<string, unknown>) => {
-				const entry = requireSessionEntry(params);
-				return await stopTeachRecordingFromCommand(entry, params);
-			},
+		teachCreate: async (params?: Record<string, unknown>) => (await taskDraftHandlers.create(params)).draft,
+		teachRecordStart: async (params?: Record<string, unknown>) => {
+			const entry = requireSessionEntry(params);
+			return await startTeachRecordingFromCommand(entry, params);
+		},
+		teachRecordStatus: async (params?: Record<string, unknown>) => {
+			const entry = requireSessionEntry(params);
+			return {
+				sessionId: entry.id,
+				recording: activeTeachRecordings.get(entry.id)?.status() ?? null,
+			};
+		},
+		teachRecordStop: async (params?: Record<string, unknown>) => {
+			const entry = requireSessionEntry(params);
+			return await stopTeachRecordingFromCommand(entry, params);
+		},
 			teachVideo: async (params?: Record<string, unknown>) => (await taskDraftHandlers.createFromVideo(params)).draft,
-			teachUpdate: async (params?: Record<string, unknown>) => await taskDraftHandlers.update(params),
-			teachValidate: async (params?: Record<string, unknown>) => {
-				const entry = requireSessionEntry(params);
-				const result = await validateExistingTeachDraft(entry, params);
-				clearTeachClarificationForDraft(entry, asString(result.draft?.id) ?? asString(params?.draftId));
-				return result;
-			},
-			teachPublish: async (params?: Record<string, unknown>) => {
-				const entry = requireSessionEntry(params);
-				const result = await publishExistingTeachDraft(entry, params);
-				clearTeachClarificationForDraft(entry, asString(result.draft?.id) ?? asString(params?.draftId));
-				return result;
-			},
-			create: async (params) => {
+		teachUpdate: async (params?: Record<string, unknown>) => await taskDraftHandlers.update(params),
+		teachValidate: async (params?: Record<string, unknown>) => {
+			const entry = requireSessionEntry(params);
+			const result = await validateExistingTeachDraft(entry, params);
+			clearTeachClarificationForDraft(entry, asString(result.draft?.id) ?? asString(params?.draftId));
+			return result;
+		},
+		teachPublish: async (params?: Record<string, unknown>) => {
+			const entry = requireSessionEntry(params);
+			const result = await publishExistingTeachDraft(entry, params);
+			clearTeachClarificationForDraft(entry, asString(result.draft?.id) ?? asString(params?.draftId));
+			return result;
+		},
+		create: async (params) => {
 				const channelId = asString(params?.channelId);
 				const senderId = asString(params?.senderId);
 				const senderName = asString(params?.senderName);
@@ -6265,61 +6602,7 @@ export function createGatewaySessionRuntime(
 			};
 		},
 		spawnSubagent: async (params) => {
-			const parentSessionId = asString(params?.parentSessionId);
-			const task = asString(params?.task);
-			if (!parentSessionId) {
-				throw new Error("parentSessionId is required");
-			}
-			if (!task) {
-				throw new Error("task is required");
-			}
-			const prepared = await prepareSubagentSession({
-				parentSessionId,
-				task,
-				label: asString(params?.label),
-				runtime: asString(params?.runtime),
-				agentId: asString(params?.agentId),
-				model: asString(params?.model),
-				thinking: asString(params?.thinking),
-				cwd: asString(params?.cwd),
-				thread: asBoolean(params?.thread) === true,
-				mode: asString(params?.mode),
-				cleanup: asString(params?.cleanup),
-				sandbox: asString(params?.sandbox),
-				sessionId: asString(params?.childSessionId),
-				timeoutMs: asNumber(params?.timeoutMs),
-				runTimeoutSeconds: asNumber(params?.runTimeoutSeconds),
-				attachments: Array.isArray(params?.attachments) ? params.attachments as Attachment[] : undefined,
-			});
-			const promptInput = await buildPromptInputFromMedia({
-				text: task,
-				attachments: prepared.attachments,
-			});
-			const historyMedia = resolveHistoryMedia({
-				promptOptions: promptInput.promptOptions,
-				attachments: prepared.attachments,
-			});
-			const turn = await dispatchPromptTurn({
-				entry: prepared.child,
-				userText: task,
-				effectiveText: promptInput.text,
-				channelId: prepared.child.channelId,
-				waitForCompletion: false,
-				promptOptions: promptInput.promptOptions,
-				historyMedia,
-			});
-			return {
-				status: turn.status,
-				parentSessionId: prepared.parent.id,
-				childSessionId: prepared.child.id,
-				sessionId: prepared.child.id,
-				runId: turn.runId,
-				runtime: prepared.child.subagentMeta?.runtime ?? "subagent",
-				mode: prepared.child.subagentMeta?.mode ?? "run",
-				created: prepared.created,
-				reused: !prepared.created,
-				notes: prepared.notes,
-			};
+			return await dispatchSubagentRun(params);
 		},
 		subagents: async (params) => {
 			const action = (asString(params?.action) ?? "list").toLowerCase();

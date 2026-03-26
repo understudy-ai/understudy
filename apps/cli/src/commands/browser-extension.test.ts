@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -8,13 +8,27 @@ import {
 	parseBrowserExtensionSlashCommand,
 	resolveBrowserExtensionInstallDir,
 } from "./browser-extension.js";
+// @ts-expect-error test-only import of raw extension asset module
+import { persistBundledInstallDefaults } from "../../../../assets/chrome-extension/install-config.js";
 
 const tempDirs: string[] = [];
+const testGlobal = globalThis as typeof globalThis & {
+	chrome?: any;
+	fetch?: typeof fetch;
+};
+const originalChrome = testGlobal.chrome;
+const originalFetch = globalThis.fetch;
 
 afterEach(async () => {
 	for (const dir of tempDirs.splice(0)) {
 		await import("node:fs/promises").then(({ rm }) => rm(dir, { recursive: true, force: true }));
 	}
+	testGlobal.chrome = originalChrome;
+	testGlobal.fetch = originalFetch;
+});
+
+beforeEach(() => {
+	vi.restoreAllMocks();
 });
 
 describe("browser extension install", () => {
@@ -29,13 +43,23 @@ describe("browser extension install", () => {
 		await writeFile(join(sourceDir, "background.js"), "console.log('ok')", "utf8");
 		await writeFile(join(sourceDir, "icons", "icon16.png"), "png", "utf8");
 
-		const installed = await installChromeExtension({ sourceDir, installDir });
+		const installed = await installChromeExtension({
+			sourceDir,
+			installDir,
+			seedConfig: {
+				relayPort: 24444,
+				gatewayToken: "seed-token",
+			},
+		});
 
 		expect(installed.path).toBe(installDir);
-		const manifest = await import("node:fs/promises").then(({ readFile }) =>
-			readFile(join(installDir, "manifest.json"), "utf8"),
-		);
+		const manifest = await readFile(join(installDir, "manifest.json"), "utf8");
 		expect(manifest).toContain("Understudy Browser Relay");
+		const localConfig = JSON.parse(await readFile(join(installDir, "understudy-local-config.json"), "utf8"));
+		expect(localConfig).toEqual({
+			relayPort: 24444,
+			gatewayToken: "seed-token",
+		});
 	});
 
 	it("defaults the install path to Downloads and respects explicit targets", () => {
@@ -101,5 +125,38 @@ describe("browser extension install", () => {
 		expect(parseBrowserExtensionSlashCommand("/browser-extension config mode=extension")).toBeUndefined();
 		expect(parseBrowserExtensionSlashCommand("/extension")).toBeUndefined();
 		expect(parseBrowserExtensionSlashCommand("/extension path managed")).toBeUndefined();
+	});
+
+	it("returns merged relay defaults after persisting bundled config", async () => {
+		testGlobal.fetch = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({
+				relayPort: 24444,
+				gatewayToken: "seed-token",
+			}),
+		}) as unknown as Response) as unknown as typeof fetch;
+		testGlobal.chrome = {
+			runtime: {
+				getURL: vi.fn((value: string) => `chrome-extension://test/${value}`),
+			},
+			storage: {
+				local: {
+					get: vi.fn(async () => ({
+						relayPort: "",
+						gatewayToken: "",
+					})),
+					set: vi.fn(async () => undefined),
+				},
+			},
+		} as any;
+
+		await expect(persistBundledInstallDefaults()).resolves.toEqual({
+			relayPort: 24444,
+			gatewayToken: "seed-token",
+		});
+		expect(testGlobal.chrome.storage.local.set).toHaveBeenCalledWith({
+			relayPort: 24444,
+			gatewayToken: "seed-token",
+		});
 	});
 });

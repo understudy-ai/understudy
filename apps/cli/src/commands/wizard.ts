@@ -17,7 +17,7 @@ import { installBrowserExtensionIntoConfig } from "./browser-extension-setup.js"
 import { openExternalPath } from "./open-path.js";
 import { collectSetupChecklist, formatSetupChecklist } from "./setup-checklist.js";
 import { createWizardUi, type WizardChoiceOption, WizardCancelledError } from "./wizard-ui.js";
-import { parseThinkingLevel } from "./model-support.js";
+import { BUILTIN_MODELS, parseThinkingLevel } from "./model-support.js";
 
 interface WizardOptions {
 	config?: string;
@@ -262,22 +262,27 @@ async function maybeConfigureOAuthProviders(
 }
 
 function groupAvailableModels(authManager: AuthManager): Map<string, string[]> {
-	const groups = new Map<string, string[]>();
+	const merged = new Map<string, Set<string>>();
+	// Seed with builtin models so picker works even without auth
+	for (const [provider, models] of Object.entries(BUILTIN_MODELS)) {
+		merged.set(provider, new Set(models));
+	}
 	for (const model of authManager.getAvailableModels()) {
 		const provider = model.provider.trim();
 		const modelId = model.id.trim();
 		if (!provider || !modelId) {
 			continue;
 		}
-		if (!groups.has(provider)) {
-			groups.set(provider, []);
+		if (!merged.has(provider)) {
+			merged.set(provider, new Set());
 		}
-		groups.get(provider)!.push(modelId);
+		merged.get(provider)!.add(modelId);
 	}
-	for (const [provider, models] of groups.entries()) {
-		groups.set(provider, Array.from(new Set(models)).sort());
-	}
-	return new Map(Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right)));
+	return new Map(
+		Array.from(merged.entries())
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([provider, models]) => [provider, Array.from(models).sort()]),
+	);
 }
 
 async function configureModelDefaults(params: {
@@ -374,6 +379,105 @@ async function configureModelDefaults(params: {
 		})),
 		initialValue: params.config.defaultThinkingLevel,
 	});
+
+	await configureGroundingModel(params);
+}
+
+async function configureGroundingModel(params: {
+	ui: ReturnType<typeof createWizardUi>;
+	config: UnderstudyConfig;
+	notices: string[];
+}) {
+	const currentProvider = params.config.agent.guiGroundingProvider?.trim() ?? params.config.defaultProvider ?? "";
+	const currentModel = params.config.agent.guiGroundingModel?.trim() ?? params.config.defaultModel ?? "";
+	const hasDedicated =
+		Boolean(params.config.agent.guiGroundingProvider?.trim()) ||
+		Boolean(params.config.agent.guiGroundingModel?.trim());
+	const wantsDedicated = await params.ui.confirm({
+		message: "Use a dedicated model for GUI grounding (separate from the main model)?",
+		initialValue: hasDedicated,
+	});
+	if (!wantsDedicated) {
+		delete params.config.agent.guiGroundingProvider;
+		delete params.config.agent.guiGroundingModel;
+		return;
+	}
+
+	const authManager = AuthManager.create();
+	const availableModels = groupAvailableModels(authManager);
+	const groundingProviderOptions = [
+		...Array.from(availableModels.keys()).map((provider) => ({
+			value: provider,
+			label: provider,
+			hint: buildAuthBadge(provider),
+		})),
+		{ value: MANUAL_CHOICE, label: "Manual entry", hint: "Type provider ID yourself" },
+	];
+	const providerInitial = availableModels.has(currentProvider) ? currentProvider : MANUAL_CHOICE;
+	let groundingProvider: string;
+	if (groundingProviderOptions.length > 1) {
+		const providerChoice = await params.ui.select({
+			message: "Grounding provider",
+			options: groundingProviderOptions,
+			initialValue: providerInitial,
+		});
+		if (providerChoice === MANUAL_CHOICE) {
+			groundingProvider = nonEmpty(
+				await params.ui.text({
+					message: "Grounding provider ID",
+					initialValue: currentProvider,
+				}),
+				params.config.defaultProvider ?? "openai-codex",
+			);
+		} else {
+			groundingProvider = providerChoice;
+		}
+	} else {
+		groundingProvider = nonEmpty(
+			await params.ui.text({
+				message: "Grounding provider ID",
+				initialValue: currentProvider,
+			}),
+			params.config.defaultProvider ?? "openai-codex",
+		);
+	}
+
+	const providerModels = availableModels.get(groundingProvider) ?? [];
+	let groundingModel = currentModel;
+	if (providerModels.length > 0) {
+		const modelChoice = await params.ui.select({
+			message: "Grounding model",
+			options: [
+				...providerModels.map((modelId) => ({ value: modelId, label: modelId })),
+				{ value: MANUAL_CHOICE, label: "Manual model entry", hint: "Type a custom model ID" },
+			],
+			initialValue: providerModels.includes(currentModel) ? currentModel : MANUAL_CHOICE,
+		});
+		if (modelChoice === MANUAL_CHOICE) {
+			groundingModel = nonEmpty(
+				await params.ui.text({
+					message: "Grounding model ID",
+					initialValue: currentModel,
+					placeholder: "e.g. gpt-5.4",
+				}),
+				params.config.defaultModel ?? "gpt-5.4",
+			);
+		} else {
+			groundingModel = modelChoice;
+		}
+	} else {
+		groundingModel = nonEmpty(
+			await params.ui.text({
+				message: "Grounding model ID",
+				initialValue: currentModel,
+				placeholder: "e.g. gpt-5.4",
+			}),
+			params.config.defaultModel ?? "gpt-5.4",
+		);
+	}
+
+	params.config.agent.guiGroundingProvider = groundingProvider;
+	params.config.agent.guiGroundingModel = groundingModel;
 }
 
 async function configureMemory(params: {

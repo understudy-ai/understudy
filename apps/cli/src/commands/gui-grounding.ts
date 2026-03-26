@@ -472,8 +472,9 @@ export async function resolveMainModelGuiGroundingProvider(
 /**
  * Resolve the GUI grounding provider for the current runtime.
  *
- * Uses the main LLM configuration — whatever the main model supports,
- * grounding supports as well.
+ * If `config.agent.guiGroundingProvider` is set, uses a dedicated provider
+ * for grounding (e.g. OpenAI gpt-5.4) independent of the main model.
+ * Otherwise falls back to the main LLM configuration.
  */
 export async function primeGuiGroundingForConfig(
 	config: UnderstudyConfig,
@@ -481,6 +482,40 @@ export async function primeGuiGroundingForConfig(
 	providerStatusResolver: ProviderStatusResolver = inspectProviderAuthStatus,
 	options?: GuiGroundingModelSelectionOptions,
 ): Promise<ResolvedGuiGroundingProvider> {
+	const dedicatedProvider = config.agent.guiGroundingProvider?.trim();
+	const dedicatedModel = config.agent.guiGroundingModel?.trim();
+	if (dedicatedProvider || dedicatedModel) {
+		const resolvedProvider = dedicatedProvider || config.defaultProvider;
+		const resolvedModel = dedicatedModel || config.defaultModel;
+		if (!resolvedProvider || !resolvedModel) {
+			return {
+				available: false,
+				unavailableReason:
+					"Dedicated GUI grounding requires a configured provider/model or a default main model.",
+			};
+		}
+		const dedicatedResult = await resolveMainModelGuiGroundingProvider(
+			{
+				...config,
+				defaultProvider: resolvedProvider,
+				defaultModel: resolvedModel,
+			},
+			authManager,
+			providerStatusResolver,
+			options,
+		);
+		if (dedicatedResult) {
+			return {
+				...dedicatedResult,
+				label: `grounding:${resolvedProvider}/${resolvedModel}`,
+			};
+		}
+		return {
+			available: false,
+			unavailableReason: `Dedicated GUI grounding model unavailable: ${resolvedProvider}/${resolvedModel}.`,
+		};
+	}
+
 	const mainProvider = await resolveMainModelGuiGroundingProvider(
 		config,
 		authManager,

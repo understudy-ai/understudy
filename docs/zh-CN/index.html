@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Understudy | 可教学的桌面 Agent</title>
+    <title>Understudy | 通用 Agent + Computer Use + Teach</title>
     <meta
       name="description"
-      content="Understudy 是一个可教学的桌面 Agent。像人类同事一样操作你的电脑，从演示中学习，把成功路径固化为技能，并持续优化执行效率。"
+      content="Understudy 是一个本地运行的通用电脑 Agent：先是一条指令完成通用工作，再是现代 Computer Use，最后叠加演示教学、日常结晶化 skill 和路线升级。"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -690,7 +690,7 @@
             <div class="brand-mark">U</div>
             <div class="brand-copy">
               <strong>Understudy</strong>
-              <span>Teachable Desktop Agent</span>
+              <span>通用桌面 Agent</span>
             </div>
           </a>
           <nav class="nav" aria-label="Primary">
@@ -709,12 +709,12 @@
           <div class="section hero">
             <article class="hero-main reveal">
               <div class="hero-top">
-                <span class="eyebrow">当前支持 macOS · 本地优先 · 可教学</span>
+                <span class="eyebrow">通用 Agent · Computer Use · 演示教学 · 8 渠道 · 本地运行 · 开源</span>
                 <a class="lang-link" href="../index.html">English</a>
               </div>
-              <h1>看一遍，然后替你上场。</h1>
+              <h1>你的电脑，由 Agent 来操作。</h1>
               <p class="hero-lead">
-                Understudy 是一个可教学的桌面 Agent。它像人类同事一样操作你的电脑，统一使用 GUI、浏览器、Shell、文件系统与消息通道；你示范一次，它学习意图、记住成功路径，并逐步找到更快的执行路线。
+                Understudy 是一个通用、本地运行的电脑 Agent。先给它一句话，它就能做研究、浏览网页、操控应用、执行命令、管理文件，并通过你已有的渠道回传结果。它同时具备现代 Computer Use 能力，但不要求你购买订阅产品——自带模型/API key 即可使用。再往上，才是演示教学、日常 crystallization skill 和路线升级。
               </p>
               <div class="hero-actions">
                 <a class="button button-primary" href="https://github.com/understudy-ai/understudy" target="_blank" rel="noreferrer">
@@ -731,20 +731,20 @@
               </div>
               <div class="hero-tags">
                 <div class="tag">
-                  <strong>统一桌面执行</strong>
-                  <span>一次任务里同时用 GUI、浏览器、终端、Web 搜索和本地文件。</span>
+                  <strong>通用 Agent</strong>
+                  <span>研究、浏览器、Shell、文件、消息、调度和委派统一在一个本地 runtime 里。</span>
                 </div>
                 <div class="tag">
-                  <strong>不是宏录制</strong>
-                  <span>学的是任务意图、参数槽、成功标准，不是屏幕坐标。</span>
+                  <strong>Computer Use</strong>
+                  <span>通过截图 grounding 和原生输入操控桌面应用，同时继续使用你自己的模型/API key。</span>
                 </div>
                 <div class="tag">
-                  <strong>越用越熟</strong>
-                  <span>从成功路径中沉淀技能，减少随机性，执行越来越稳定。</span>
+                  <strong>Teach + Crystallize + Upgrade</strong>
+                  <span>演示一次 workflow，然后把它固化成可复用 skill，并逐步减少不必要的 GUI 重放。</span>
                 </div>
                 <div class="tag">
-                  <strong>更快路线升级</strong>
-                  <span>起步可走 GUI，成熟后自动转向 browser、CLI、API 等更快路径。</span>
+                  <strong>远程 Dispatch</strong>
+                  <span>从 Telegram、Slack、Discord、WhatsApp、Signal、LINE、iMessage 或 Web 控制。人在外面，Agent 在工作。</span>
                 </div>
               </div>
             </article>
@@ -770,8 +770,8 @@
                   <span>消息通道适配器，支持把 Agent 能力接到现有沟通入口。</span>
                 </div>
                 <div class="metric">
-                  <strong>5</strong>
-                  <span>从“会做”到“主动做”的完整产品分层，而不是单点自动化工具。</span>
+                  <strong>自带</strong>
+                  <span>使用自己的模型/API key，而不是依赖打包好的订阅层。</span>
                 </div>
               </div>
               <div class="code-slice" aria-label="Product Snapshot">
@@ -795,7 +795,7 @@
               <h2>Showcase</h2>
             </div>
             <p class="section-copy">
-              看 Understudy 如何在一个 Agent 会话中同时操作桌面应用、浏览器和终端。
+              这 3 个 demo 按产品体验顺序排列：先是通用 Agent，再是 Computer Use，最后是 Teach 和长期学习。
             </p>
           </div>
           <div class="reveal">
@@ -816,55 +816,93 @@
               <a href="https://github.com/understudy-ai/understudy/blob/main/examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md" target="_blank" rel="noreferrer">examples/published-skills/taught-person-photo-cutout-bc88ec/SKILL.md</a>，
               可以直接查看最终产物。
             </p>
+            <div class="card-grid" style="margin-top: 18px;">
+              <article class="card">
+                <span class="card-kicker">Demo 1 · 通用 Agent</span>
+                <h3>一句话触发多工具协作</h3>
+                <p>
+                  Agent 在一个本地 runtime 里完成研究、生成文件、产出交付物，而不是把工作拆成互不相干的脚本或表单。
+                </p>
+                <div class="list">
+                  <div><strong>重点：</strong>先证明它是通用 Agent</div>
+                  <div><strong>示例：</strong>从单条 prompt 生成研究结果和演示文稿</div>
+                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-general-agent/README.md" target="_blank" rel="noreferrer">打开 demo workspace</a></div>
+                </div>
+              </article>
+              <article class="card">
+                <span class="card-kicker">Demo 2 · Computer Use</span>
+                <h3>远程发消息，真实操作桌面</h3>
+                <p>
+                  手机发来一条消息，Understudy 在 Mac 上完成浏览器、GUI、Shell 和文件工作，再把结果回给用户已有的沟通渠道。
+                </p>
+                <div class="list">
+                  <div><strong>重点：</strong>展示 Cowork 这一类能力，但不依赖订阅锁定</div>
+                  <div><strong>示例：</strong>Telegram 触发浏览器和桌面工作流</div>
+                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-remote-dispatch/README.md" target="_blank" rel="noreferrer">打开 demo workspace</a></div>
+                </div>
+              </article>
+              <article class="card">
+                <span class="card-kicker">Demo 3 · Teach + Replay</span>
+                <h3>演示一次，发布后再重放</h3>
+                <p>
+                  用户演示一次 workflow，发布学习产物，之后再自主重放。同一套机制也继续支撑日常 crystallization 和带路线信息的复用。
+                </p>
+                <div class="list">
+                  <div><strong>重点：</strong>演示教学和技能复用</div>
+                  <div><strong>示例：</strong>Pixelmator Pro 去背景后发到 Telegram</div>
+                  <div><a href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-teach/README.md" target="_blank" rel="noreferrer">打开 demo workspace</a></div>
+                </div>
+              </article>
+            </div>
           </div>
         </section>
 
         <section class="section" id="highlights">
           <div class="section-head reveal">
             <div>
-              <h2>为什么它不是另一个 GUI Clicker</h2>
+              <h2>一个产品，三层价值</h2>
             </div>
             <p class="section-copy">
-              Understudy 的重点不是“能不能点按钮”，而是把通用桌面执行、从演示学习、记忆沉淀和路径升级放进同一条 Agent runtime 里。
+              Understudy 的重点不只是“能不能点按钮”。它首先是通用 Agent runtime，其次是现代 Computer Use 系统，最后才是带学习能力的执行平台。
             </p>
           </div>
           <div class="card-grid">
             <article class="card reveal">
-              <span class="card-kicker">Native Runtime</span>
-              <h3>统一调度 GUI、Browser、Shell、Web、Memory</h3>
+              <span class="card-kicker">通用 Agent</span>
+              <h3>不是单 surface copilot，而是真正的本地 Agent runtime</h3>
               <p>
                 一次任务可以先网页检索，再运行本地命令，再切到原生桌面应用点击提交，最后通过消息通道把结果发出去。不是多个自动化脚本拼接，而是单一会话里的统一选路。
               </p>
               <div class="list">
-                <div><strong>GUI：</strong> screenshot grounding + 原生输入事件</div>
-                <div><strong>Browser：</strong> Playwright + Chrome extension relay</div>
-                <div><strong>Shell / Files：</strong> 本地执行与文件系统访问</div>
+                <div><strong>统一规划：</strong>GUI、browser、shell、web、files、memory、schedule、subagents</div>
+                <div><strong>统一入口：</strong>chat、agent、dashboard、webchat、channels、automation</div>
+                <div><strong>统一结果：</strong>哪怕中途换路线，任务依然保持单一目标和单一会话</div>
               </div>
             </article>
 
             <article class="card reveal">
-              <span class="card-kicker">Teach By Demonstration</span>
-              <h3>演示一次，抽取可复用技能</h3>
+              <span class="card-kicker">Computer Use</span>
+              <h3>桌面操作能力强，而且不被订阅产品绑住</h3>
               <p>
-                录的是视频和语义事件，学的是意图与工作流。系统会做场景检测、事件聚类、关键帧抽取、证据包分析，再生成 teach draft 与可发布的 SKILL.md。
+                Understudy 可以看屏幕、定目标、操作真实应用；在浏览器侧又支持 Chrome extension relay 附着真实标签页，或者走干净的 managed Playwright。
               </p>
               <div class="list">
-                <div><strong>双轨录制：</strong> screen capture + Swift 全局事件监听</div>
-                <div><strong>AI 分析：</strong> 识别参数槽、步骤、成功标准、路线偏好</div>
-                <div><strong>验证闭环：</strong> replay learned task 并分析 trace</div>
+                <div><strong>GUI：</strong>screenshot grounding + 原生输入事件</div>
+                <div><strong>Browser：</strong>托管 Playwright 或通过 extension relay 附着真实 Chrome 标签页</div>
+                <div><strong>模型：</strong>使用你自己的 provider/API key，而不是绑定一个封闭订阅流程</div>
               </div>
             </article>
 
             <article class="card reveal">
-              <span class="card-kicker">Path Upgrade</span>
-              <h3>第一天能做，以后越做越快</h3>
+              <span class="card-kicker">Teach + Crystallize</span>
+              <h3>演示一次，然后持续把 workflow 硬化下来</h3>
               <p>
-                GUI 是万能兜底，但不是长期终点。Understudy 允许任务从 GUI 起步，随后在验证通过的前提下逐步升级到浏览器、CLI 或 API 路径，避免永远走最慢的一条路。
+                显式 teach、日常 workflow crystallization 和带路线信息的 replay 都放在同一套机制里。今天已经能发布可复用产物，后续继续把重复工作推向更快路径。
               </p>
               <div class="list">
-                <div><strong>Day 1：</strong> GUI 兜底，保证任何有界面的软件都可操作</div>
-                <div><strong>Week 1：</strong> 记住成功路径并减少重试</div>
-                <div><strong>Month 1+：</strong> 发现更快路线并稳定切换</div>
+                <div><strong>Teach：</strong>录制视频和语义事件，再发布可复用产物</div>
+                <div><strong>Crystallize：</strong>日常重复工作可以自动长成 workspace skill</div>
+                <div><strong>Upgrade：</strong>路线偏好和标注会减少不必要的 GUI 重放</div>
               </div>
             </article>
           </div>
@@ -902,7 +940,7 @@
               <div class="list">
                 <div><strong>证据包：</strong> 场景变化、事件时间线、关键帧和可用能力快照</div>
                 <div><strong>澄清对话：</strong> 用自然语言补齐任务标题、参数和成功标准</div>
-                <div><strong>技能输出：</strong> 发布为三层结构的 `SKILL.md`</div>
+                <div><strong>产物输出：</strong> 发布为可复用的 `skill`、`worker` 或 `playbook` workspace artifact</div>
               </div>
             </article>
 

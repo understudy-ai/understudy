@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Understudy Browser Relay",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Attach Understudy to your existing Chrome tab via a local CDP relay server.",
   "icons": {
     "16": "icons/icon16.png",
