@@ -524,6 +524,26 @@
         font-size: 0.95rem;
       }
 
+      .demo-video-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .demo-video-pair .demo-video {
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+      }
+
+      .demo-video-label {
+        padding: 8px 14px;
+        background: var(--bg-dark);
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+      }
+
       .showcase-note {
         padding: 14px 48px 18px;
         background: rgba(0, 0, 0, 0.02);
@@ -1053,7 +1073,7 @@
               <button class="showcase-tab is-active" data-demo="general" role="tab">通用 Agent</button>
               <button class="showcase-tab" data-demo="remote" role="tab">远程调度</button>
               <button class="showcase-tab" data-demo="teach" role="tab">演示教学</button>
-              <button class="showcase-tab" data-demo="playbook" role="tab">Playbook</button>
+              <button class="showcase-tab" data-demo="playbook" role="tab">AI 测评博主</button>
             </div>
 
             <!-- Demo 1: 通用 Agent -->
@@ -1092,14 +1112,23 @@
               </div>
             </div>
 
-            <!-- Demo 4: Playbook -->
+            <!-- Demo 4: AI 测评博主 -->
             <div class="showcase-demo" data-demo="playbook">
               <div class="demo-content">
-                <h3>结构化 Playbook 编排工作流</h3>
-                <p>一个通用 Playbook 编排 worker 和技能模块来完成多步骤工作流，附带完整的端到端测试。展示了 Understudy 技能如何组合成更大的自动化流程。</p>
-                <div class="demo-example">示例：Playbook + Worker + 技能包，含 E2E 测试</div>
+                <h3>一条 Prompt，真机 iPhone，发布到 YouTube</h3>
+                <p>六阶段 Pipeline：在 Chrome 浏览真实 App Store，通过 <strong>iPhone Mirroring</strong> 在真机上安装应用，自主探索从未见过的功能，在本地合成带旁白和字幕的评测视频，上传 YouTube，清理设备。中间阶段是真正的 Agentic：51 条质量门控规则引导 Agent，但它在陌生应用中自由导航，自主做出编辑判断。约一小时，零人工干预。</p>
+                <div class="demo-example">示例："从零制作一个 Snapseed 评测视频——重点拍背景移除和黑白滤镜，加旁白字幕，上传 YouTube，清理设备"</div>
               </div>
-              <div class="demo-video-placeholder">演示视频即将上线</div>
+              <div class="demo-video-pair">
+                <div class="demo-video">
+                  <div class="demo-video-label">发布的评测视频</div>
+                  <iframe src="https://www.youtube.com/embed/jliTvpTnsKY" title="演示：AI 测评博主——成品" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                </div>
+                <div class="demo-video">
+                  <div class="demo-video-label">制作过程</div>
+                  <iframe src="https://www.youtube.com/embed/gYMYI0bxkJs" title="演示：AI 测评博主——过程" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                </div>
+              </div>
             </div>
           </div>
         </div>

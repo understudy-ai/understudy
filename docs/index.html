@@ -524,6 +524,26 @@
         font-size: 0.95rem;
       }
 
+      .demo-video-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .demo-video-pair .demo-video {
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+      }
+
+      .demo-video-label {
+        padding: 8px 14px;
+        background: var(--bg-dark);
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+      }
+
       .showcase-note {
         padding: 14px 48px 18px;
         background: rgba(0, 0, 0, 0.02);
@@ -1053,7 +1073,7 @@
               <button class="showcase-tab is-active" data-demo="general" role="tab">General Agent</button>
               <button class="showcase-tab" data-demo="remote" role="tab">Remote Dispatch</button>
               <button class="showcase-tab" data-demo="teach" role="tab">Teach &amp; Replay</button>
-              <button class="showcase-tab" data-demo="playbook" role="tab">Playbook</button>
+              <button class="showcase-tab" data-demo="playbook" role="tab">AI App Critic</button>
             </div>
 
             <!-- Demo 1: General Agent -->
@@ -1092,14 +1112,23 @@
               </div>
             </div>
 
-            <!-- Demo 4: Playbook -->
+            <!-- Demo 4: AI App Critic -->
             <div class="showcase-demo" data-demo="playbook">
               <div class="demo-content">
-                <h3>Structured playbook with workers and skills</h3>
-                <p>A generic playbook orchestrates workers and skill bundles to handle multi-step workflows. Comes with a full end-to-end test harness. This shows how Understudy skills compose into larger automation.</p>
-                <div class="demo-example">Example: Playbook + worker + skills bundle with E2E harness</div>
+                <h3>One prompt. Real iPhone. Published on YouTube.</h3>
+                <p>A six-stage pipeline browses the real App Store, installs an app via <strong>iPhone Mirroring</strong>, explores it autonomously — discovering features it's never seen — composes a narrated review video locally, uploads it to YouTube, and cleans up the device. The middle stage is genuinely agentic: 51 quality-gate rules guide the agent, but it navigates an unfamiliar app freely and makes its own editorial decisions. About one hour, zero human intervention.</p>
+                <div class="demo-example">Example: "Make a Snapseed iPhone app review video from scratch — capture proof-first clips, add narration and subtitles, upload to YouTube, and clean up"</div>
               </div>
-              <div class="demo-video-placeholder">Demo video coming soon</div>
+              <div class="demo-video-pair">
+                <div class="demo-video">
+                  <div class="demo-video-label">The published review</div>
+                  <iframe src="https://www.youtube.com/embed/jliTvpTnsKY" title="Demo: AI App Critic — Result" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                </div>
+                <div class="demo-video">
+                  <div class="demo-video-label">How it was made</div>
+                  <iframe src="https://www.youtube.com/embed/gYMYI0bxkJs" title="Demo: AI App Critic — Process" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                </div>
+              </div>
             </div>
           </div>
         </div>

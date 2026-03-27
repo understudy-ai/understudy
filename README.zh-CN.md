@@ -87,7 +87,7 @@ Layer 5 ┃ 主动观察，互不影响  在独立工作空间主动发现和执
 
 > **演示环境：** macOS + GPT-5.4 via Codex (OpenAI)。所有演示也支持 Claude、Gemini 等其他提供方。完整列表见[支持的模型](#支持的模型)。
 
-下面这 3 个 demo 对应产品故事的顺序：先是通用 Agent，再是 Computer Use，最后是 Teach 和长期学习。
+下面的 demo 按产品故事递进：通用 Agent → Computer Use → Teach → 完整自主 Pipeline。
 
 ### 通用 Agent：一句话搞定
 
@@ -116,6 +116,42 @@ Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsAp
 > *演示流程：`/teach start` → Google 图片搜索 Sam Altman → 下载照片 → Pixelmator Pro 去背景 → 导出 → 通过 Telegram 发送给 Alex。然后交互式精调技能。最后用自然语言调用："找一张 [某人] 的照片，去除背景，用 Telegram 发送给 [某人]" —— Agent 自动发现已学技能并带着泛化升级重放。*
 
 查看此演示[生成的已发布技能](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)，了解 teach 产出的真实示例。
+
+### AI 应用测评博主：一条 Prompt 到发布 YouTube
+
+这是所有能力的集大成演示。一条 Prompt 触发一条六阶段流水线：Agent 在 Chrome 里浏览真实 App Store，通过 iPhone Mirroring 在真机上安装 Snapseed，自主探索它从未见过的功能（背景移除、黑白滤镜），在本地用 FFmpeg 合成带旁白和字幕的竖版评测视频，上传到 YouTube，最后清理设备。整个过程约一小时，零人工干预。
+
+这条 Pipeline 引入了**工作区产物组合**：一个 Playbook 编排 Workers（确定性的浏览器/设备自动化）和 Skills（自主决策的 Agent 子会话）。中间阶段 —— 应用探索 —— 是真正的 Agentic：51 条质量门控规则引导 Agent，但它在从未见过的应用中自由导航、自主做出编辑判断。
+
+| 发布的评测视频 | 制作过程 |
+|:---:|:---:|
+| [![成品](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![过程](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
+
+> *示例提示：「从零制作一个 Snapseed iPhone 应用评测视频：使用真实 App Store 和 iPhone Mirroring，重点拍摄背景移除和滤镜（如黑白）的操作片段，加英文旁白和字幕，导出竖版视频，以不公开方式上传到 YouTube，清理设备，分享结果。」*
+
+## 工作区产物 —— Playbook、Worker、Skill
+
+Understudy 的 Teach 和 Crystallization 管线可以产出三种工作区产物，它们可以组合成更大的自动化流程：
+
+| 产物类型 | 角色 | 执行方式 | 示例 |
+|----------|------|----------|------|
+| **Skill** | 可复用的能力 | Agentic —— 在质量门控内自主决策 | `app-explore`：自由探索一个陌生的 iPhone 应用 |
+| **Worker** | 确定性的子任务 | 脚本化 —— 按固定序列执行，输出结构化结果 | `appstore-browser-package`：浏览 App Store、采集元数据 |
+| **Playbook** | 多阶段编排器 | 将 Workers 和 Skills 作为子会话按序编排，跨阶段管理状态 | `app-review-pipeline`：从 App Store 到 YouTube 的 6 阶段 Pipeline |
+
+Playbook 将每个阶段作为**子 Agent（subagent）**启动 —— 独立的子会话，拥有自己的上下文窗口和工具。Workers 是确定性的：按指令执行，产出结构化输出。Skills 是 Agentic 的：接收目标和质量门控，自行决定如何实现。这种分离让同一条 Pipeline 既有脚本化的可靠性，又有真正的自主能力。
+
+```
+app-review-pipeline (playbook)
+  ├─ Stage 1: appstore-browser-package   (worker)  → Chrome 自动化
+  ├─ Stage 2: appstore-device-install    (worker)  → iPhone Mirroring
+  ├─ Stage 3: app-explore               (skill)   → Agentic 探索
+  ├─ Stage 4: local-video-edit           (skill)   → FFmpeg + Python
+  ├─ Stage 5: youtube-upload             (skill)   → Chrome 自动化
+  └─ Stage 6: app-review-cleanup         (skill)   → iPhone Mirroring
+```
+
+产物类型在每个 SKILL.md 的 `metadata.understudy.artifactKind` 字段中声明。Playbook 声明其子产物，E2E 测试框架验证完整契约 —— 必需输出文件、manifest schema 和阶段顺序。
 
 ## 现在能做什么
 

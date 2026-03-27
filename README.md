@@ -87,7 +87,7 @@ Every layer depends on the one below it. No shortcuts — the system earns its w
 
 > **Demo environment:** macOS + GPT-5.4 via Codex (OpenAI). All demos also work with Claude, Gemini, and other providers. See [Supported Models](#supported-models) for the full list.
 
-The demos below map to the product story in order: general agent first, computer use next, then teach and long-term learning.
+The demos below map to the product story in order: general agent first, computer use next, then teach, and finally a full autonomous pipeline that combines everything.
 
 ### General Agent — One Message, Done
 
@@ -116,6 +116,42 @@ Teach a task by demonstrating it once. Understudy learns the **intent**, not the
 > *Demo flow: `/teach start` → search Google Images for Sam Altman → download photo → remove background in Pixelmator Pro → export → send via Telegram to Alex. Then interactively refine the skill. Finally, invoke with natural language: "Find a photo of [person], remove the background, and send it to [contact] on Telegram" — the agent discovers the taught skill and replays it with automatic upgrades.*
 
 See the [published skill from this demo](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md) for a real example of what teach produces.
+
+### AI App Critic — One Prompt to a Published iPhone App Review
+
+This is everything combined. One prompt triggers a six-stage pipeline: the agent browses the real App Store in Chrome, installs Snapseed on a real iPhone through iPhone Mirroring, explores the app autonomously — discovering background removal and filters it's never seen — composes a narrated vertical video locally with FFmpeg, uploads it to YouTube, and cleans up the device. About one hour, zero human intervention.
+
+The pipeline introduces **workspace artifact composition**: a playbook orchestrates workers (deterministic browser/device automation) and skills (agentic subagents that make their own decisions). Each stage runs as a separate child session with its own context. The middle stage — app exploration — is genuinely agentic: 51 quality-gate rules guide the agent, but it navigates freely through an app it has never seen.
+
+| The published review | How it was made |
+|:---:|:---:|
+| [![Result](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![Process](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
+
+> *Example prompt: "Make a Snapseed iPhone app review video from scratch: use the real App Store and iPhone Mirroring, capture proof-first clips focusing on background removal and filters (like black & white), add English narration and subtitles, export a vertical video, upload it unlisted to YouTube, clean up the device, and share the result."*
+
+## Workspace Artifacts — Playbook, Worker, Skill
+
+Understudy's teach and crystallization pipelines can produce three types of workspace artifacts that compose into larger automation:
+
+| Artifact | Role | Execution | Example |
+|----------|------|-----------|---------|
+| **Skill** | A reusable capability | Agentic — makes its own decisions within quality gates | `app-explore`: freely navigate an unfamiliar iPhone app |
+| **Worker** | A deterministic subtask | Scripted — follows a fixed sequence, reports structured output | `appstore-browser-package`: browse App Store, capture listing metadata |
+| **Playbook** | A multi-stage orchestrator | Sequences workers and skills as child sessions, manages state across stages | `app-review-pipeline`: 6-stage pipeline from App Store to YouTube |
+
+A playbook spawns each stage as a **subagent** — an independent child session with its own context window and tools. Workers are deterministic: they follow instructions and produce structured output. Skills are agentic: they receive goals and quality gates, then decide how to achieve them. This separation lets a single pipeline mix scripted reliability with genuine autonomy.
+
+```
+app-review-pipeline (playbook)
+  ├─ Stage 1: appstore-browser-package   (worker)  → Chrome automation
+  ├─ Stage 2: appstore-device-install    (worker)  → iPhone Mirroring
+  ├─ Stage 3: app-explore               (skill)   → agentic exploration
+  ├─ Stage 4: local-video-edit           (skill)   → FFmpeg + Python
+  ├─ Stage 5: youtube-upload             (skill)   → Chrome automation
+  └─ Stage 6: app-review-cleanup         (skill)   → iPhone Mirroring
+```
+
+The artifact type is declared in each SKILL.md's `metadata.understudy.artifactKind` field. The playbook declares its child artifacts, and the E2E test harness validates the full contract — required output files, manifest schema, and stage sequencing.
 
 ## What It Can Do Today
 
