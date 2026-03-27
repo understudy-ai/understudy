@@ -129,7 +129,7 @@ The pipeline introduces **workspace artifact composition**: a playbook orchestra
 
 > *Example prompt: "Make a Snapseed iPhone app review video from scratch: use the real App Store and iPhone Mirroring, capture proof-first clips focusing on background removal and filters (like black & white), add English narration and subtitles, export a vertical video, upload it unlisted to YouTube, clean up the device, and share the result."*
 
-[Full unedited recording](https://drive.google.com/file/d/1_9cZWZRYldEAjN1kBTicDlZFurt8PcEj/view?usp=sharing).
+[Full unedited recording](https://drive.google.com/file/d/1Ap5hGWWemU04UkRm495waHjB1-3nq3g5/view?usp=sharing).
 
 ## Workspace Artifacts — Playbook, Worker, Skill
 

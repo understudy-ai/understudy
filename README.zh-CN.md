@@ -129,7 +129,7 @@ Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsAp
 
 > *示例提示：「从零制作一个 Snapseed iPhone 应用评测视频：使用真实 App Store 和 iPhone Mirroring，重点拍摄背景移除和滤镜（如黑白）的操作片段，加英文旁白和字幕，导出竖版视频，以不公开方式上传到 YouTube，清理设备，分享结果。」*
 
-[完整未剪辑录屏](https://drive.google.com/file/d/1_9cZWZRYldEAjN1kBTicDlZFurt8PcEj/view?usp=sharing)。
+[完整未剪辑录屏](https://drive.google.com/file/d/1Ap5hGWWemU04UkRm495waHjB1-3nq3g5/view?usp=sharing)。
 
 ## 工作区产物 —— Playbook、Worker、Skill
 
