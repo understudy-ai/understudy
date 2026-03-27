@@ -270,4 +270,65 @@ describe("workspace artifacts", () => {
 		expect(result.run.stages?.every((stage) => stage.status === "pending")).toBe(true);
 		expect(result.run.notesSummary).toBe("Review an unfamiliar product using a reusable staged pipeline.");
 	});
+
+	it("loads the repo app review pipeline and preserves its stage contract", async () => {
+		const workspaceDir = path.resolve(import.meta.dirname, "../../../..");
+		const playbook = await loadWorkspaceArtifactByName({
+			workspaceDir,
+			name: "app-review-pipeline",
+		});
+
+		expect(playbook?.filePath).toBe(resolveWorkspaceArtifactPath(workspaceDir, "app-review-pipeline"));
+		expect(playbook?.artifactKind).toBe("playbook");
+		if (!playbook || playbook.artifactKind !== "playbook") {
+			throw new Error("Expected app-review-pipeline to load as a playbook artifact.");
+		}
+
+		expect(playbook.childArtifacts).toEqual([
+			{ name: "appstore-browser-package", artifactKind: "worker", required: true },
+			{ name: "appstore-device-install", artifactKind: "worker", required: true },
+			{ name: "app-explore", artifactKind: "skill", required: true },
+			{ name: "local-video-edit", artifactKind: "skill", required: true },
+			{ name: "youtube-upload", artifactKind: "skill", required: true },
+			{ name: "app-review-cleanup", artifactKind: "skill", required: true },
+		]);
+		expect(playbook.inputs.some((entry) => entry.includes("artifactsRootDir"))).toBe(true);
+		expect(playbook.inputs.some((entry) => entry.includes("selectionMode"))).toBe(true);
+		expect(playbook.inputs.some((entry) => entry.includes("targetAppStoreUrl"))).toBe(true);
+		expect(playbook.inputs.some((entry) => entry.includes("publishNow"))).toBe(true);
+		expect(playbook.stages).toHaveLength(6);
+		expect(playbook.stages[0]).toMatchObject({
+			kind: "worker",
+			refName: "appstore-browser-package",
+			retryPolicy: "retry_once",
+		});
+		expect(playbook.stages[0]?.outputs).toEqual(expect.arrayContaining([
+			"manifest.json",
+			"topic/candidates.json",
+			"topic/app-store-listing.json",
+		]));
+		expect(playbook.stages[2]).toMatchObject({
+			kind: "skill",
+			refName: "app-explore",
+			retryPolicy: "pause_for_human",
+		});
+		expect(playbook.stages[4]).toMatchObject({
+			kind: "skill",
+			refName: "youtube-upload",
+			retryPolicy: "pause_for_human",
+		});
+		expect(playbook.stages[5]).toMatchObject({
+			kind: "skill",
+			refName: "app-review-cleanup",
+			retryPolicy: "retry_once",
+		});
+		expect(playbook.outputContract.some((entry) => entry.includes("manifest.json"))).toBe(true);
+		expect(playbook.outputContract.some((entry) => entry.includes("topic/screenshots/03-Home-Screen-With-App.png"))).toBe(true);
+		expect(playbook.outputContract.some((entry) => entry.includes("experience/notes.json"))).toBe(true);
+		expect(playbook.outputContract.some((entry) => entry.includes("experience/evidence-catalog.json"))).toBe(true);
+		expect(playbook.outputContract.some((entry) => entry.includes("post/final-video.mp4"))).toBe(true);
+		expect(playbook.outputContract.some((entry) => entry.includes("post/assets/voiceover-script.txt"))).toBe(true);
+		expect(playbook.outputContract.some((entry) => entry.includes("publish/preview.md"))).toBe(true);
+		expect(playbook.outputContract.some((entry) => entry.includes("topic/screenshots/99-Clean-Home-Screen.png"))).toBe(true);
+	});
 });

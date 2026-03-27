@@ -117,6 +117,36 @@ Teach a task by demonstrating it once. Understudy learns the **intent**, not the
 
 See the [published skill from this demo](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md) for a real example of what teach produces.
 
+### Demo 4 — iPhone App Review Pipeline
+
+The repo also includes an experimental end-to-end demo for the next showcase arc: lock an App Store target in Chrome, install and explore it through iPhone Mirroring, package a locally rendered review, prepare YouTube metadata, and clean the device back to a known state.
+
+- Synthetic harness: `pnpm test:e2e:pipeline:synthetic`
+- Live harness: `pnpm test:e2e:pipeline:live`
+- Live publish harness: `pnpm demo4:live`
+- Live preview-only harness: `pnpm demo4:preview`
+- Reset before a fresh live run: `pnpm demo:reset`
+- Design docs: [PRD](./docs/iPhone_App_Review_Demo_PRD.md) and [technical design](./docs/iPhone_App_Review_Demo_Design.md)
+
+The live path is macOS-only and assumes iPhone Mirroring, Chrome with the Understudy extension path available, `ffmpeg`, and a signed-in YouTube session.
+
+Natural-language demo4 path:
+
+```bash
+pnpm demo:reset
+node scripts/run-node.mjs gateway --port 23333
+```
+
+Then in a second terminal:
+
+```bash
+UNDERSTUDY_GATEWAY_URL=http://127.0.0.1:23333 \
+node scripts/run-node.mjs chat --cwd . \
+  --message "Please make and publish an iPhone app review video for Snapseed. Start from scratch, use the real App Store and iPhone Mirroring flow, capture strong proof-first screenshots and clips, generate English narration and subtitles, render the final vertical video, upload it to YouTube as unlisted, clean the device afterward, and tell me the result."
+```
+
+By default, demo4 now aims for a real unlisted YouTube publish. Use the preview harness only when you explicitly want a dry run.
+
 ## What It Can Do Today
 
 ### Layer 1 — Operate Your Computer Natively

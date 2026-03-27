@@ -117,6 +117,36 @@ Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsAp
 
 查看此演示[生成的已发布技能](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)，了解 teach 产出的真实示例。
 
+### Demo 4 — iPhone App Review Pipeline
+
+仓库里也已经放入了下一段 showcase 所需的实验性端到端 demo：先在 Chrome 里锁定 App Store 目标应用，再通过 iPhone Mirroring 安装和探索，整理出可本地直接合成的视频评测素材，准备 YouTube 发布信息，最后把设备恢复到已知状态。
+
+- Synthetic 验证：`pnpm test:e2e:pipeline:synthetic`
+- Live 跑通：`pnpm test:e2e:pipeline:live`
+- Live 直发：`pnpm demo4:live`
+- Live 预览版：`pnpm demo4:preview`
+- 开跑前重置环境：`pnpm demo:reset`
+- 设计文档：[PRD](./docs/iPhone_App_Review_Demo_PRD.md) 与 [技术设计](./docs/iPhone_App_Review_Demo_Design.md)
+
+Live 路径目前仅支持 macOS，并默认你已经准备好 iPhone Mirroring、带 Understudy 扩展链路的 Chrome、`ffmpeg` 以及已登录的 YouTube 会话。
+
+自然语言版 demo4 用法：
+
+```bash
+pnpm demo:reset
+node scripts/run-node.mjs gateway --port 23333
+```
+
+再开一个终端执行：
+
+```bash
+UNDERSTUDY_GATEWAY_URL=http://127.0.0.1:23333 \
+node scripts/run-node.mjs chat --cwd . \
+  --message "Please make and publish an iPhone app review video for Snapseed. Start from scratch, use the real App Store and iPhone Mirroring flow, capture strong proof-first screenshots and clips, generate English narration and subtitles, render the final vertical video, upload it to YouTube as unlisted, clean the device afterward, and tell me the result."
+```
+
+现在 demo4 默认目标是实际发布一个 `unlisted` YouTube 视频；只有你明确想 dry run 时才用 preview 路径。
+
 ## 现在能做什么
 
 ### Layer 1 — 像人一样操作你的电脑
