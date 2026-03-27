@@ -2234,12 +2234,28 @@ describe("createGatewaySessionRuntime reset behavior", () => {
 			response: "child complete",
 			runId: runId ?? "child-run",
 		}));
-		const waitForRun = vi.fn(async (params: { sessionId?: string; runId?: string }) => ({
-			status: "ok",
-			sessionId: params.sessionId,
-			runId: params.runId,
-			response: "child complete",
-		}));
+		const waitForRun = vi.fn(async (params: { sessionId?: string; runId?: string; timeoutMs?: number }) => {
+			if (params.timeoutMs === 0) {
+				return {
+					status: "timeout",
+					sessionId: params.sessionId,
+					runId: params.runId,
+					progress: {
+						summary: "Capturing a browser screenshot.",
+						assistantText: "Still working through the target page.",
+						steps: [
+							{ kind: "tool", toolName: "browser.snapshot", state: "running", title: "Take screenshot" },
+						],
+					},
+				};
+			}
+			return {
+				status: "ok",
+				sessionId: params.sessionId,
+				runId: params.runId,
+				response: "child complete",
+			};
+		});
 
 		const runtime = createGatewaySessionRuntime({
 			sessionEntries,
@@ -2396,6 +2412,146 @@ describe("createGatewaySessionRuntime reset behavior", () => {
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
+	});
+
+	it("includes live child progress when subagent wait times out", async () => {
+		const sessionEntries = new Map<string, SessionEntry>();
+		const inFlightSessionIds = new Set<string>();
+		const parent = createEntry("parent-subagent-wait");
+		const child = createEntry("parent-subagent-wait:subagent:test", {
+			parentId: parent.id,
+			subagentMeta: {
+				parentSessionId: parent.id,
+				runtime: "subagent",
+				mode: "run",
+				cleanup: "keep",
+				thread: false,
+				createdAt: 1,
+				updatedAt: 2,
+				latestRunId: "run-child-timeout",
+				latestRunStatus: "in_flight",
+				runCount: 1,
+			},
+		});
+		sessionEntries.set(parent.id, parent);
+		sessionEntries.set(child.id, child);
+
+		const runtime = createGatewaySessionRuntime({
+			sessionEntries,
+			inFlightSessionIds,
+			config: {
+				defaultModel: "claude-sonnet-4-6",
+				defaultProvider: "anthropic",
+				agent: { userTimezone: "Asia/Hong_Kong" },
+			} as any,
+			usageTracker: { record: vi.fn() } as any,
+			estimateTokens: (text) => text.length,
+			appendHistory: vi.fn() as any,
+			getOrCreateSession: vi.fn(async () => parent) as any,
+			createScopedSession: vi.fn(async () => child) as any,
+			promptSession: vi.fn(async () => ({ response: "ok", runId: "run" })) as any,
+			abortSessionEntry: vi.fn(async () => false) as any,
+			waitForRun: vi.fn(async () => ({
+				status: "timeout",
+				runId: "run-child-timeout",
+				sessionId: child.id,
+				progress: {
+					summary: "Reviewing the captured artifacts.",
+					thoughtText: "Need one more proof screenshot before I can wrap up.",
+					steps: [
+						{ kind: "tool", toolName: "view", state: "running", title: "Inspect screenshot" },
+					],
+				},
+			})) as any,
+		});
+
+		const waited = await runtime.sessionHandlers.subagents?.({
+			action: "wait",
+			parentSessionId: parent.id,
+			target: child.id,
+			timeoutMs: 500,
+		});
+
+		expect(waited).toMatchObject({
+			status: "timeout",
+			childSessionId: child.id,
+			activeRun: expect.objectContaining({
+				status: "in_flight",
+				summary: "Reviewing the captured artifacts.",
+				thoughtText: "Need one more proof screenshot before I can wrap up.",
+			}),
+		});
+	});
+
+	it("includes live child progress in subagents list for in-flight children", async () => {
+		const sessionEntries = new Map<string, SessionEntry>();
+		const inFlightSessionIds = new Set<string>();
+		const parent = createEntry("parent-subagent-list");
+		const child = createEntry("parent-subagent-list:subagent:test", {
+			parentId: parent.id,
+			subagentMeta: {
+				parentSessionId: parent.id,
+				label: "browser-worker",
+				runtime: "subagent",
+				mode: "run",
+				cleanup: "keep",
+				thread: false,
+				createdAt: 1,
+				updatedAt: 2,
+				latestRunId: "run-child-list",
+				latestRunStatus: "in_flight",
+				runCount: 1,
+			},
+		});
+		sessionEntries.set(parent.id, parent);
+		sessionEntries.set(child.id, child);
+
+		const runtime = createGatewaySessionRuntime({
+			sessionEntries,
+			inFlightSessionIds,
+			config: {
+				defaultModel: "claude-sonnet-4-6",
+				defaultProvider: "anthropic",
+				agent: { userTimezone: "Asia/Hong_Kong" },
+			} as any,
+			usageTracker: { record: vi.fn() } as any,
+			estimateTokens: (text) => text.length,
+			appendHistory: vi.fn() as any,
+			getOrCreateSession: vi.fn(async () => parent) as any,
+			createScopedSession: vi.fn(async () => child) as any,
+			promptSession: vi.fn(async () => ({ response: "ok", runId: "run" })) as any,
+			abortSessionEntry: vi.fn(async () => false) as any,
+			waitForRun: vi.fn(async () => ({
+				status: "timeout",
+				runId: "run-child-list",
+				sessionId: child.id,
+				progress: {
+					summary: "Capturing a browser screenshot.",
+					assistantText: "Still working through the target page.",
+					steps: [
+						{ kind: "tool", toolName: "browser.snapshot", state: "running", title: "Take screenshot" },
+					],
+				},
+			})) as any,
+		});
+
+		const listed = await runtime.sessionHandlers.subagents?.({
+			action: "list",
+			parentSessionId: parent.id,
+		});
+
+		expect(listed).toMatchObject({
+			parentSessionId: parent.id,
+			subagents: [expect.objectContaining({
+				sessionId: child.id,
+				label: "browser-worker",
+				activeRun: expect.objectContaining({
+					status: "in_flight",
+					summary: "Capturing a browser screenshot.",
+					assistantText: "Still working through the target page.",
+				}),
+			})],
+		});
 	});
 
 	it("kills cleanup-delete subagents and removes their child session entry", async () => {

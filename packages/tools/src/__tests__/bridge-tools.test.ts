@@ -170,6 +170,40 @@ describe("gateway bridge tools", () => {
 		expect(called).toBe("subagents");
 	});
 
+	it("subagents list shows live child progress in the text output", async () => {
+		mockRpc((method, params) => {
+			expect(method).toBe("subagents");
+			expect(params.action).toBe("list");
+			return {
+				subagents: [
+					{
+						sessionId: "s1",
+						label: "research",
+						latestRunStatus: "in_flight",
+						activeRun: {
+							status: "in_flight",
+							summary: "Opening the App Store page.",
+							assistantText: "I am checking the target listing now.",
+							steps: [
+								{ kind: "tool", toolName: "browser.snapshot", state: "running", title: "Capture page" },
+							],
+						},
+					},
+				],
+			};
+		});
+
+		const result = await createSubagentsTool().execute("id", {
+			action: "list",
+		});
+
+		const text = (result.content[0] as any).text as string;
+		expect(text).toContain("s1 [research] status=in_flight");
+		expect(text).toContain("progress: Opening the App Store page.");
+		expect(text).toContain("reply: I am checking the target listing now.");
+		expect(text).toContain("tool/running: Capture page - browser.snapshot");
+	});
+
 	it("sessions_spawn prefers a native spawn handler when available", async () => {
 		const spawnHandler = vi.fn(async () => ({
 			childSessionId: "native-1",

@@ -29,6 +29,7 @@ interface NativeSubagentsOptions extends BridgeGatewayOptions {
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 const REMOTE_WAIT_POLL_SLICE_MS = 15_000;
 const REMOTE_WAIT_RPC_BUFFER_MS = 2_000;
+const MAX_VISIBLE_STEPS = 2;
 
 function resolveOverallWaitTimeoutMs(
 	params: Pick<SubagentsParams, "timeoutMs">,
@@ -43,6 +44,39 @@ function resolveOverallWaitTimeoutMs(
 
 function isTerminalWaitStatus(status: string | undefined): boolean {
 	return status === "ok" || status === "error" || status === "idle";
+}
+
+function formatSubagentProgress(entry: Record<string, unknown>): string[] {
+	const activeRun =
+		entry.activeRun && typeof entry.activeRun === "object"
+			? entry.activeRun as Record<string, unknown>
+			: undefined;
+	if (!activeRun) {
+		return [];
+	}
+	const lines: string[] = [];
+	const summary = asString(activeRun.summary)?.trim();
+	if (summary) {
+		lines.push(`   progress: ${summary}`);
+	}
+	const assistantText = asString(activeRun.assistantText)?.trim();
+	if (assistantText) {
+		lines.push(`   reply: ${assistantText}`);
+	}
+	const steps = Array.isArray(activeRun.steps)
+		? activeRun.steps
+			.filter((step): step is Record<string, unknown> => Boolean(step) && typeof step === "object")
+			.slice(0, MAX_VISIBLE_STEPS)
+		: [];
+	for (const step of steps) {
+		const kind = asString(step.kind) ?? "step";
+		const state = asString(step.state) ?? "working";
+		const title = asString(step.title) ?? asString(step.label) ?? asString(step.summary);
+		const detail = asString(step.toolName) ?? asString(step.route);
+		const descriptor = [title, detail].filter(Boolean).join(" - ");
+		lines.push(`   ${kind}/${state}${descriptor ? `: ${descriptor}` : ""}`);
+	}
+	return lines;
 }
 
 async function waitForRemoteSubagent(
@@ -149,11 +183,14 @@ export function createSubagentsTool(options: NativeSubagentsOptions = {}): Agent
 					if (sessions.length === 0) {
 						return textResult("No active child sessions found.", { subagents: [] });
 					}
-					const lines = sessions.map((entry, index) => {
+					const lines = sessions.flatMap((entry, index) => {
 						const id = asString(entry.sessionId) ?? asString(entry.id) ?? `session_${index + 1}`;
 						const status = asString(entry.latestRunStatus) ?? "idle";
 						const label = asString(entry.label);
-						return `${index + 1}. ${id}${label ? ` [${label}]` : ""} status=${status}`;
+						return [
+							`${index + 1}. ${id}${label ? ` [${label}]` : ""} status=${status}`,
+							...formatSubagentProgress(entry),
+						];
 					});
 					return textResult(`subagents list:\n${lines.join("\n")}`, {
 						subagents: sessions,

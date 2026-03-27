@@ -2319,6 +2319,29 @@ function normalizeActiveRunSnapshot(result: Record<string, unknown> | undefined)
 	};
 }
 
+async function resolveSessionActiveRunSnapshot(
+	waitForRun:
+		| ((params: { runId?: string; sessionId: string; timeoutMs: number }) => Promise<Record<string, unknown>>)
+		| undefined,
+	sessionId: string,
+): Promise<Record<string, unknown> | undefined> {
+	if (!waitForRun) {
+		return undefined;
+	}
+	try {
+		const snapshot = asRecord(await waitForRun({
+			sessionId,
+			timeoutMs: 0,
+		}));
+		if (!asRecord(snapshot?.progress)) {
+			return undefined;
+		}
+		return normalizeActiveRunSnapshot(snapshot);
+	} catch {
+		return undefined;
+	}
+}
+
 function runSupportsHistoryChannels(run: SessionRunTrace | Record<string, unknown> | undefined): boolean {
 	if (!run || typeof run !== "object") {
 		return false;
@@ -6159,20 +6182,9 @@ export function createGatewaySessionRuntime(
 			const limit = Math.max(1, asNumber(params?.limit) ?? MAX_RECENT_SESSION_RUNS);
 			const entry = sessionEntries.get(sessionId);
 			const liveRuns = Array.isArray(entry?.recentRuns) ? entry.recentRuns.slice(0, limit) : [];
-			let activeRun: Record<string, unknown> | undefined;
-			if (entry && waitForRun) {
-				try {
-					const snapshot = asRecord(await waitForRun({
-						sessionId,
-						timeoutMs: 0,
-					}));
-					if (asRecord(snapshot?.progress)) {
-						activeRun = normalizeActiveRunSnapshot(snapshot);
-					}
-				} catch {
-					activeRun = undefined;
-				}
-			}
+			const activeRun = entry
+				? await resolveSessionActiveRunSnapshot(waitForRun, sessionId)
+				: undefined;
 			if (readPersistedTrace && (!entry || liveRuns.length < limit)) {
 				const persistedRuns = await readPersistedTrace({ sessionId, limit });
 				if (persistedRuns.length > liveRuns.length || (!entry && persistedRuns.length > 0)) {
@@ -6613,9 +6625,11 @@ export function createGatewaySessionRuntime(
 			switch (action) {
 				case "list": {
 					const children = listSubagentEntries(sessionEntries.values(), parentSessionId);
-					return {
-						parentSessionId,
-						subagents: children.map((entry) => ({
+					const subagents = await Promise.all(children.map(async (entry) => {
+						const activeRun = entry.subagentMeta?.latestRunStatus === "in_flight"
+							? await resolveSessionActiveRunSnapshot(waitForRun, entry.id)
+							: undefined;
+						return {
 							...buildSessionSummary(entry),
 							sessionId: entry.id,
 							latestRunId: entry.subagentMeta?.latestRunId,
@@ -6627,7 +6641,12 @@ export function createGatewaySessionRuntime(
 							thread: entry.subagentMeta?.thread ?? false,
 							latestResponsePreview: entry.subagentMeta?.latestResponsePreview,
 							latestError: entry.subagentMeta?.latestError,
-						})),
+							...(activeRun ? { activeRun } : {}),
+						};
+					}));
+					return {
+						parentSessionId,
+						subagents,
 					};
 				}
 				case "wait": {
@@ -6668,12 +6687,17 @@ export function createGatewaySessionRuntime(
 					const cleanedUp =
 						(status === "ok" || status === "error") &&
 						maybeCleanupSubagentEntry(target);
+					const activeRun =
+						status === "timeout" || status === "in_flight"
+							? normalizeActiveRunSnapshot(asRecord(result))
+							: undefined;
 					return {
 						...result,
 						parentSessionId,
 						childSessionId: target.id,
 						sessionId: target.id,
 						cleanedUp,
+						...(activeRun ? { activeRun } : {}),
 					};
 				}
 				case "kill": {
