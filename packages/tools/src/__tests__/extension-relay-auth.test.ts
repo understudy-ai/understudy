@@ -19,6 +19,8 @@ describe("extension-relay-auth", () => {
 		};
 		delete process.env.UNDERSTUDY_GATEWAY_TOKEN;
 		delete process.env.UNDERSTUDY_GATEWAY_AUTH_MODE;
+		delete process.env.UNDERSTUDY_BROWSER_EXTENSION_RELAY_GATEWAY_TOKEN;
+		delete process.env.UNDERSTUDY_BROWSER_EXTENSION_RELAY_AUTH_MODE;
 	});
 
 	afterEach(() => {
@@ -43,5 +45,19 @@ describe("extension-relay-auth", () => {
 
 		expect(tokens.length).toBeGreaterThan(0);
 		expect(headers["x-understudy-relay-token"]).toBe(tokens[0]);
+	});
+
+	it("prefers dedicated browser relay auth env overrides", async () => {
+		process.env.UNDERSTUDY_GATEWAY_AUTH_MODE = "none";
+		process.env.UNDERSTUDY_GATEWAY_TOKEN = "ignored-gateway-secret";
+		process.env.UNDERSTUDY_BROWSER_EXTENSION_RELAY_AUTH_MODE = "token";
+		process.env.UNDERSTUDY_BROWSER_EXTENSION_RELAY_GATEWAY_TOKEN = "relay-secret";
+
+		const tokens = await resolveUnderstudyRelayAcceptedTokensForPort(23336);
+		const headers = await getUnderstudyChromeExtensionRelayAuthHeaders("http://127.0.0.1:23336");
+
+		expect(tokens.length).toBeGreaterThan(0);
+		expect(headers["x-understudy-relay-token"]).toBe(tokens[0]);
+		expect(headers["x-understudy-relay-token"]).not.toBe("ignored-gateway-secret");
 	});
 });

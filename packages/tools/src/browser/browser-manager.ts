@@ -217,10 +217,15 @@ export class BrowserManager {
 		const summaries: BrowserTabSummary[] = [];
 		for (const page of pages) {
 			const tabId = this.ensureTabId(page);
+			const url = page.url?.() ?? "";
+			const title = await Promise.race<string | undefined>([
+				Promise.resolve(page.title?.()).catch(() => undefined),
+				new Promise<string | undefined>((resolve) => setTimeout(() => resolve(undefined), 750)),
+			]);
 			summaries.push({
 				id: tabId,
-				url: page.url?.() ?? "",
-				title: await page.title?.(),
+				url,
+				title,
 				active: tabId === active,
 			});
 		}

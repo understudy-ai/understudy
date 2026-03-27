@@ -4,6 +4,8 @@ import { asString, ConfigManager } from "@understudy/core";
 const UNDERSTUDY_EXTENSION_RELAY_TOKEN_CONTEXT = "understudy-extension-relay-v1";
 export const UNDERSTUDY_EXTENSION_RELAY_HEADER = "x-understudy-relay-token";
 export const UNDERSTUDY_EXTENSION_RELAY_BROWSER = "Understudy/extension-relay";
+const UNDERSTUDY_BROWSER_EXTENSION_RELAY_GATEWAY_TOKEN_ENV = "UNDERSTUDY_BROWSER_EXTENSION_RELAY_GATEWAY_TOKEN";
+const UNDERSTUDY_BROWSER_EXTENSION_RELAY_AUTH_MODE_ENV = "UNDERSTUDY_BROWSER_EXTENSION_RELAY_AUTH_MODE";
 
 export interface UnderstudyRelayAttachedTarget {
 	id: string;
@@ -51,6 +53,11 @@ async function resolveGatewayAuthToken(options?: {
 		return explicitToken;
 	}
 
+	const relayEnvToken = asString(process.env[UNDERSTUDY_BROWSER_EXTENSION_RELAY_GATEWAY_TOKEN_ENV]);
+	if (relayEnvToken) {
+		return relayEnvToken;
+	}
+
 	const envToken = asString(process.env.UNDERSTUDY_GATEWAY_TOKEN);
 	if (envToken) {
 		return envToken;
@@ -65,6 +72,11 @@ async function resolveGatewayAuthToken(options?: {
 }
 
 async function resolveGatewayAuthMode(): Promise<string> {
+	const relayEnvMode = asString(process.env[UNDERSTUDY_BROWSER_EXTENSION_RELAY_AUTH_MODE_ENV])?.toLowerCase();
+	if (relayEnvMode) {
+		return relayEnvMode;
+	}
+
 	const envMode = asString(process.env.UNDERSTUDY_GATEWAY_AUTH_MODE)?.toLowerCase();
 	if (envMode) {
 		return envMode;

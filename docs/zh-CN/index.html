@@ -97,13 +97,13 @@
         width: 34px;
         height: 34px;
         border-radius: 10px;
-        background: var(--accent);
-        display: grid;
-        place-items: center;
-        color: #fff;
-        font-weight: 700;
-        font-size: 0.95rem;
-        box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
+        overflow: hidden;
+      }
+
+      .brand-mark img {
+        width: 100%;
+        height: 100%;
+        display: block;
       }
 
       .brand-name {
@@ -502,7 +502,7 @@
 
       .demo-video {
         position: relative;
-        aspect-ratio: 7314 / 2160;
+        aspect-ratio: 16 / 9;
         background: var(--bg-dark);
       }
 
@@ -737,13 +737,13 @@
       /* --- Roadmap --- */
       .roadmap {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 12px;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
         margin-top: 6px;
       }
 
       .roadmap-item {
-        padding: 16px 14px;
+        padding: 20px 20px;
         border-radius: var(--radius-sm);
         border: 1px solid var(--border);
         background: var(--bg-card);
@@ -955,7 +955,9 @@
     <header class="topbar">
       <div class="topbar-inner">
         <a class="brand" href="#top">
-          <div class="brand-mark">U</div>
+          <div class="brand-mark">
+            <img src="../../assets/chrome-extension/icons/icon128.png" alt="Understudy">
+          </div>
           <div class="brand-name">Understudy</div>
         </a>
         <nav class="nav" aria-label="Primary">
@@ -1058,49 +1060,41 @@
             <div class="showcase-demo is-active" data-demo="general">
               <div class="demo-content">
                 <h3>一句话触发多工具协作</h3>
-                <p>Agent 在一个本地运行时里完成查资料、生成文件、打开应用、交付结果。不用分步骤操作，不用来回切换工具。说一句话就行。</p>
-                <div class="demo-example">示例："帮我做一份对比前 3 名 AI 编程工具的 PPT"</div>
+                <p>Agent 在一个本地运行时里完成网络调研、浏览器操控、技能调用，最终交付完整结果。不用分步骤操作，不用来回切换工具。说一句话就行。</p>
+                <div class="demo-example">示例："帮我调研 Cowork 并在 downloads 文件夹生成一个科技风落地页"</div>
                 <br>
                 <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-general-agent/README.md" target="_blank" rel="noreferrer">打开 demo workspace &rarr;</a>
               </div>
-              <div class="demo-video-placeholder">演示视频即将上线</div>
+              <div class="demo-video">
+                <iframe src="https://www.youtube.com/embed/KObeVm7MK1Y" title="演示：通用 Agent" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+              </div>
             </div>
 
             <!-- Demo 2: 远程调度 -->
             <div class="showcase-demo" data-demo="remote">
               <div class="demo-content">
                 <h3>手机发消息，桌面出结果</h3>
-                <p>通过 Telegram、Slack 等 8 个渠道发一条消息，Understudy 在你的 Mac 上完成浏览器研究、GUI 操作、文件创建和命令行任务，再把结果通过同一个渠道发回来。</p>
-                <div class="demo-example">示例：Telegram 触发浏览器和桌面工作流</div>
+                <p>在手机上通过 Telegram 发一条消息，Understudy 在你的 Mac 上将网页转换为 PDF，打开桌面版 Telegram，找到联系人并发送——全程 GUI 自动化。手机画面和电脑画面并排呈现。</p>
+                <div class="demo-example">示例："把 Cowork 网页转成 PDF 发给 Telegram 里的 Alex"</div>
                 <br>
                 <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-remote-dispatch/README.md" target="_blank" rel="noreferrer">打开 demo workspace &rarr;</a>
               </div>
-              <div class="demo-video-placeholder">演示视频即将上线</div>
+              <div class="demo-video">
+                <iframe src="https://www.youtube.com/embed/HlTD6Jvm3gk" title="演示：远程调度" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+              </div>
             </div>
 
             <!-- Demo 3: 演示教学 -->
             <div class="showcase-demo" data-demo="teach">
               <div class="demo-content">
-                <h3>演示一次，发布后再重放</h3>
-                <p>演示一个任务——Understudy 看着你做，理解你的<strong>意图</strong>，然后发布一个可复用的技能。它学的是你想做什么，不是你点了哪里。界面改版、窗口缩放、甚至换应用，技能照样能用。</p>
-                <div class="demo-example">示例：Pixelmator Pro 去背景后发到 Telegram</div>
+                <h3>演示一次，精调后泛化重放</h3>
+                <p>演示一个任务——Understudy 看着你做，理解你的<strong>意图</strong>，然后发布一个可复用的技能。交互式精调生成的技能，再用自然语言调用。重放时 Agent 自动泛化：Google 图片搜索变成浏览器自动化，下载变成 shell 命令，Pixelmator Pro 仍用 GUI 操控。</p>
+                <div class="demo-example">示例："找一张 [某人] 的照片，去除背景，用 Telegram 发送给 [某人]"</div>
                 <br>
                 <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-teach/README.md" target="_blank" rel="noreferrer">打开 demo workspace &rarr;</a>
               </div>
               <div class="demo-video">
-                <iframe
-                  src="https://www.youtube.com/embed/3d5cRGnlb_0"
-                  title="Understudy 演示 — 演示教学"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowfullscreen
-                  loading="lazy"
-                ></iframe>
-              </div>
-              <div class="showcase-note">
-                以上视频经过加速。完整原速视频：
-                <a href="https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing" target="_blank" rel="noreferrer">Google Drive</a>。
-                已发布的技能产物：
-                <a href="https://github.com/understudy-ai/understudy/blob/main/examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md" target="_blank" rel="noreferrer">SKILL.md</a>。
+                <iframe src="https://www.youtube.com/embed/3d5cRGnlb_0" title="演示：演示教学" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
               </div>
             </div>
 

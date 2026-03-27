@@ -85,33 +85,35 @@ Every layer depends on the one below it. No shortcuts — the system earns its w
 
 ## Showcase
 
-> **Demo environment:** macOS + Claude Sonnet 4.6 (Anthropic). All demos also run on GPT-5.4 via Codex. See [Supported Models](#supported-models) for all providers.
+> **Demo environment:** macOS + GPT-5.4 via Codex (OpenAI). All demos also work with Claude, Gemini, and other providers. See [Supported Models](#supported-models) for the full list.
 
 The demos below map to the product story in order: general agent first, computer use next, then teach and long-term learning.
 
 ### General Agent — One Message, Done
 
-<!-- TODO: embed demo video -->
+[![Demo: General Agent](https://img.youtube.com/vi/KObeVm7MK1Y/maxresdefault.jpg)](https://youtube.com/shorts/KObeVm7MK1Y)
 
-This is the starting point: Understudy is first a general-purpose agent. Create a presentation with images and tables, summarize research, generate code — the full range of agent capabilities triggered by a single instruction. No staging, no multi-step prompting. Just say what you need.
+This is the starting point: Understudy is first a general-purpose agent. It researches the web, controls your browser, invokes skills, and delivers a polished result — all from a single instruction. No staging, no multi-step prompting. Just say what you need.
 
-> *Example prompt: "Create a slide deck comparing the top 3 AI coding agents, include a feature matrix table and architecture diagrams."*
+> *Example prompt: "Research Cowork and build a tech-style landing page in my downloads folder."*
 
 ### Computer Use + Remote Dispatch — Agent on Desktop, You on Phone
 
-<!-- TODO: embed demo video -->
+[![Demo: Remote Dispatch](https://img.youtube.com/vi/HlTD6Jvm3gk/maxresdefault.jpg)](https://youtu.be/HlTD6Jvm3gk)
 
-This is computer use in practice: send a message from Telegram, Discord, Slack, or any of 8 built-in channels, and Understudy receives it on your desktop, executes multi-step tasks — browser research, GUI automation, file creation, shell commands — and replies with the result. All while you're away from your computer.
+This is computer use in practice: send a message from your phone via Telegram, and Understudy receives it on your Mac, converts a file to PDF, opens desktop Telegram, finds the right contact, and sends it — all through GUI automation. The demo shows phone and desktop views side by side.
+
+> *Example prompt: "Convert the Cowork webpage to PDF and send it to Alex on Telegram."*
 
 Understudy works with messaging apps people already use: Telegram, Discord, Slack, WhatsApp, Signal, LINE, iMessage, and Web.
 
-### Teach — Show Once, Automate Forever
+### Teach — Show Once, Refine, Replay with Generalization
 
-<!-- TODO: embed new English demo video -->
+[![Demo: Teach & Replay](https://img.youtube.com/vi/3d5cRGnlb_0/maxresdefault.jpg)](https://youtu.be/3d5cRGnlb_0)
 
-Teach a task by demonstrating it once. Understudy learns the **intent**, not the coordinates — so the skill survives UI redesigns, window resizing, even switching to a different app. The same stack also feeds daily workflow crystallization and route-aware replay over time.
+Teach a task by demonstrating it once. Understudy learns the **intent**, not the coordinates — so the skill survives UI redesigns, window resizing, even switching to a different app. Interactively refine the generated skill, then invoke it with natural language. On replay, the agent automatically generalizes: Google Image search becomes browser automation, downloads become shell commands, while native app control (Pixelmator Pro) stays GUI-driven.
 
-> *Demo flow: search for a photo → open in Pixelmator Pro → remove background → send via Telegram. Taught once, replayed autonomously.*
+> *Demo flow: `/teach start` → search Google Images for Sam Altman → download photo → remove background in Pixelmator Pro → export → send via Telegram to Alex. Then interactively refine the skill. Finally, invoke with natural language: "Find a photo of [person], remove the background, and send it to [contact] on Telegram" — the agent discovers the taught skill and replays it with automatic upgrades.*
 
 > *The published skill artifact from this demo is available at [examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md).*
 

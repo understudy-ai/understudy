@@ -97,13 +97,13 @@
         width: 34px;
         height: 34px;
         border-radius: 10px;
-        background: var(--accent);
-        display: grid;
-        place-items: center;
-        color: #fff;
-        font-weight: 700;
-        font-size: 0.95rem;
-        box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
+        overflow: hidden;
+      }
+
+      .brand-mark img {
+        width: 100%;
+        height: 100%;
+        display: block;
       }
 
       .brand-name {
@@ -502,7 +502,7 @@
 
       .demo-video {
         position: relative;
-        aspect-ratio: 7314 / 2160;
+        aspect-ratio: 16 / 9;
         background: var(--bg-dark);
       }
 
@@ -955,7 +955,9 @@
     <header class="topbar">
       <div class="topbar-inner">
         <a class="brand" href="#top">
-          <div class="brand-mark">U</div>
+          <div class="brand-mark">
+            <img src="../assets/chrome-extension/icons/icon128.png" alt="Understudy">
+          </div>
           <div class="brand-name">Understudy</div>
         </a>
         <nav class="nav" aria-label="Primary">
@@ -1058,49 +1060,41 @@
             <div class="showcase-demo is-active" data-demo="general">
               <div class="demo-content">
                 <h3>One message, multi-tool execution</h3>
-                <p>The agent researches, creates files, opens apps, and delivers the result — all from a single instruction. No staging, no multi-step prompting. One local runtime handles everything.</p>
-                <div class="demo-example">Example: "Create a slide deck comparing the top 3 AI coding agents"</div>
+                <p>The agent researches the web, controls your browser, invokes skills, and delivers a polished result — all from a single instruction. No staging, no multi-step prompting. One local runtime handles everything.</p>
+                <div class="demo-example">Example: "Research Cowork and build a tech-style landing page in my downloads folder"</div>
                 <br>
                 <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-general-agent/README.md" target="_blank" rel="noreferrer">Open demo workspace &rarr;</a>
               </div>
-              <div class="demo-video-placeholder">Demo video coming soon</div>
+              <div class="demo-video">
+                <iframe src="https://www.youtube.com/embed/KObeVm7MK1Y" title="Demo: General Agent" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+              </div>
             </div>
 
             <!-- Demo 2: Remote Dispatch -->
             <div class="showcase-demo" data-demo="remote">
               <div class="demo-content">
                 <h3>Phone message in, desktop result out</h3>
-                <p>Send a message from Telegram, Slack, or any of 8 channels. Understudy receives it on your Mac, executes browser research, GUI automation, file creation, and shell commands — then replies with the result through the same channel.</p>
-                <div class="demo-example">Example: Telegram-triggered browser and desktop workflow</div>
+                <p>Send a message from your phone via Telegram. Understudy receives it on your Mac, converts a file to PDF, opens desktop Telegram, finds the right contact, and sends it — all through GUI automation. Phone view and desktop view shown side by side.</p>
+                <div class="demo-example">Example: "Convert the Cowork webpage to PDF and send it to Alex on Telegram"</div>
                 <br>
                 <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-remote-dispatch/README.md" target="_blank" rel="noreferrer">Open demo workspace &rarr;</a>
               </div>
-              <div class="demo-video-placeholder">Demo video coming soon</div>
+              <div class="demo-video">
+                <iframe src="https://www.youtube.com/embed/HlTD6Jvm3gk" title="Demo: Remote Dispatch" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+              </div>
             </div>
 
             <!-- Demo 3: Teach -->
             <div class="showcase-demo" data-demo="teach">
               <div class="demo-content">
-                <h3>Show once, publish, replay later</h3>
-                <p>Demonstrate a workflow once — Understudy watches, understands the <strong>intent</strong>, and publishes a reusable skill. It learns what you mean, not where you clicked. The skill survives UI redesigns, window resizing, even switching apps.</p>
-                <div class="demo-example">Example: Photo cutout in Pixelmator Pro, then send via Telegram</div>
+                <h3>Show once, refine, replay with generalization</h3>
+                <p>Demonstrate a workflow once — Understudy watches, understands the <strong>intent</strong>, and publishes a reusable skill. Interactively refine the generated skill, then invoke it with natural language. On replay, the agent automatically generalizes: Google Image search becomes browser automation, downloads become shell commands, while Pixelmator Pro stays GUI-controlled.</p>
+                <div class="demo-example">Example: "Find a photo of [person], remove the background, and send it to [contact] on Telegram"</div>
                 <br>
                 <a class="demo-link" href="https://github.com/understudy-ai/understudy/blob/main/examples/demo-teach/README.md" target="_blank" rel="noreferrer">Open demo workspace &rarr;</a>
               </div>
               <div class="demo-video">
-                <iframe
-                  src="https://www.youtube.com/embed/3d5cRGnlb_0"
-                  title="Understudy Showcase — Teach by Demonstration"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowfullscreen
-                  loading="lazy"
-                ></iframe>
-              </div>
-              <div class="showcase-note">
-                Video has been sped up. Full-length original:
-                <a href="https://drive.google.com/file/d/1VJfodHJD_RSnb8g_vj2bId48tu_1vwHK/view?usp=sharing" target="_blank" rel="noreferrer">Google Drive</a>.
-                Published skill artifact:
-                <a href="https://github.com/understudy-ai/understudy/blob/main/examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md" target="_blank" rel="noreferrer">SKILL.md</a>.
+                <iframe src="https://www.youtube.com/embed/3d5cRGnlb_0" title="Demo: Teach &amp; Replay" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
               </div>
             </div>
 
