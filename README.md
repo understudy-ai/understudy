@@ -115,7 +115,7 @@ Teach a task by demonstrating it once. Understudy learns the **intent**, not the
 
 > *Demo flow: `/teach start` → search Google Images for Sam Altman → download photo → remove background in Pixelmator Pro → export → send via Telegram to Alex. Then interactively refine the skill. Finally, invoke with natural language: "Find a photo of [person], remove the background, and send it to [contact] on Telegram" — the agent discovers the taught skill and replays it with automatic upgrades.*
 
-See the [published skill from this demo](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md) for a real example of what teach produces.
+See the [published skill from this demo](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md) for a real example of what teach produces. [Full unedited recording](https://drive.google.com/file/d/1vTMpYaCOIO8IVmciI1DpvEBC6x5MaJ4f/view?usp=sharing).
 
 ### AI App Critic — One Prompt to a Published iPhone App Review
 
@@ -128,6 +128,8 @@ The pipeline introduces **workspace artifact composition**: a playbook orchestra
 | [![Result](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![Process](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
 
 > *Example prompt: "Make a Snapseed iPhone app review video from scratch: use the real App Store and iPhone Mirroring, capture proof-first clips focusing on background removal and filters (like black & white), add English narration and subtitles, export a vertical video, upload it unlisted to YouTube, clean up the device, and share the result."*
+
+[Full unedited recording](https://drive.google.com/file/d/1_9cZWZRYldEAjN1kBTicDlZFurt8PcEj/view?usp=sharing).
 
 ## Workspace Artifacts — Playbook, Worker, Skill
 

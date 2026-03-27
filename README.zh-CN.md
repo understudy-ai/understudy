@@ -115,7 +115,7 @@ Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsAp
 
 > *演示流程：`/teach start` → Google 图片搜索 Sam Altman → 下载照片 → Pixelmator Pro 去背景 → 导出 → 通过 Telegram 发送给 Alex。然后交互式精调技能。最后用自然语言调用："找一张 [某人] 的照片，去除背景，用 Telegram 发送给 [某人]" —— Agent 自动发现已学技能并带着泛化升级重放。*
 
-查看此演示[生成的已发布技能](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)，了解 teach 产出的真实示例。
+查看此演示[生成的已发布技能](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)，了解 teach 产出的真实示例。[完整未剪辑录屏](https://drive.google.com/file/d/1vTMpYaCOIO8IVmciI1DpvEBC6x5MaJ4f/view?usp=sharing)。
 
 ### AI 应用测评博主：一条 Prompt 到发布 YouTube
 
@@ -128,6 +128,8 @@ Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsAp
 | [![成品](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![过程](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
 
 > *示例提示：「从零制作一个 Snapseed iPhone 应用评测视频：使用真实 App Store 和 iPhone Mirroring，重点拍摄背景移除和滤镜（如黑白）的操作片段，加英文旁白和字幕，导出竖版视频，以不公开方式上传到 YouTube，清理设备，分享结果。」*
+
+[完整未剪辑录屏](https://drive.google.com/file/d/1_9cZWZRYldEAjN1kBTicDlZFurt8PcEj/view?usp=sharing)。
 
 ## 工作区产物 —— Playbook、Worker、Skill
 
