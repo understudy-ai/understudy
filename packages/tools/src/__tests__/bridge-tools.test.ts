@@ -170,6 +170,40 @@ describe("gateway bridge tools", () => {
 		expect(called).toBe("subagents");
 	});
 
+	it("subagents list shows live child progress in the text output", async () => {
+		mockRpc((method, params) => {
+			expect(method).toBe("subagents");
+			expect(params.action).toBe("list");
+			return {
+				subagents: [
+					{
+						sessionId: "s1",
+						label: "research",
+						latestRunStatus: "in_flight",
+						activeRun: {
+							status: "in_flight",
+							summary: "Opening the App Store page.",
+							assistantText: "I am checking the target listing now.",
+							steps: [
+								{ kind: "tool", toolName: "browser.snapshot", state: "running", title: "Capture page" },
+							],
+						},
+					},
+				],
+			};
+		});
+
+		const result = await createSubagentsTool().execute("id", {
+			action: "list",
+		});
+
+		const text = (result.content[0] as any).text as string;
+		expect(text).toContain("s1 [research] status=in_flight");
+		expect(text).toContain("progress: Opening the App Store page.");
+		expect(text).toContain("reply: I am checking the target listing now.");
+		expect(text).toContain("tool/running: Capture page - browser.snapshot");
+	});
+
 	it("sessions_spawn prefers a native spawn handler when available", async () => {
 		const spawnHandler = vi.fn(async () => ({
 			childSessionId: "native-1",
@@ -260,6 +294,47 @@ describe("gateway bridge tools", () => {
 			}),
 		);
 		expect((result.content[0] as any).text).toContain("\"status\": \"ok\"");
+	});
+
+	it("subagents wait retries remote fetch failures and resumes polling until completion", async () => {
+		const calls: Array<{ timeoutMs?: number }> = [];
+		let attempt = 0;
+		globalThis.fetch = vi.fn(async (_url, init) => {
+			const payload = JSON.parse(String(init?.body ?? "{}")) as {
+				method: string;
+				params: Record<string, unknown>;
+			};
+			expect(payload.method).toBe("subagents");
+			calls.push({ timeoutMs: payload.params.timeoutMs as number | undefined });
+			attempt += 1;
+			if (attempt === 1) {
+				throw new Error("fetch failed");
+			}
+			if (attempt === 2) {
+				return {
+					ok: true,
+					text: async () => JSON.stringify({ result: { status: "timeout", childSessionId: "remote-1" } }),
+				} as any;
+			}
+			return {
+				ok: true,
+				text: async () => JSON.stringify({ result: { status: "ok", childSessionId: "remote-1", response: "done" } }),
+			} as any;
+		}) as any;
+
+		const result = await createSubagentsTool({
+			gatewayUrl: "http://127.0.0.1:23333",
+			requesterSessionId: "parent-1",
+		}).execute("id", {
+			action: "wait",
+			target: "remote-1",
+			timeoutMs: 40_000,
+		});
+
+		expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+		expect(calls.every((call) => typeof call.timeoutMs === "number" && call.timeoutMs! <= 15_000)).toBe(true);
+		expect((result.content[0] as any).text).toContain("\"status\": \"ok\"");
+		expect((result.content[0] as any).text).toContain("\"response\": \"done\"");
 	});
 
 	it("handles gateway HTTP error gracefully", async () => {
