@@ -6,6 +6,7 @@ import {
 	buildWorkspaceSkillSnapshot,
 	createPlaybookRunFromPlaybook,
 	loadWorkspaceArtifactByName,
+	loadWorkspaceArtifactFromFile,
 	resolveWorkspaceArtifactPath,
 } from "../index.js";
 
@@ -273,12 +274,13 @@ describe("workspace artifacts", () => {
 
 	it("loads the repo app review pipeline and preserves its stage contract", async () => {
 		const workspaceDir = path.resolve(import.meta.dirname, "../../../..");
-		const playbook = await loadWorkspaceArtifactByName({
+		const playbookPath = resolveWorkspaceArtifactPath(workspaceDir, "app-review-pipeline");
+		const playbook = await loadWorkspaceArtifactFromFile({
+			filePath: playbookPath,
 			workspaceDir,
-			name: "app-review-pipeline",
 		});
 
-		expect(playbook?.filePath).toBe(resolveWorkspaceArtifactPath(workspaceDir, "app-review-pipeline"));
+		expect(playbook.filePath).toBe(playbookPath);
 		expect(playbook?.artifactKind).toBe("playbook");
 		if (!playbook || playbook.artifactKind !== "playbook") {
 			throw new Error("Expected app-review-pipeline to load as a playbook artifact.");
