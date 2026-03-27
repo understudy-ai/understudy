@@ -221,7 +221,7 @@ function parseLoopbackPort(rawUrl) {
 			return null;
 		}
 		const host = parsed.hostname.trim().toLowerCase();
-		if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
+		if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1" && host !== "[::1]") {
 			return null;
 		}
 		return port;
@@ -782,7 +782,11 @@ try {
 					}).catch(() => null);
 					throw new Error(waitResult.response);
 				}
-				if (waitResult?.status !== "ok" && waitResult?.status !== "ready_outputs") {
+				if (
+					waitResult?.status !== "ok"
+					&& waitResult?.status !== "ready_outputs"
+					&& waitResult?.status !== "ready_stage_summary"
+				) {
 					throw new Error(`Child run for stage ${stage.name} finished with status ${waitResult?.status ?? "unknown"}`);
 				}
 			}
