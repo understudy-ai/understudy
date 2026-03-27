@@ -85,33 +85,35 @@ Layer 5 ┃ 主动观察，互不影响  在独立工作空间主动发现和执
 
 ## Showcase
 
-> **演示环境：** macOS + Claude Sonnet 4.6 (Anthropic)。所有演示也支持 GPT-5.4 via Codex。所有支持的提供方见[支持的模型](#支持的模型)。
+> **演示环境：** macOS + GPT-5.4 via Codex (OpenAI)。所有演示也支持 Claude、Gemini 等其他提供方。完整列表见[支持的模型](#支持的模型)。
 
 下面这 3 个 demo 对应产品故事的顺序：先是通用 Agent，再是 Computer Use，最后是 Teach 和长期学习。
 
 ### 通用 Agent：一句话搞定
 
-<!-- TODO: 嵌入演示视频 -->
+[![演示：通用 Agent](https://img.youtube.com/vi/KObeVm7MK1Y/maxresdefault.jpg)](https://youtube.com/shorts/KObeVm7MK1Y)
 
-这是起点：Understudy 首先是一个通用 Agent。创建带图表的演示文稿、总结研究、生成代码 —— 完整的 Agent 能力，一条指令触发。无需分阶段操作，说出需求即可。
+这是起点：Understudy 首先是一个通用 Agent。它调研网络、操控浏览器、调用技能，最终交付完整结果 —— 一条指令触发。无需分阶段操作，说出需求即可。
 
-> *示例提示：「创建一份对比前三大 AI 编程 Agent 的幻灯片，包含功能对比表格和架构图。」*
+> *示例提示：「帮我调研 Cowork 并在 downloads 文件夹生成一个科技风落地页。」*
 
 ### Computer Use + 远程 Dispatch：手机控制桌面 Agent
 
-<!-- TODO: 嵌入演示视频 -->
+[![演示：远程调度](https://img.youtube.com/vi/HlTD6Jvm3gk/maxresdefault.jpg)](https://youtu.be/HlTD6Jvm3gk)
 
-这是 Computer Use 的实际演示：从 Telegram、Discord、Slack 或 8 个内置渠道中的任一个发送消息。Understudy 在你的桌面上接收、执行多步骤任务 —— 浏览器搜索、GUI 自动化、文件创建、Shell 命令 —— 并将结果回复。即使你不在电脑前。
+这是 Computer Use 的实际演示：在手机上通过 Telegram 发一条消息，Understudy 在你的 Mac 上将网页转换为 PDF，打开桌面版 Telegram，找到联系人并发送 —— 全程 GUI 自动化。演示中手机画面和电脑画面并排呈现。
+
+> *示例提示：「把 Cowork 网页转成 PDF 发给 Telegram 里的 Alex。」*
 
 Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsApp、Signal、LINE、iMessage 和 Web。
 
-### 演示教学：演示一次，永久自动化
+### 演示教学：演示一次，精调后泛化重放
 
-<!-- TODO: 嵌入全新英文演示视频 -->
+[![演示：演示教学](https://img.youtube.com/vi/3d5cRGnlb_0/maxresdefault.jpg)](https://youtu.be/3d5cRGnlb_0)
 
-通过演示教会一个任务。Understudy 学习**意图**，不是坐标 —— 所以技能在 UI 改版、窗口大小变化、甚至切换到类似应用时仍然有效。这套机制也会继续喂给日常 workflow crystallization 和带路线信息的 replay。
+通过演示教会一个任务。Understudy 学习**意图**，不是坐标 —— 所以技能在 UI 改版、窗口大小变化、甚至切换到类似应用时仍然有效。交互式精调生成的技能，再用自然语言调用。重放时 Agent 自动泛化：Google 图片搜索变成浏览器自动化，下载变成 shell 命令，原生应用操控（Pixelmator Pro）保持 GUI 驱动。
 
-> *演示流程：搜索照片 → 在 Pixelmator Pro 中打开 → 去除背景 → 通过 Telegram 发送。教一次，自主重放。*
+> *演示流程：`/teach start` → Google 图片搜索 Sam Altman → 下载照片 → Pixelmator Pro 去背景 → 导出 → 通过 Telegram 发送给 Alex。然后交互式精调技能。最后用自然语言调用："找一张 [某人] 的照片，去除背景，用 Telegram 发送给 [某人]" —— Agent 自动发现已学技能并带着泛化升级重放。*
 
 > *此演示生成的已发布 skill 产物：[examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)。*
 

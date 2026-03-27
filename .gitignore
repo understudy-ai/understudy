@@ -27,6 +27,7 @@ outputs/
 AGENTS.md
 .agent/
 .agents/
+.understudy/
 verify_branch.js
 understudy_suite_note.txt
 
@@ -40,3 +41,7 @@ understudy_suite_note.txt
 *.sqlite
 *.sqlite3
 *.db
+
+# Python cache
+__pycache__/
+*.pyc
