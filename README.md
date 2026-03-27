@@ -109,11 +109,13 @@ Understudy works with messaging apps people already use: Telegram, Discord, Slac
 
 ### Teach — Show Once, Refine, Replay with Generalization
 
-[![Demo: Teach & Replay](https://img.youtube.com/vi/3d5cRGnlb_0/maxresdefault.jpg)](https://youtu.be/3d5cRGnlb_0)
+[![Demo: Teach & Replay](https://img.youtube.com/vi/ZOZU6vb4rRs/maxresdefault.jpg)](https://youtube.com/shorts/ZOZU6vb4rRs)
 
 Teach a task by demonstrating it once. Understudy learns the **intent**, not the coordinates — so the skill survives UI redesigns, window resizing, even switching to a different app. Interactively refine the generated skill, then invoke it with natural language. On replay, the agent automatically generalizes: Google Image search becomes browser automation, downloads become shell commands, while native app control (Pixelmator Pro) stays GUI-driven.
 
 > *Demo flow: `/teach start` → search Google Images for Sam Altman → download photo → remove background in Pixelmator Pro → export → send via Telegram to Alex. Then interactively refine the skill. Finally, invoke with natural language: "Find a photo of [person], remove the background, and send it to [contact] on Telegram" — the agent discovers the taught skill and replays it with automatic upgrades.*
+
+See the [published skill from this demo](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md) for a real example of what teach produces.
 
 ## What It Can Do Today
 
@@ -438,6 +440,7 @@ packages/tools     Built-in tools: browser, web, memory, schedule, GUI, message
 packages/channels  Channel adapters (8 platforms)
 packages/types     Shared TypeScript type definitions
 skills/            Built-in skill modules
+examples/          Teach demo and published skill example
 docs/              Vision, product design documentation
 ```
 
