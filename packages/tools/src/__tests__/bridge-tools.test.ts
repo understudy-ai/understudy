@@ -262,6 +262,47 @@ describe("gateway bridge tools", () => {
 		expect((result.content[0] as any).text).toContain("\"status\": \"ok\"");
 	});
 
+	it("subagents wait retries remote fetch failures and resumes polling until completion", async () => {
+		const calls: Array<{ timeoutMs?: number }> = [];
+		let attempt = 0;
+		globalThis.fetch = vi.fn(async (_url, init) => {
+			const payload = JSON.parse(String(init?.body ?? "{}")) as {
+				method: string;
+				params: Record<string, unknown>;
+			};
+			expect(payload.method).toBe("subagents");
+			calls.push({ timeoutMs: payload.params.timeoutMs as number | undefined });
+			attempt += 1;
+			if (attempt === 1) {
+				throw new Error("fetch failed");
+			}
+			if (attempt === 2) {
+				return {
+					ok: true,
+					text: async () => JSON.stringify({ result: { status: "timeout", childSessionId: "remote-1" } }),
+				} as any;
+			}
+			return {
+				ok: true,
+				text: async () => JSON.stringify({ result: { status: "ok", childSessionId: "remote-1", response: "done" } }),
+			} as any;
+		}) as any;
+
+		const result = await createSubagentsTool({
+			gatewayUrl: "http://127.0.0.1:23333",
+			requesterSessionId: "parent-1",
+		}).execute("id", {
+			action: "wait",
+			target: "remote-1",
+			timeoutMs: 40_000,
+		});
+
+		expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+		expect(calls.every((call) => typeof call.timeoutMs === "number" && call.timeoutMs! <= 15_000)).toBe(true);
+		expect((result.content[0] as any).text).toContain("\"status\": \"ok\"");
+		expect((result.content[0] as any).text).toContain("\"response\": \"done\"");
+	});
+
 	it("handles gateway HTTP error gracefully", async () => {
 		globalThis.fetch = vi.fn(async () => ({
 			ok: false,

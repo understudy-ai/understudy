@@ -26,6 +26,81 @@ interface NativeSubagentsOptions extends BridgeGatewayOptions {
 	subagentsHandler?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
 
+const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
+const REMOTE_WAIT_POLL_SLICE_MS = 15_000;
+const REMOTE_WAIT_RPC_BUFFER_MS = 2_000;
+
+function resolveOverallWaitTimeoutMs(
+	params: Pick<SubagentsParams, "timeoutMs">,
+	options: BridgeGatewayOptions,
+): number {
+	const value = params.timeoutMs ?? options.timeoutMs;
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+		return DEFAULT_WAIT_TIMEOUT_MS;
+	}
+	return Math.max(1, Math.floor(value));
+}
+
+function isTerminalWaitStatus(status: string | undefined): boolean {
+	return status === "ok" || status === "error" || status === "idle";
+}
+
+async function waitForRemoteSubagent(
+	params: {
+		action: string;
+		target?: string;
+		message?: string;
+		recentMinutes?: number;
+	},
+	options: NativeSubagentsOptions,
+	input: SubagentsParams,
+): Promise<Record<string, unknown>> {
+	const overallTimeoutMs = resolveOverallWaitTimeoutMs(input, options);
+	const deadline = Date.now() + overallTimeoutMs;
+	let lastError: unknown;
+
+	for (;;) {
+		const remainingMs = deadline - Date.now();
+		if (remainingMs <= 0) {
+			if (lastError) {
+				throw lastError;
+			}
+			return {
+				status: "timeout",
+				target: params.target,
+			};
+		}
+
+		const waitSliceMs = Math.min(remainingMs, REMOTE_WAIT_POLL_SLICE_MS);
+		try {
+			const result = await callGatewayRpc<Record<string, unknown>>(
+				"subagents",
+				{
+					...params,
+					parentSessionId: options.requesterSessionId,
+					timeoutMs: waitSliceMs,
+				},
+				{
+					gatewayUrl: input.gatewayUrl ?? options.gatewayUrl,
+					gatewayToken: input.gatewayToken ?? options.gatewayToken,
+					timeoutMs: waitSliceMs + REMOTE_WAIT_RPC_BUFFER_MS,
+				},
+			);
+			const status = asString(result.status)?.toLowerCase();
+			if (isTerminalWaitStatus(status)) {
+				return result;
+			}
+			if (status === "timeout" || status === "in_flight" || !status) {
+				lastError = undefined;
+				continue;
+			}
+			return result;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+}
+
 export function createSubagentsTool(options: NativeSubagentsOptions = {}): AgentTool<typeof SubagentsSchema> {
 	return {
 		name: "subagents",
@@ -39,25 +114,32 @@ export function createSubagentsTool(options: NativeSubagentsOptions = {}): Agent
 				...params,
 			};
 			try {
+				const baseParams = {
+					action,
+					parentSessionId: options.requesterSessionId,
+					target: asString(params.target),
+					message: asString(params.message),
+					recentMinutes: params.recentMinutes,
+					timeoutMs: params.timeoutMs,
+				};
 				const result = options.subagentsHandler
 					? await options.subagentsHandler({
-						action,
-						parentSessionId: options.requesterSessionId,
-						target: asString(params.target),
-						message: asString(params.message),
-						recentMinutes: params.recentMinutes,
-						timeoutMs: params.timeoutMs,
+						...baseParams,
 					})
+					: action === "wait"
+						? await waitForRemoteSubagent(
+							{
+								action,
+								target: asString(params.target),
+								message: asString(params.message),
+								recentMinutes: params.recentMinutes,
+							},
+							options,
+							params,
+						)
 					: await callGatewayRpc<Record<string, unknown>>(
 						"subagents",
-						{
-							action,
-							parentSessionId: options.requesterSessionId,
-							target: asString(params.target),
-							message: asString(params.message),
-							recentMinutes: params.recentMinutes,
-							timeoutMs: params.timeoutMs,
-						},
+						baseParams,
 						gateway,
 					);
 				if (action === "list") {
