@@ -30,6 +30,20 @@ const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 const REMOTE_WAIT_POLL_SLICE_MS = 15_000;
 const REMOTE_WAIT_RPC_BUFFER_MS = 2_000;
 const MAX_VISIBLE_STEPS = 2;
+const TRANSIENT_REMOTE_WAIT_ERROR_PATTERNS = [
+	"fetch failed",
+	"networkerror",
+	"network error",
+	"timed out",
+	"timeout",
+	"aborterror",
+	"aborted",
+	"socket hang up",
+	"econnreset",
+	"econnrefused",
+	"enotfound",
+	"ehostunreach",
+];
 
 function resolveOverallWaitTimeoutMs(
 	params: Pick<SubagentsParams, "timeoutMs">,
@@ -44,6 +58,14 @@ function resolveOverallWaitTimeoutMs(
 
 function isTerminalWaitStatus(status: string | undefined): boolean {
 	return status === "ok" || status === "error" || status === "idle";
+}
+
+function isRetryableRemoteWaitError(error: unknown): boolean {
+	const message = (error instanceof Error ? error.message : String(error)).trim().toLowerCase();
+	if (!message) {
+		return false;
+	}
+	return TRANSIENT_REMOTE_WAIT_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
 }
 
 function formatSubagentProgress(entry: Record<string, unknown>): string[] {
@@ -91,11 +113,15 @@ async function waitForRemoteSubagent(
 ): Promise<Record<string, unknown>> {
 	const overallTimeoutMs = resolveOverallWaitTimeoutMs(input, options);
 	const deadline = Date.now() + overallTimeoutMs;
+	let lastResult: Record<string, unknown> | undefined;
 	let lastError: unknown;
 
 	for (;;) {
 		const remainingMs = deadline - Date.now();
 		if (remainingMs <= 0) {
+			if (lastResult) {
+				return lastResult;
+			}
 			if (lastError) {
 				throw lastError;
 			}
@@ -120,6 +146,7 @@ async function waitForRemoteSubagent(
 					timeoutMs: waitSliceMs + REMOTE_WAIT_RPC_BUFFER_MS,
 				},
 			);
+			lastResult = result;
 			const status = asString(result.status)?.toLowerCase();
 			if (isTerminalWaitStatus(status)) {
 				return result;
@@ -130,6 +157,9 @@ async function waitForRemoteSubagent(
 			}
 			return result;
 		} catch (error) {
+			if (!isRetryableRemoteWaitError(error)) {
+				throw error;
+			}
 			lastError = error;
 		}
 	}

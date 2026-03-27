@@ -337,6 +337,66 @@ describe("gateway bridge tools", () => {
 		expect((result.content[0] as any).text).toContain("\"response\": \"done\"");
 	});
 
+	it("subagents wait fails fast on deterministic remote errors", async () => {
+		let calls = 0;
+		globalThis.fetch = vi.fn(async () => {
+			calls += 1;
+			return {
+				ok: true,
+				text: async () => JSON.stringify({ error: { code: 404, message: "Unknown child session" } }),
+			} as any;
+		}) as any;
+
+		const result = await createSubagentsTool({
+			gatewayUrl: "http://127.0.0.1:23333",
+			requesterSessionId: "parent-1",
+		}).execute("id", {
+			action: "wait",
+			target: "missing-child",
+			timeoutMs: 40_000,
+		});
+
+		expect(calls).toBe(1);
+		expect((result.content[0] as any).text).toContain("Unknown child session");
+	});
+
+	it("subagents wait preserves the last timeout snapshot when the polling deadline expires", async () => {
+		const nowValues = [0, 0, 40_000, 40_000];
+		const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => nowValues.shift() ?? 40_000);
+		globalThis.fetch = vi.fn(async () => ({
+			ok: true,
+			text: async () =>
+				JSON.stringify({
+					result: {
+						status: "timeout",
+						childSessionId: "remote-1",
+						activeRun: {
+							status: "in_flight",
+							summary: "Still working.",
+						},
+					},
+				}),
+		})) as any;
+
+		try {
+			const result = await createSubagentsTool({
+				gatewayUrl: "http://127.0.0.1:23333",
+				requesterSessionId: "parent-1",
+			}).execute("id", {
+				action: "wait",
+				target: "remote-1",
+				timeoutMs: 40_000,
+			});
+
+			const text = (result.content[0] as any).text as string;
+			expect(text).toContain("\"status\": \"timeout\"");
+			expect(text).toContain("\"childSessionId\": \"remote-1\"");
+			expect(text).toContain("\"summary\": \"Still working.\"");
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
 	it("handles gateway HTTP error gracefully", async () => {
 		globalThis.fetch = vi.fn(async () => ({
 			ok: false,
