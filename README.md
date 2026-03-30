@@ -18,17 +18,55 @@
 
 ---
 
-AI agents are getting better at terminals, but real work still spans browsers, desktop apps, files, and messaging tools — all with different interfaces, states, and habits.
+Open-source local AI agent that operates your entire computer — GUI, browser, shell, messaging — from a single instruction. Teach it once, it learns. Use it daily, it gets faster. Bring your own model.
 
-**Understudy is a general-purpose local agent for your computer.** Give it one instruction and it can research, browse, click through apps, run commands, manage files, and reply through your existing channels.
+## Showcase
 
-**It also brings modern computer-use capability without locking you into a subscription product.** Understudy can see the screen and operate software through grounded GUI actions, while still letting you use your own model/API key.
+> **Demo environment:** macOS + GPT-5.4 via Codex (OpenAI). All demos also work with Claude, Gemini, and other providers. See [Supported Models](#supported-models) for the full list.
 
-**What makes it distinctive after that is the learning loop.** You can teach by demonstration today, and the same system already carries early crystallization and route-upgrade machinery for repeated work over time.
+The demos below map to the product story in order: general agent first, computer use next, then teach, and finally a full autonomous pipeline that combines everything.
 
-- **General agent first** — one runtime across GUI, browser, shell, web, files, memory, messaging, scheduling, and subagents.
-- **Computer use built in** — grounded desktop operation inside the same local runtime, with your own model/API key.
-- **Teach + crystallize + upgrade** — explicit teaching today, plus early workflow crystallization and route-aware replay in one system.
+### General Agent — One Message, Done
+
+[![Demo: General Agent](https://img.youtube.com/vi/KObeVm7MK1Y/maxresdefault.jpg)](https://youtube.com/shorts/KObeVm7MK1Y)
+
+This is the starting point: Understudy is first a general-purpose agent. It researches the web, controls your browser, invokes skills, and delivers a polished result — all from a single instruction. No staging, no multi-step prompting. Just say what you need.
+
+> *Example prompt: "Research Cowork and build a tech-style landing page in my downloads folder."*
+
+### Computer Use + Remote Dispatch — Agent on Desktop, You on Phone
+
+[![Demo: Remote Dispatch](https://img.youtube.com/vi/HlTD6Jvm3gk/maxresdefault.jpg)](https://youtu.be/HlTD6Jvm3gk)
+
+This is computer use in practice: send a message from your phone via Telegram, and Understudy receives it on your Mac, converts a file to PDF, opens desktop Telegram, finds the right contact, and sends it — all through GUI automation. The demo shows phone and desktop views side by side.
+
+> *Example prompt: "Convert the Cowork webpage to PDF and send it to Alex on Telegram."*
+
+Understudy works with messaging apps people already use: Telegram, Discord, Slack, WhatsApp, Signal, LINE, iMessage, and Web.
+
+### Teach — Show Once, Refine, Replay with Generalization
+
+[![Demo: Teach & Replay](https://img.youtube.com/vi/ZOZU6vb4rRs/maxresdefault.jpg)](https://youtube.com/shorts/ZOZU6vb4rRs)
+
+Teach a task by demonstrating it once. Understudy learns the **intent**, not the coordinates — so the skill survives UI redesigns, window resizing, even switching to a different app. Interactively refine the generated skill, then invoke it with natural language. On replay, the agent automatically generalizes: Google Image search becomes browser automation, downloads become shell commands, while native app control (Pixelmator Pro) stays GUI-driven.
+
+> *Demo flow: `/teach start` → search Google Images for Sam Altman → download photo → remove background in Pixelmator Pro → export → send via Telegram to Alex. Then interactively refine the skill. Finally, invoke with natural language: "Find a photo of [person], remove the background, and send it to [contact] on Telegram" — the agent discovers the taught skill and replays it with automatic upgrades.*
+
+See the [published skill from this demo](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md) for a real example of what teach produces. [Full unedited recording](https://drive.google.com/file/d/1vTMpYaCOIO8IVmciI1DpvEBC6x5MaJ4f/view?usp=sharing).
+
+### AI App Critic — One Prompt to a Published iPhone App Review
+
+This is everything combined. One prompt triggers a six-stage pipeline: the agent browses the real App Store in Chrome, installs Snapseed on a real iPhone through iPhone Mirroring, explores the app autonomously — discovering background removal and filters it's never seen — composes a narrated vertical video locally with FFmpeg, uploads it to YouTube, and cleans up the device. About one hour, zero human intervention.
+
+The pipeline introduces **workspace artifact composition**: a playbook orchestrates workers (deterministic browser/device automation) and skills (agentic subagents that make their own decisions). Each stage runs as a separate child session with its own context. The middle stage — app exploration — is genuinely agentic: 51 quality-gate rules guide the agent, but it navigates freely through an app it has never seen.
+
+| The published review | How it was made |
+|:---:|:---:|
+| [![Result](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![Process](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
+
+> *Example prompt: "Make a Snapseed iPhone app review video from scratch: use the real App Store and iPhone Mirroring, capture proof-first clips focusing on background removal and filters (like black & white), add English narration and subtitles, export a vertical video, upload it unlisted to YouTube, clean up the device, and share the result."*
+
+[Full unedited recording](https://drive.google.com/file/d/1Ap5hGWWemU04UkRm495waHjB1-3nq3g5/view?usp=sharing).
 
 ### Why Understudy?
 
@@ -82,54 +120,6 @@ Layer 5 ┃ Proactive Autonomy            Notice and act in its own workspace, w
 Current status: Layers 1-2 are implemented and usable today. Layers 3-4 are partially implemented. Layer 5 is still the long-term direction.
 
 Every layer depends on the one below it. No shortcuts — the system earns its way up. Read the full story: **[Overview →](https://understudy-ai.github.io/understudy/)** | **[Chinese Overview →](https://understudy-ai.github.io/understudy/zh-CN/index.html)** | **[Product Design →](./docs/Product_Design.md)**
-
-## Showcase
-
-> **Demo environment:** macOS + GPT-5.4 via Codex (OpenAI). All demos also work with Claude, Gemini, and other providers. See [Supported Models](#supported-models) for the full list.
-
-The demos below map to the product story in order: general agent first, computer use next, then teach, and finally a full autonomous pipeline that combines everything.
-
-### General Agent — One Message, Done
-
-[![Demo: General Agent](https://img.youtube.com/vi/KObeVm7MK1Y/maxresdefault.jpg)](https://youtube.com/shorts/KObeVm7MK1Y)
-
-This is the starting point: Understudy is first a general-purpose agent. It researches the web, controls your browser, invokes skills, and delivers a polished result — all from a single instruction. No staging, no multi-step prompting. Just say what you need.
-
-> *Example prompt: "Research Cowork and build a tech-style landing page in my downloads folder."*
-
-### Computer Use + Remote Dispatch — Agent on Desktop, You on Phone
-
-[![Demo: Remote Dispatch](https://img.youtube.com/vi/HlTD6Jvm3gk/maxresdefault.jpg)](https://youtu.be/HlTD6Jvm3gk)
-
-This is computer use in practice: send a message from your phone via Telegram, and Understudy receives it on your Mac, converts a file to PDF, opens desktop Telegram, finds the right contact, and sends it — all through GUI automation. The demo shows phone and desktop views side by side.
-
-> *Example prompt: "Convert the Cowork webpage to PDF and send it to Alex on Telegram."*
-
-Understudy works with messaging apps people already use: Telegram, Discord, Slack, WhatsApp, Signal, LINE, iMessage, and Web.
-
-### Teach — Show Once, Refine, Replay with Generalization
-
-[![Demo: Teach & Replay](https://img.youtube.com/vi/ZOZU6vb4rRs/maxresdefault.jpg)](https://youtube.com/shorts/ZOZU6vb4rRs)
-
-Teach a task by demonstrating it once. Understudy learns the **intent**, not the coordinates — so the skill survives UI redesigns, window resizing, even switching to a different app. Interactively refine the generated skill, then invoke it with natural language. On replay, the agent automatically generalizes: Google Image search becomes browser automation, downloads become shell commands, while native app control (Pixelmator Pro) stays GUI-driven.
-
-> *Demo flow: `/teach start` → search Google Images for Sam Altman → download photo → remove background in Pixelmator Pro → export → send via Telegram to Alex. Then interactively refine the skill. Finally, invoke with natural language: "Find a photo of [person], remove the background, and send it to [contact] on Telegram" — the agent discovers the taught skill and replays it with automatic upgrades.*
-
-See the [published skill from this demo](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md) for a real example of what teach produces. [Full unedited recording](https://drive.google.com/file/d/1vTMpYaCOIO8IVmciI1DpvEBC6x5MaJ4f/view?usp=sharing).
-
-### AI App Critic — One Prompt to a Published iPhone App Review
-
-This is everything combined. One prompt triggers a six-stage pipeline: the agent browses the real App Store in Chrome, installs Snapseed on a real iPhone through iPhone Mirroring, explores the app autonomously — discovering background removal and filters it's never seen — composes a narrated vertical video locally with FFmpeg, uploads it to YouTube, and cleans up the device. About one hour, zero human intervention.
-
-The pipeline introduces **workspace artifact composition**: a playbook orchestrates workers (deterministic browser/device automation) and skills (agentic subagents that make their own decisions). Each stage runs as a separate child session with its own context. The middle stage — app exploration — is genuinely agentic: 51 quality-gate rules guide the agent, but it navigates freely through an app it has never seen.
-
-| The published review | How it was made |
-|:---:|:---:|
-| [![Result](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![Process](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
-
-> *Example prompt: "Make a Snapseed iPhone app review video from scratch: use the real App Store and iPhone Mirroring, capture proof-first clips focusing on background removal and filters (like black & white), add English narration and subtitles, export a vertical video, upload it unlisted to YouTube, clean up the device, and share the result."*
-
-[Full unedited recording](https://drive.google.com/file/d/1Ap5hGWWemU04UkRm495waHjB1-3nq3g5/view?usp=sharing).
 
 ## Workspace Artifacts — Playbook, Worker, Skill
 

@@ -18,17 +18,55 @@
 
 ---
 
-AI Agent 在终端里越来越强，但真实工作仍然散落在浏览器、桌面应用、文件系统和消息工具之间，每个界面、状态和操作习惯都不一样。
+开源本地 AI Agent，一条指令操控你的整台电脑 — GUI、浏览器、终端、消息。教一次就会，越用越快。自带模型，无需订阅。
 
-**Understudy 是一个通用、本地运行的电脑 Agent。** 给它一句话，它就可以做研究、浏览网页、操作应用、执行命令、管理文件，并通过你已有的渠道回传结果。
+## Showcase
 
-**它同时具备现代 Computer Use 能力，而且不要求你购买订阅产品。** Understudy 可以看屏幕、做 grounded GUI 操作，同时继续让你使用自己的模型/API key。
+> **演示环境：** macOS + GPT-5.4 via Codex (OpenAI)。所有演示也支持 Claude、Gemini 等其他提供方。完整列表见[支持的模型](#支持的模型)。
 
-**真正独特的是它之后的学习回路。** 你今天就可以通过演示教学来教会任务，而同一套系统也已经具备早期的日常 crystallization 和路线升级能力。
+下面的 demo 按产品故事递进：通用 Agent → Computer Use → Teach → 完整自主 Pipeline。
 
-- **先是通用 Agent**：同一个 runtime 里统一调度 GUI、browser、shell、web、files、memory、messaging、schedule 和 subagents。
-- **然后是 Computer Use**：在同一个本地 runtime 里完成 grounded 桌面操作，并继续使用你自己的模型/API key。
-- **最后是 Teach + Crystallize + Route Upgrade**：显式教学已经可用，日常结晶化和路线升级也已开始进入系统。
+### 通用 Agent：一句话搞定
+
+[![演示：通用 Agent](https://img.youtube.com/vi/KObeVm7MK1Y/maxresdefault.jpg)](https://youtube.com/shorts/KObeVm7MK1Y)
+
+这是起点：Understudy 首先是一个通用 Agent。它调研网络、操控浏览器、调用技能，最终交付完整结果 —— 一条指令触发。无需分阶段操作，说出需求即可。
+
+> *示例提示：「帮我调研 Cowork 并在 downloads 文件夹生成一个科技风落地页。」*
+
+### Computer Use + 远程 Dispatch：手机控制桌面 Agent
+
+[![演示：远程调度](https://img.youtube.com/vi/HlTD6Jvm3gk/maxresdefault.jpg)](https://youtu.be/HlTD6Jvm3gk)
+
+这是 Computer Use 的实际演示：在手机上通过 Telegram 发一条消息，Understudy 在你的 Mac 上将网页转换为 PDF，打开桌面版 Telegram，找到联系人并发送 —— 全程 GUI 自动化。演示中手机画面和电脑画面并排呈现。
+
+> *示例提示：「把 Cowork 网页转成 PDF 发给 Telegram 里的 Alex。」*
+
+Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsApp、Signal、LINE、iMessage 和 Web。
+
+### 演示教学：演示一次，精调后泛化重放
+
+[![演示：演示教学](https://img.youtube.com/vi/ZOZU6vb4rRs/maxresdefault.jpg)](https://youtube.com/shorts/ZOZU6vb4rRs)
+
+通过演示教会一个任务。Understudy 学习**意图**，不是坐标 —— 所以技能在 UI 改版、窗口大小变化、甚至切换到类似应用时仍然有效。交互式精调生成的技能，再用自然语言调用。重放时 Agent 自动泛化：Google 图片搜索变成浏览器自动化，下载变成 shell 命令，原生应用操控（Pixelmator Pro）保持 GUI 驱动。
+
+> *演示流程：`/teach start` → Google 图片搜索 Sam Altman → 下载照片 → Pixelmator Pro 去背景 → 导出 → 通过 Telegram 发送给 Alex。然后交互式精调技能。最后用自然语言调用："找一张 [某人] 的照片，去除背景，用 Telegram 发送给 [某人]" —— Agent 自动发现已学技能并带着泛化升级重放。*
+
+查看此演示[生成的已发布技能](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)，了解 teach 产出的真实示例。[完整未剪辑录屏](https://drive.google.com/file/d/1vTMpYaCOIO8IVmciI1DpvEBC6x5MaJ4f/view?usp=sharing)。
+
+### AI 应用测评博主：一条 Prompt 到发布 YouTube
+
+这是所有能力的集大成演示。一条 Prompt 触发一条六阶段流水线：Agent 在 Chrome 里浏览真实 App Store，通过 iPhone Mirroring 在真机上安装 Snapseed，自主探索它从未见过的功能（背景移除、黑白滤镜），在本地用 FFmpeg 合成带旁白和字幕的竖版评测视频，上传到 YouTube，最后清理设备。整个过程约一小时，零人工干预。
+
+这条 Pipeline 引入了**工作区产物组合**：一个 Playbook 编排 Workers（确定性的浏览器/设备自动化）和 Skills（自主决策的 Agent 子会话）。中间阶段 —— 应用探索 —— 是真正的 Agentic：51 条质量门控规则引导 Agent，但它在从未见过的应用中自由导航、自主做出编辑判断。
+
+| 发布的评测视频 | 制作过程 |
+|:---:|:---:|
+| [![成品](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![过程](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
+
+> *示例提示：「从零制作一个 Snapseed iPhone 应用评测视频：使用真实 App Store 和 iPhone Mirroring，重点拍摄背景移除和滤镜（如黑白）的操作片段，加英文旁白和字幕，导出竖版视频，以不公开方式上传到 YouTube，清理设备，分享结果。」*
+
+[完整未剪辑录屏](https://drive.google.com/file/d/1Ap5hGWWemU04UkRm495waHjB1-3nq3g5/view?usp=sharing)。
 
 ### 为什么选 Understudy？
 
@@ -82,54 +120,6 @@ Layer 5 ┃ 主动观察，互不影响  在独立工作空间主动发现和执
 当前状态：Layer 1-2 已经实现并可用，Layer 3-4 为部分实现，Layer 5 仍是长期方向。
 
 每一层以前一层为基础，没有捷径 —— 系统必须一步步赢得更高的能力。完整文档：**[英文展示页 →](https://understudy-ai.github.io/understudy/)** | **[中文展示页 →](https://understudy-ai.github.io/understudy/zh-CN/index.html)** | **[产品设计 →](./docs/Product_Design.zh-CN.md)**
-
-## Showcase
-
-> **演示环境：** macOS + GPT-5.4 via Codex (OpenAI)。所有演示也支持 Claude、Gemini 等其他提供方。完整列表见[支持的模型](#支持的模型)。
-
-下面的 demo 按产品故事递进：通用 Agent → Computer Use → Teach → 完整自主 Pipeline。
-
-### 通用 Agent：一句话搞定
-
-[![演示：通用 Agent](https://img.youtube.com/vi/KObeVm7MK1Y/maxresdefault.jpg)](https://youtube.com/shorts/KObeVm7MK1Y)
-
-这是起点：Understudy 首先是一个通用 Agent。它调研网络、操控浏览器、调用技能，最终交付完整结果 —— 一条指令触发。无需分阶段操作，说出需求即可。
-
-> *示例提示：「帮我调研 Cowork 并在 downloads 文件夹生成一个科技风落地页。」*
-
-### Computer Use + 远程 Dispatch：手机控制桌面 Agent
-
-[![演示：远程调度](https://img.youtube.com/vi/HlTD6Jvm3gk/maxresdefault.jpg)](https://youtu.be/HlTD6Jvm3gk)
-
-这是 Computer Use 的实际演示：在手机上通过 Telegram 发一条消息，Understudy 在你的 Mac 上将网页转换为 PDF，打开桌面版 Telegram，找到联系人并发送 —— 全程 GUI 自动化。演示中手机画面和电脑画面并排呈现。
-
-> *示例提示：「把 Cowork 网页转成 PDF 发给 Telegram 里的 Alex。」*
-
-Understudy 使用你已有的消息应用：Telegram、Discord、Slack、WhatsApp、Signal、LINE、iMessage 和 Web。
-
-### 演示教学：演示一次，精调后泛化重放
-
-[![演示：演示教学](https://img.youtube.com/vi/ZOZU6vb4rRs/maxresdefault.jpg)](https://youtube.com/shorts/ZOZU6vb4rRs)
-
-通过演示教会一个任务。Understudy 学习**意图**，不是坐标 —— 所以技能在 UI 改版、窗口大小变化、甚至切换到类似应用时仍然有效。交互式精调生成的技能，再用自然语言调用。重放时 Agent 自动泛化：Google 图片搜索变成浏览器自动化，下载变成 shell 命令，原生应用操控（Pixelmator Pro）保持 GUI 驱动。
-
-> *演示流程：`/teach start` → Google 图片搜索 Sam Altman → 下载照片 → Pixelmator Pro 去背景 → 导出 → 通过 Telegram 发送给 Alex。然后交互式精调技能。最后用自然语言调用："找一张 [某人] 的照片，去除背景，用 Telegram 发送给 [某人]" —— Agent 自动发现已学技能并带着泛化升级重放。*
-
-查看此演示[生成的已发布技能](./examples/published-skills/taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a/SKILL.md)，了解 teach 产出的真实示例。[完整未剪辑录屏](https://drive.google.com/file/d/1vTMpYaCOIO8IVmciI1DpvEBC6x5MaJ4f/view?usp=sharing)。
-
-### AI 应用测评博主：一条 Prompt 到发布 YouTube
-
-这是所有能力的集大成演示。一条 Prompt 触发一条六阶段流水线：Agent 在 Chrome 里浏览真实 App Store，通过 iPhone Mirroring 在真机上安装 Snapseed，自主探索它从未见过的功能（背景移除、黑白滤镜），在本地用 FFmpeg 合成带旁白和字幕的竖版评测视频，上传到 YouTube，最后清理设备。整个过程约一小时，零人工干预。
-
-这条 Pipeline 引入了**工作区产物组合**：一个 Playbook 编排 Workers（确定性的浏览器/设备自动化）和 Skills（自主决策的 Agent 子会话）。中间阶段 —— 应用探索 —— 是真正的 Agentic：51 条质量门控规则引导 Agent，但它在从未见过的应用中自由导航、自主做出编辑判断。
-
-| 发布的评测视频 | 制作过程 |
-|:---:|:---:|
-| [![成品](https://img.youtube.com/vi/jliTvpTnsKY/maxresdefault.jpg)](https://youtu.be/jliTvpTnsKY) | [![过程](https://img.youtube.com/vi/gYMYI0bxkJs/maxresdefault.jpg)](https://youtu.be/gYMYI0bxkJs) |
-
-> *示例提示：「从零制作一个 Snapseed iPhone 应用评测视频：使用真实 App Store 和 iPhone Mirroring，重点拍摄背景移除和滤镜（如黑白）的操作片段，加英文旁白和字幕，导出竖版视频，以不公开方式上传到 YouTube，清理设备，分享结果。」*
-
-[完整未剪辑录屏](https://drive.google.com/file/d/1Ap5hGWWemU04UkRm495waHjB1-3nq3g5/view?usp=sharing)。
 
 ## 工作区产物 —— Playbook、Worker、Skill
 
