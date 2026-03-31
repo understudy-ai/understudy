@@ -221,11 +221,16 @@ describe("ComputerUseGuiRuntime", () => {
 				cb(null, { stdout: "", stderr: "" });
 				return {} as any;
 			}
-			if (file === "zsh" || file === "/bin/zsh") {
-				const shellCommand = resolvedArgs[1] ?? "";
-				if (shellCommand === "printf 'secret-from-command\\n'") {
-					cb(null, { stdout: "secret-from-command\n", stderr: "" });
-					return {} as any;
+				if (
+					file === "zsh" ||
+					file === "/bin/zsh" ||
+					file === "bash" ||
+					file === "/bin/bash"
+				) {
+					const shellCommand = resolvedArgs[1] ?? "";
+					if (shellCommand === "printf 'secret-from-command\\n'") {
+						cb(null, { stdout: "secret-from-command\n", stderr: "" });
+						return {} as any;
 				}
 				cb(new Error(`Unexpected shell command: ${shellCommand}`));
 				return {} as any;
