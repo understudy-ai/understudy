@@ -227,7 +227,7 @@ describe("ComputerUseGuiRuntime", () => {
 					file === "bash" ||
 					file === "/bin/bash"
 				) {
-					const shellCommand = resolvedArgs[1] ?? "";
+					const shellCommand = resolvedArgs.at(-1) ?? "";
 					if (shellCommand === "printf 'secret-from-command\\n'") {
 						cb(null, { stdout: "secret-from-command\n", stderr: "" });
 						return {} as any;
@@ -2218,11 +2218,16 @@ describe("ComputerUseGuiRuntime", () => {
 			app: "SomeApp",
 			input_source: "secret_command_env",
 		});
-		expect(mocks.execCalls.find((call) =>
-			(call.file === "zsh" || call.file === "/bin/zsh") &&
-			call.args[0] === "-lc" &&
-			call.args[1] === "printf 'secret-from-command\\n'",
-		)).toBeTruthy();
+			expect(mocks.execCalls.find((call) =>
+				(
+					call.file === "zsh" ||
+					call.file === "/bin/zsh" ||
+					call.file === "bash" ||
+					call.file === "/bin/bash"
+				) &&
+				call.args.includes("-lc") &&
+				call.args.at(-1) === "printf 'secret-from-command\\n'",
+			)).toBeTruthy();
 		const nativeTypeCall = mocks.execCalls.find((call) =>
 			call.file === MOCK_NATIVE_HELPER_PATH &&
 			call.args[0] === "event" &&
