@@ -170,7 +170,7 @@ function truncatePersistedString(value: string): string {
 }
 
 function sanitizePersistedValue(value: unknown, depth = 0): unknown {
-	if (value == null || typeof value === "number" || typeof value === "boolean") {
+	if ((value === null || value === undefined) || typeof value === "number" || typeof value === "boolean") {
 		return value;
 	}
 	if (typeof value === "string") {

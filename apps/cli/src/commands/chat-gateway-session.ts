@@ -876,12 +876,12 @@ export async function createGatewayBackedInteractiveSession(
 		}
 		if (gatewayState.isStreaming) {
 			const behavior = promptOptions?.streamingBehavior;
-			const queuedBehavior =
-				behavior === "steer" || behavior === "followUp"
-					? behavior
-					: behavior == null
-						? "followUp"
-						: undefined;
+				const queuedBehavior =
+					behavior === "steer" || behavior === "followUp"
+						? behavior
+						: behavior === null || behavior === undefined
+							? "followUp"
+							: undefined;
 			if (!queuedBehavior) {
 				throw new Error("Invalid streamingBehavior. Expected 'steer' or 'followUp'.");
 			}
