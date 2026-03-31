@@ -1,14 +1,32 @@
 import { asBoolean, asNumber, asRecord, asString } from "@understudy/core";
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileAsync } from "./exec-utils.js";
 import { resolveNativeGuiHelperBinary } from "./native-helper.js";
+import {
+	resolveGuiPlatformBackend,
+	type GuiPlatformInputDependencies,
+} from "./platform.js";
 import { normalizeGuiGroundingMode } from "./types.js";
 import {
+	FilePhysicalResourceLock,
+	type PhysicalResourceLock,
+	type PhysicalResourceLockHolder,
+} from "./physical-resource-lock.js";
+import {
+	GuiActionSession,
+	type GuiEmergencyStopHandle,
+	type GuiEmergencyStopProvider,
+} from "./gui-action-session.js";
+import {
 	resolveGuiRuntimeCapabilities,
+	type GuiToolCapability,
 	type GuiRuntimeCapabilitySnapshot,
 } from "./capabilities.js";
+import type { GuiToolName } from "./tool-names.js";
 import type { GuiEnvironmentReadinessSnapshot } from "./readiness.js";
 import type {
 	GuiActionResult,
@@ -42,10 +60,6 @@ const DEFAULT_POST_ACTION_CAPTURE_SETTLE_MS = 3_000;
 const DEFAULT_CLICK_AND_HOLD_MS = 650;
 const DEFAULT_TYPE_FOCUS_SETTLE_MS = 180;
 const DEFAULT_SCROLL_AMOUNT = 5;
-const DEFAULT_NATIVE_TYPE_CLEAR_REPEAT = 48;
-const DEFAULT_SYSTEM_EVENTS_PASTE_PRE_DELAY_MS = 220;
-const DEFAULT_SYSTEM_EVENTS_PASTE_POST_DELAY_MS = 650;
-const DEFAULT_SYSTEM_EVENTS_KEYSTROKE_CHAR_DELAY_MS = 55;
 const DEFAULT_TARGETED_SCROLL_DISTANCE: GuiScrollDistance = "medium";
 const DEFAULT_TARGETLESS_SCROLL_DISTANCE: GuiScrollDistance = "page";
 const SCROLL_DISTANCE_AMOUNTS: Record<GuiScrollDistance, number> = {
@@ -59,29 +73,6 @@ const SCROLL_DISTANCE_FRACTIONS: Record<GuiScrollDistance, number> = {
 	page: 0.75,
 };
 const WAIT_CONFIRMATION_COUNT = 2;
-const COMMON_KEY_CODES: Record<string, number> = {
-	enter: 36,
-	return: 36,
-	tab: 48,
-	escape: 53,
-	esc: 53,
-	delete: 51,
-	backspace: 51,
-	home: 115,
-	pageup: 116,
-	pagedown: 121,
-	end: 119,
-	up: 126,
-	arrowup: 126,
-	down: 125,
-	arrowdown: 125,
-	left: 123,
-	arrowleft: 123,
-	right: 124,
-	arrowright: 124,
-	space: 49,
-	spacebar: 49,
-};
 
 interface GuiNativeActionResult {
 	actionKind: string;
@@ -113,6 +104,10 @@ interface GuiCaptureContext {
 	windowBounds?: GuiRect;
 	windowCount?: number;
 	windowCaptureStrategy?: "selected_window" | "main_window" | "app_union";
+	hostSelfExcludeApplied?: boolean;
+	hostFrontmostExcluded?: boolean;
+	hostFrontmostAppName?: string;
+	hostFrontmostBundleId?: string;
 }
 
 interface GuiScreenshotArtifact {
@@ -156,6 +151,14 @@ function resolveClickActionIntent(params: GuiClickParams): PointActionIntent {
 	return "click";
 }
 
+function typeTouchesClipboard(params: GuiTypeParams): boolean {
+	return (
+		!params.typeStrategy ||
+		params.typeStrategy === "clipboard_paste" ||
+		params.typeStrategy === "system_events_paste"
+	);
+}
+
 interface GroundedPointActionRequest {
 	appName?: string;
 	target?: string;
@@ -191,6 +194,7 @@ interface ResolvedGuiScrollPlan {
 }
 
 interface GuiCaptureMetadata {
+	captureMethod?: string;
 	mode: "display" | "window";
 	captureRect: GuiRect;
 	display: GuiDisplayDescriptor;
@@ -204,23 +208,25 @@ interface GuiCaptureMetadata {
 	windowCaptureStrategy?: "selected_window" | "main_window" | "app_union";
 	cursor: GuiPoint;
 	cursorVisible: boolean;
+	hostSelfExcludeApplied?: boolean;
+	hostFrontmostExcluded?: boolean;
+	hostSelfExcludeAdjusted?: boolean;
+	hostFrontmostAppName?: string;
+	hostFrontmostBundleId?: string;
+	hostSelfExcludeRedactionCount?: number;
 }
 
-interface GuiScriptWindowSelection {
-	title?: string;
-	titleContains?: string;
-	index?: number;
-	bounds?: GuiRect;
+interface GuiHostWindowExclusions {
+	bundleIds: string[];
+	ownerNames: string[];
 }
-
-export const GUI_UNSUPPORTED_MESSAGE = "GUI tools are currently supported on macOS only.";
 
 export class GuiRuntimeError extends Error {
 	override name = "GuiRuntimeError";
 }
 
-export function isGuiPlatformSupported(platform: NodeJS.Platform = process.platform): boolean {
-	return platform === "darwin";
+function isAbortError(error: unknown): boolean {
+	return error instanceof Error && error.name === "AbortError";
 }
 
 function unsupportedResult(reason: string): GuiActionResult {
@@ -268,13 +274,147 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
 	return trimmed ? trimmed : undefined;
 }
 
+function normalizeIdentity(value: string | undefined): string | undefined {
+	return normalizeOptionalString(value)?.toLowerCase();
+}
+
+function parseDelimitedValues(value: string | undefined): string[] {
+	return (value ?? "")
+		.split(/[,\n]/u)
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+}
+
+function dedupeCaseInsensitive(values: string[]): string[] {
+	const seen = new Set<string>();
+	const deduped: string[] = [];
+	for (const value of values) {
+		const normalized = normalizeIdentity(value);
+		if (!normalized || seen.has(normalized)) {
+			continue;
+		}
+		seen.add(normalized);
+		deduped.push(value);
+	}
+	return deduped;
+}
+
+function titleCaseToken(value: string): string {
+	if (!value) {
+		return value;
+	}
+	return value[0]!.toUpperCase() + value.slice(1);
+}
+
+function deriveOwnerNameHintsFromBundleId(bundleId: string | undefined): string[] {
+	if (!bundleId) {
+		return [];
+	}
+	const tail = bundleId.split(".").pop()?.replace(/\.app$/iu, "");
+	if (!tail) {
+		return [];
+	}
+	const normalized = tail
+		.replace(/[-_.]+/gu, " ")
+		.replace(/\s+/gu, " ")
+		.trim();
+	if (!normalized) {
+		return [];
+	}
+	return dedupeCaseInsensitive([
+		normalized,
+		normalized
+			.split(" ")
+			.map((part) => titleCaseToken(part))
+			.join(" "),
+	]);
+}
+
+const KNOWN_HOST_OWNER_NAME_HINTS: Record<string, string[]> = {
+	"com.apple.Terminal": ["Terminal"],
+	"com.googlecode.iterm2": ["iTerm2"],
+	"com.openai.codex": ["Codex", "Codex Desktop"],
+	"dev.warp.Warp-Stable": ["Warp"],
+};
+
+function detectHostWindowExclusions(
+	platform: NodeJS.Platform = process.platform,
+): GuiHostWindowExclusions {
+	if (platform !== "darwin" || process.env.UNDERSTUDY_GUI_DISABLE_HOST_SELF_EXCLUDE === "1") {
+		return { bundleIds: [], ownerNames: [] };
+	}
+	const hostBundleId = normalizeOptionalString(process.env.__CFBundleIdentifier);
+	const configuredBundleIds = parseDelimitedValues(process.env.UNDERSTUDY_GUI_EXCLUDED_BUNDLE_IDS);
+	const configuredOwnerNames = parseDelimitedValues(process.env.UNDERSTUDY_GUI_EXCLUDED_OWNER_NAMES);
+	const ownerNameHints = dedupeCaseInsensitive([
+		...configuredOwnerNames,
+		...(hostBundleId ? (KNOWN_HOST_OWNER_NAME_HINTS[hostBundleId] ?? []) : []),
+		...deriveOwnerNameHintsFromBundleId(hostBundleId),
+		...parseDelimitedValues(process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE),
+		...parseDelimitedValues(process.env.TERM_PROGRAM),
+	]);
+	const bundleIds = dedupeCaseInsensitive([
+		...configuredBundleIds,
+		...(hostBundleId ? [hostBundleId] : []),
+	]);
+	return {
+		bundleIds,
+		ownerNames: ownerNameHints,
+	};
+}
+
+function requestedAppTargetsHost(appName: string | undefined, exclusions: GuiHostWindowExclusions): boolean {
+	const normalizedApp = normalizeIdentity(appName);
+	if (!normalizedApp) {
+		return false;
+	}
+	return (
+		exclusions.bundleIds.some((candidate) => normalizeIdentity(candidate) === normalizedApp) ||
+		exclusions.ownerNames.some((candidate) => normalizeIdentity(candidate) === normalizedApp)
+	);
+}
+
+function buildHostWindowExclusionEnv(params: {
+	appName?: string;
+	platform?: NodeJS.Platform;
+}): Record<string, string | undefined> {
+	const exclusions = detectHostWindowExclusions(params.platform);
+	if (
+		(exclusions.bundleIds.length === 0 && exclusions.ownerNames.length === 0) ||
+		requestedAppTargetsHost(params.appName, exclusions)
+	) {
+		return {};
+	}
+	return {
+		UNDERSTUDY_GUI_AUTO_EXCLUDED_BUNDLE_IDS:
+			exclusions.bundleIds.length > 0 ? exclusions.bundleIds.join(",") : undefined,
+		UNDERSTUDY_GUI_AUTO_EXCLUDED_OWNER_NAMES:
+			exclusions.ownerNames.length > 0 ? exclusions.ownerNames.join(",") : undefined,
+	};
+}
+
 type GuiTypeInputSource = "value" | "secret_env" | "secret_command_env";
 
 function stripSingleTrailingNewline(value: string): string {
 	return value.replace(/\r?\n$/, "");
 }
 
-async function resolveGuiTypeInput(params: GuiTypeParams): Promise<{
+function resolveGuiSecretCommandShell(
+	platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+	if (platform === "win32") {
+		return {
+			command: process.env.ComSpec?.trim() || "cmd.exe",
+			args: ["/d", "/s", "/c"],
+		};
+	}
+	return {
+		command: process.env.SHELL?.trim() || "zsh",
+		args: ["-lc"],
+	};
+}
+
+async function resolveGuiTypeInput(params: GuiTypeParams, signal?: AbortSignal): Promise<{
 	text: string;
 	source: GuiTypeInputSource;
 }> {
@@ -319,9 +459,11 @@ async function resolveGuiTypeInput(params: GuiTypeParams): Promise<{
 		);
 	}
 	try {
-		const { stdout } = await execFileAsync("zsh", ["-lc", command], {
+		const shell = resolveGuiSecretCommandShell();
+		const { stdout } = await execFileAsync(shell.command, [...shell.args, command], {
 			env: process.env,
 			timeout: DEFAULT_TIMEOUT_MS,
+			signal,
 			maxBuffer: 8 * 1024 * 1024,
 			encoding: "utf-8",
 		});
@@ -336,6 +478,9 @@ async function resolveGuiTypeInput(params: GuiTypeParams): Promise<{
 			source: "secret_command_env",
 		};
 	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
 		if (error instanceof GuiRuntimeError) {
 			throw error;
 		}
@@ -409,33 +554,13 @@ function describeWindowSelection(windowSelector: GuiWindowSelector | undefined):
 }
 
 function buildWindowSelectionEnv(
-	windowSelection: Pick<GuiScriptWindowSelection, "title" | "titleContains" | "index"> | undefined,
+	windowSelection: Pick<GuiWindowSelector, "title" | "titleContains" | "index"> | undefined,
 ): Record<string, string | undefined> {
 	return {
 		UNDERSTUDY_GUI_WINDOW_TITLE: windowSelection?.title,
 		UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: windowSelection?.titleContains,
 		UNDERSTUDY_GUI_WINDOW_INDEX: windowSelection?.index ? String(windowSelection.index) : undefined,
 	};
-}
-
-function buildWindowBoundsEnv(bounds: GuiRect | undefined): Record<string, string | undefined> {
-	return {
-		UNDERSTUDY_GUI_WINDOW_BOUNDS_X: bounds ? String(bounds.x) : undefined,
-		UNDERSTUDY_GUI_WINDOW_BOUNDS_Y: bounds ? String(bounds.y) : undefined,
-		UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH: bounds ? String(bounds.width) : undefined,
-		UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT: bounds ? String(bounds.height) : undefined,
-	};
-}
-
-function buildScriptWindowSelectionEnv(windowSelection: GuiScriptWindowSelection | undefined): Record<string, string | undefined> {
-	return {
-		...buildWindowSelectionEnv(windowSelection),
-		...buildWindowBoundsEnv(windowSelection?.bounds),
-	};
-}
-
-function normalizeHotkeyKeyName(key: string): string {
-	return key.trim().toLowerCase().replace(/[\s_-]+/g, "");
 }
 
 function normalizeRect(rect: GuiRect): GuiRect {
@@ -458,6 +583,13 @@ function clampPointToRect(point: GuiPoint, rect: GuiRect): GuiPoint {
 	return {
 		x: clamp(point.x, rect.x, rect.x + rect.width),
 		y: clamp(point.y, rect.y, rect.y + rect.height),
+	};
+}
+
+function rectCenterPoint(rect: GuiRect): GuiPoint {
+	return {
+		x: Math.round(rect.x + (rect.width / 2)),
+		y: Math.round(rect.y + (rect.height / 2)),
 	};
 }
 
@@ -524,6 +656,12 @@ function parseCaptureContext(raw: string): GuiCaptureContext {
 			parsed.windowCaptureStrategy === "app_union"
 				? parsed.windowCaptureStrategy
 				: undefined,
+		hostSelfExcludeApplied: parsed.hostSelfExcludeApplied === true,
+		hostFrontmostExcluded: parsed.hostFrontmostExcluded === true,
+		hostFrontmostAppName:
+			typeof parsed.hostFrontmostAppName === "string" ? parsed.hostFrontmostAppName : undefined,
+		hostFrontmostBundleId:
+			typeof parsed.hostFrontmostBundleId === "string" ? parsed.hostFrontmostBundleId : undefined,
 	};
 }
 
@@ -631,7 +769,7 @@ function normalizeDisplayRectInCapture(rect: GuiRect, artifact: GuiCaptureMetada
 
 function buildCaptureDetails(metadata: GuiCaptureMetadata): Record<string, unknown> {
 	return {
-		capture_method: "screencapture",
+		capture_method: metadata.captureMethod ?? "screencapture",
 		capture_mode: metadata.mode,
 		capture_rect: metadata.captureRect,
 		capture_display: metadata.display,
@@ -643,12 +781,73 @@ function buildCaptureDetails(metadata: GuiCaptureMetadata): Record<string, unkno
 			: undefined,
 		capture_scale_x: metadata.scaleX,
 		capture_scale_y: metadata.scaleY,
-		cursor_position: metadata.cursor,
-		capture_cursor_visible: metadata.cursorVisible,
-		window_title: metadata.windowTitle,
-		window_count: metadata.windowCount,
-		window_capture_strategy: metadata.windowCaptureStrategy,
-	};
+			cursor_position: metadata.cursor,
+			capture_cursor_visible: metadata.cursorVisible,
+			window_title: metadata.windowTitle,
+			window_count: metadata.windowCount,
+			window_capture_strategy: metadata.windowCaptureStrategy,
+			capture_host_self_exclude_applied: metadata.hostSelfExcludeApplied,
+			capture_host_frontmost_excluded: metadata.hostFrontmostExcluded,
+			capture_host_self_exclude_adjusted: metadata.hostSelfExcludeAdjusted,
+			capture_host_frontmost_app: metadata.hostFrontmostAppName,
+			capture_host_frontmost_bundle_id: metadata.hostFrontmostBundleId,
+			capture_host_self_exclude_redaction_count: metadata.hostSelfExcludeRedactionCount,
+		};
+}
+
+function shouldAdjustImplicitDisplayCaptureForHostSelfExclude(params: {
+	context: GuiCaptureContext;
+	preferDisplayCapture?: boolean;
+	explicitCaptureMode?: GuiCaptureMode;
+}): boolean {
+	return (
+		params.preferDisplayCapture === true &&
+		params.explicitCaptureMode === undefined &&
+		params.context.hostSelfExcludeApplied === true &&
+		params.context.hostFrontmostExcluded === true &&
+		Boolean(params.context.windowBounds)
+	);
+}
+
+async function redactHostWindowsFromDisplayCapture(params: {
+	appName?: string;
+	filePath: string;
+	captureRect: GuiRect;
+	platform?: NodeJS.Platform;
+	signal?: AbortSignal;
+}): Promise<number> {
+	if (params.platform !== undefined && params.platform !== "darwin") {
+		return 0;
+	}
+	const raw = await runNativeHelper({
+		command: "redact-host-windows",
+		env: {
+			UNDERSTUDY_GUI_IMAGE_PATH: params.filePath,
+			UNDERSTUDY_GUI_CAPTURE_X: String(params.captureRect.x),
+			UNDERSTUDY_GUI_CAPTURE_Y: String(params.captureRect.y),
+			UNDERSTUDY_GUI_CAPTURE_WIDTH: String(params.captureRect.width),
+			UNDERSTUDY_GUI_CAPTURE_HEIGHT: String(params.captureRect.height),
+			...buildHostWindowExclusionEnv({
+				appName: params.appName,
+				platform: params.platform,
+			}),
+		},
+		signal: params.signal,
+		timeoutMs: 5_000,
+		failureMessage:
+			"macOS native GUI redaction failed while masking host windows from the captured screenshot.",
+		timeoutHint: "The GUI helper timed out while redacting excluded host windows from the screenshot.",
+	});
+	try {
+		const parsed = JSON.parse(raw) as Record<string, unknown>;
+		if (typeof parsed.redactionCount === "number" && Number.isFinite(parsed.redactionCount)) {
+			return Math.max(0, Math.round(parsed.redactionCount));
+		}
+	} catch {
+		// Fall through to best-effort parsing below.
+	}
+	const numeric = Number(raw.trim());
+	return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 }
 
 function describeGuiTarget(params: {
@@ -660,6 +859,12 @@ function describeGuiTarget(params: {
 		return `"${normalizedTarget}"`;
 	}
 	return params.fallback ?? "the GUI target";
+}
+
+function hasUnsupportedWindowsWindowSelection(
+	windowSelection: GuiWindowSelector | undefined,
+): boolean {
+	return windowSelection?.index !== undefined;
 }
 
 function defaultGroundingModeForAction(
@@ -797,13 +1002,68 @@ function summarizeGroundingTelemetry(raw: unknown): {
 	};
 }
 
-function createScreenshotObservation(appName?: string, windowTitle?: string): GuiObservation {
+function createScreenshotObservation(
+	appName?: string,
+	windowTitle?: string,
+	platform: NodeJS.Platform = process.platform,
+): GuiObservation {
 	return {
-		platform: process.platform,
+		platform,
 		method: "screenshot",
 		appName,
 		windowTitle,
 		capturedAt: Date.now(),
+	};
+}
+
+function createNativeEmergencyStopProvider(): GuiEmergencyStopProvider {
+	return {
+		async start(params): Promise<GuiEmergencyStopHandle | undefined> {
+			const binaryPath = await resolveNativeGuiHelperBinary();
+			const child = spawn(binaryPath, ["monitor-escape"], {
+				env: process.env,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			let stopped = false;
+			let stdoutBuffer = "";
+			const onStdout = (chunk: Buffer | string) => {
+				stdoutBuffer += chunk.toString();
+				if (!stdoutBuffer.includes("escape")) {
+					return;
+				}
+				stdoutBuffer = "";
+				params.onEmergencyStop();
+			};
+			const onAbort = () => {
+				void stop();
+			};
+			const stop = async () => {
+				if (stopped) {
+					return;
+				}
+				stopped = true;
+				params.signal.removeEventListener("abort", onAbort);
+				child.stdout?.off("data", onStdout);
+				if (!child.killed) {
+					child.kill("SIGTERM");
+				}
+				await new Promise<void>((resolve) => {
+					const timer = setTimeout(() => {
+						if (!child.killed) {
+							child.kill("SIGKILL");
+						}
+						resolve();
+					}, 500);
+					child.once("exit", () => {
+						clearTimeout(timer);
+						resolve();
+					});
+				}).catch(() => {});
+			};
+			child.stdout?.on("data", onStdout);
+			params.signal.addEventListener("abort", onAbort, { once: true });
+			return { stop };
+		},
 	};
 }
 
@@ -812,6 +1072,7 @@ async function runAppleScript(
 	env: Record<string, string | undefined>,
 	args: string[] = [],
 	timeoutMs: number = DEFAULT_TIMEOUT_MS,
+	signal?: AbortSignal,
 ): Promise<string> {
 	try {
 		const result = await execFileAsync("osascript", [
@@ -826,11 +1087,15 @@ async function runAppleScript(
 				...env,
 			},
 			timeout: timeoutMs,
+			signal,
 			maxBuffer: 8 * 1024 * 1024,
 			encoding: "utf-8",
 		});
 		return result.stdout.trim();
 	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
 		const record = error as {
 			message?: string;
 			stderr?: string;
@@ -853,11 +1118,12 @@ async function runAppleScript(
 }
 
 async function runNativeHelper(params: {
-	command: "capture-context" | "event";
+	command: "capture-context" | "event" | "cleanup" | "redact-host-windows";
 	env: Record<string, string | undefined>;
 	timeoutMs?: number;
 	failureMessage: string;
 	timeoutHint: string;
+	signal?: AbortSignal;
 }): Promise<string> {
 	try {
 		const binaryPath = await resolveNativeGuiHelperBinary();
@@ -867,11 +1133,15 @@ async function runNativeHelper(params: {
 				...params.env,
 			},
 			timeout: params.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+			signal: params.signal,
 			maxBuffer: 8 * 1024 * 1024,
 			encoding: "utf-8",
 		});
 		return result.stdout.trim();
 	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
 		const record = error as {
 			message?: string;
 			stderr?: string;
@@ -891,280 +1161,97 @@ async function runNativeHelper(params: {
 	}
 }
 
-const WINDOW_SELECTION_SCRIPT_HELPERS = String.raw`
-on absoluteDifference(lhsValue, rhsValue)
-	if lhsValue >= rhsValue then return lhsValue - rhsValue
-	return rhsValue - lhsValue
-end absoluteDifference
-
-on textContains(haystack, needle)
-	if needle is "" then return true
-	ignoring case
-			return (offset of needle in haystack) is not 0
-	end ignoring
-end textContains
-
-on windowMatchesBounds(candidateWindow, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
-	if boundsXText is "" or boundsYText is "" or boundsWidthText is "" or boundsHeightText is "" then return true
-	try
-		set {windowX, windowY} to position of candidateWindow
-		set {windowWidth, windowHeight} to size of candidateWindow
-	on error
-		return false
-	end try
-	set tolerance to 3
-	return (my absoluteDifference(windowX as integer, boundsXText as integer) is less than or equal to tolerance) and (my absoluteDifference(windowY as integer, boundsYText as integer) is less than or equal to tolerance) and (my absoluteDifference(windowWidth as integer, boundsWidthText as integer) is less than or equal to tolerance) and (my absoluteDifference(windowHeight as integer, boundsHeightText as integer) is less than or equal to tolerance)
-end windowMatchesBounds
-
-on matchingWindows(targetProc, exactTitle, titleContains, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
-	set matches to {}
-	repeat with candidateWindow in windows of targetProc
-		set windowTitle to ""
-		try
-			set windowTitle to name of candidateWindow as text
-		end try
-		set exactMatch to true
-		if exactTitle is not "" then
-			ignoring case
-				set exactMatch to windowTitle is exactTitle
-			end ignoring
-		end if
-		set containsMatch to my textContains(windowTitle, titleContains)
-		set boundsMatch to my windowMatchesBounds(candidateWindow, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
-		if exactMatch and containsMatch and boundsMatch then set end of matches to candidateWindow
-	end repeat
-	return matches
-end matchingWindows
-
-on focusRequestedWindow(targetProc, exactTitle, titleContains, windowIndexText, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
-	if exactTitle is "" and titleContains is "" and windowIndexText is "" and boundsXText is "" and boundsYText is "" and boundsWidthText is "" and boundsHeightText is "" then return
-	set matches to my matchingWindows(targetProc, exactTitle, titleContains, boundsXText, boundsYText, boundsWidthText, boundsHeightText)
-	if (count of matches) is 0 then error "Window not found for the requested selection."
-	set targetWindow to item 1 of matches
-	if windowIndexText is not "" then
-		set requestedIndex to windowIndexText as integer
-		if requestedIndex < 1 or requestedIndex > (count of matches) then error "Requested window index is out of range."
-		set targetWindow to item requestedIndex of matches
-	end if
-	tell application "System Events"
-		try
-			tell targetWindow to perform action "AXRaise"
-		end try
-		try
-			tell targetWindow to set value of attribute "AXMain" to true
-		end try
-		try
-			tell targetWindow to set value of attribute "AXFocused" to true
-		end try
-	end tell
-	delay 0.1
-end focusRequestedWindow
+const CLIPBOARD_READ_SCRIPT = String.raw`
+try
+	return the clipboard as text
+on error
+	return ""
+end try
 `;
 
-const TYPE_SCRIPT = String.raw`
-${WINDOW_SELECTION_SCRIPT_HELPERS}
-
-on normalizedDelaySeconds(delayMsText, fallbackSeconds)
-	if delayMsText is "" then return fallbackSeconds
-	try
-		set candidateMs to delayMsText as integer
-		if candidateMs < 0 then return fallbackSeconds
-		return candidateMs / 1000
-	on error
-		return fallbackSeconds
-	end try
-end normalizedDelaySeconds
-
-on normalizedRepeatCount(repeatText, fallbackCount)
-	if repeatText is "" then return fallbackCount
-	try
-		set candidateCount to repeatText as integer
-		if candidateCount < 0 then return fallbackCount
-		return candidateCount
-	on error
-		return fallbackCount
-	end try
-end normalizedRepeatCount
-
-on pasteText(rawText, preDelaySeconds, postDelaySeconds)
-	set previousClipboard to missing value
-	set hadClipboard to false
-	try
-		set previousClipboard to the clipboard
-		set hadClipboard to true
-	end try
-
-	set the clipboard to rawText
-	delay preDelaySeconds
-	tell application "System Events"
-		keystroke "v" using command down
-	end tell
-	delay postDelaySeconds
-
-	if hadClipboard then
-		try
-			set the clipboard to previousClipboard
-		end try
-	end if
-end pasteText
-
-on clearWithBackspace(repeatCount)
-	if repeatCount <= 0 then return
-	tell application "System Events"
-		repeat repeatCount times
-			key code 51
-			delay 0.02
-		end repeat
-	end tell
-end clearWithBackspace
-
-on enterText(rawText, entryStrategy, preDelaySeconds, postDelaySeconds)
-	if entryStrategy is "keystroke" then
-		tell application "System Events"
-			keystroke rawText
-		end tell
-		delay postDelaySeconds
-		return
-	end if
-	if entryStrategy is "keystroke_chars" then
-		set keyDelayMsText to system attribute "UNDERSTUDY_GUI_KEYSTROKE_CHAR_DELAY_MS"
-		set keyDelaySeconds to my normalizedDelaySeconds(keyDelayMsText, 0.055)
-		tell application "System Events"
-			repeat with currentCharacter in characters of rawText
-				set typedCharacter to contents of currentCharacter
-				if typedCharacter is return or typedCharacter is linefeed then
-					key code 36
-				else
-					keystroke typedCharacter
-				end if
-				delay keyDelaySeconds
-			end repeat
-		end tell
-		delay postDelaySeconds
-		return
-	end if
-	my pasteText(rawText, preDelaySeconds, postDelaySeconds)
-end enterText
-
+const CLIPBOARD_WRITE_SCRIPT = String.raw`
 on run argv
-	set requestedApp to system attribute "UNDERSTUDY_GUI_APP"
-	set requestedWindowTitle to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE"
-	set requestedWindowTitleContains to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS"
-	set requestedWindowIndex to system attribute "UNDERSTUDY_GUI_WINDOW_INDEX"
-	set requestedWindowBoundsX to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_X"
-	set requestedWindowBoundsY to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_Y"
-	set requestedWindowBoundsWidth to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH"
-	set requestedWindowBoundsHeight to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT"
-	set replaceText to system attribute "UNDERSTUDY_GUI_REPLACE"
-	set submitText to system attribute "UNDERSTUDY_GUI_SUBMIT"
-	set inlineInputText to system attribute "UNDERSTUDY_GUI_TEXT"
-	set systemEventsTypeStrategy to system attribute "UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY"
-	set clearRepeatText to system attribute "UNDERSTUDY_GUI_CLEAR_REPEAT"
-	set pastePreDelayMsText to system attribute "UNDERSTUDY_GUI_PASTE_PRE_DELAY_MS"
-	set pastePostDelayMsText to system attribute "UNDERSTUDY_GUI_PASTE_POST_DELAY_MS"
-	set inputText to inlineInputText
-	if inputText is "" and (count of argv) > 0 then set inputText to item 1 of argv
-	set preDelaySeconds to my normalizedDelaySeconds(pastePreDelayMsText, 0.15)
-	set postDelaySeconds to my normalizedDelaySeconds(pastePostDelayMsText, 0.25)
-	set replaceRepeatCount to my normalizedRepeatCount(clearRepeatText, 48)
-	tell application "System Events"
-		if requestedApp is not "" then
-			if not (exists application process requestedApp) then error "Application process not found: " & requestedApp
-		set targetProc to application process requestedApp
-		set frontmost of targetProc to true
-		delay 0.1
-	else
-		set targetProc to first application process whose frontmost is true
-	end if
-	my focusRequestedWindow(targetProc, requestedWindowTitle, requestedWindowTitleContains, requestedWindowIndex, requestedWindowBoundsX, requestedWindowBoundsY, requestedWindowBoundsWidth, requestedWindowBoundsHeight)
-
-	if replaceText is "1" then
-		if systemEventsTypeStrategy is "keystroke" or clearRepeatText is not "" then
-			my clearWithBackspace(replaceRepeatCount)
-		else
-			keystroke "a" using command down
-		end if
-	end if
-		my enterText(inputText, systemEventsTypeStrategy, preDelaySeconds, postDelaySeconds)
-		if submitText is "1" then key code 36
-		return "typed"
-	end tell
+	set restoredText to ""
+	if (count of argv) > 0 then set restoredText to item 1 of argv
+	set the clipboard to restoredText
+	return "clipboard_restored"
 end run
 `;
 
-const HOTKEY_SCRIPT = String.raw`
-${WINDOW_SELECTION_SCRIPT_HELPERS}
+async function readClipboardText(
+	platform: NodeJS.Platform = process.platform,
+	signal?: AbortSignal,
+): Promise<string | undefined> {
+	if (platform !== "darwin") {
+		return undefined;
+	}
+	try {
+		return await runAppleScript(CLIPBOARD_READ_SCRIPT, {}, [], 2_000, signal);
+	} catch {
+		return undefined;
+	}
+}
 
-on buildModifierList(rawText)
-	set modifierList to {}
-	if rawText contains "command" then copy command down to end of modifierList
-	if rawText contains "shift" then copy shift down to end of modifierList
-	if rawText contains "option" then copy option down to end of modifierList
-	if rawText contains "control" then copy control down to end of modifierList
-	return modifierList
-end buildModifierList
+async function restoreClipboardText(
+	text: string,
+	platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+	if (platform !== "darwin") {
+		return;
+	}
+	await runAppleScript(CLIPBOARD_WRITE_SCRIPT, {}, [text], 2_000).catch(() => {});
+}
 
-set requestedApp to system attribute "UNDERSTUDY_GUI_APP"
-set requestedWindowTitle to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE"
-set requestedWindowTitleContains to system attribute "UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS"
-set requestedWindowIndex to system attribute "UNDERSTUDY_GUI_WINDOW_INDEX"
-set requestedWindowBoundsX to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_X"
-set requestedWindowBoundsY to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_Y"
-set requestedWindowBoundsWidth to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_WIDTH"
-set requestedWindowBoundsHeight to system attribute "UNDERSTUDY_GUI_WINDOW_BOUNDS_HEIGHT"
-set keyText to system attribute "UNDERSTUDY_GUI_KEY"
-set keyCodeText to system attribute "UNDERSTUDY_GUI_KEY_CODE"
-set modifiersText to system attribute "UNDERSTUDY_GUI_MODIFIERS"
-set repeatText to system attribute "UNDERSTUDY_GUI_REPEAT"
-set modifierList to my buildModifierList(modifiersText)
-set repeatCount to 1
-if repeatText is not "" then
-	set repeatCandidate to repeatText as integer
-	if repeatCandidate > 0 then set repeatCount to repeatCandidate
-end if
-
-tell application "System Events"
-	if requestedApp is not "" then
-		if not (exists application process requestedApp) then error "Application process not found: " & requestedApp
-		set targetProc to application process requestedApp
-		set frontmost of targetProc to true
-		delay 0.1
-	else
-		set targetProc to first application process whose frontmost is true
-	end if
-	my focusRequestedWindow(targetProc, requestedWindowTitle, requestedWindowTitleContains, requestedWindowIndex, requestedWindowBoundsX, requestedWindowBoundsY, requestedWindowBoundsWidth, requestedWindowBoundsHeight)
-
-	if keyCodeText is not "" then
-		repeat repeatCount times
-			if (count of modifierList) is 0 then
-				key code (keyCodeText as integer)
-			else
-				key code (keyCodeText as integer) using modifierList
-			end if
-			delay 0.03
-		end repeat
-		return "key_code"
-	end if
-
-	repeat repeatCount times
-		if (count of modifierList) is 0 then
-			keystroke keyText
-		else
-			keystroke keyText using modifierList
-		end if
-		delay 0.03
-	end repeat
-	return "keystroke"
-end tell
-`;
+async function performBestEffortInputCleanup(
+	platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+	if (platform === "win32") {
+		await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_EVENT_MODE: "cleanup",
+				UNDERSTUDY_GUI_ACTIVATE_APP: "0",
+			},
+			timeoutMs: 1_000,
+			failureMessage:
+				"Windows GUI cleanup failed. Ensure PowerShell input dispatch is available.",
+		}).catch(() => {});
+		return;
+	}
+	if (platform !== "darwin") {
+		return;
+	}
+	await runNativeHelper({
+		command: "cleanup",
+		env: {
+			UNDERSTUDY_GUI_RELEASE_MOUSE: "1",
+			UNDERSTUDY_GUI_RELEASE_MODIFIERS: "1",
+		},
+		timeoutMs: 1_000,
+		failureMessage:
+			"macOS native GUI cleanup failed. Ensure the required macOS GUI control permissions are granted.",
+		timeoutHint: "The GUI helper timed out while restoring GUI input state.",
+	}).catch(() => {});
+}
 
 async function resolveCaptureContext(
 	appName: string | undefined,
 	options: {
 		activateApp?: boolean;
 		windowSelector?: GuiWindowSelector;
+		platform?: NodeJS.Platform;
+		signal?: AbortSignal;
 	} = {},
 ): Promise<GuiCaptureContext> {
+	if (options.platform === "win32") {
+		return await resolveWindowsCaptureContext({
+			appName,
+			activateApp: options.activateApp,
+			windowSelector: options.windowSelector,
+			signal: options.signal,
+			captureWindow: Boolean(appName?.trim() || options.windowSelector),
+		});
+	}
 	const windowSelection = resolveWindowSelection({
 		windowSelector: options.windowSelector,
 	});
@@ -1173,8 +1260,12 @@ async function resolveCaptureContext(
 		env: {
 			UNDERSTUDY_GUI_APP: appName?.trim(),
 			UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+			...buildHostWindowExclusionEnv({
+				appName,
+			}),
 			...buildWindowSelectionEnv(windowSelection),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI capture helper failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while inspecting the current desktop state.",
@@ -1191,33 +1282,6 @@ function createRequestedWindowNotFoundError(
 	return new GuiRuntimeError(
 		`Could not find ${requestedWindow}${appLabel}. Check the visible window title or use captureMode "display" if the target spans multiple windows.`,
 	);
-}
-
-async function resolveScriptWindowSelection(params: {
-	appName?: string;
-	windowTitle?: string;
-	windowSelector?: GuiWindowSelector;
-}): Promise<GuiScriptWindowSelection | undefined> {
-	const windowSelection = resolveWindowSelection({
-		windowTitle: params.windowTitle,
-		windowSelector: params.windowSelector,
-	});
-	if (!windowSelection) {
-		return undefined;
-	}
-	const context = await resolveCaptureContext(params.appName, {
-		activateApp: false,
-		windowSelector: windowSelection,
-	});
-	if (!context.windowBounds) {
-		throw createRequestedWindowNotFoundError(params.appName, windowSelection);
-	}
-	const resolvedTitle = normalizeOptionalString(context.windowTitle);
-	return {
-		title: resolvedTitle ?? windowSelection.title,
-		titleContains: resolvedTitle ? undefined : windowSelection.titleContains,
-		bounds: context.windowBounds,
-	};
 }
 
 function resolveCaptureMode(params: {
@@ -1258,11 +1322,80 @@ function resolveCaptureMode(params: {
 	};
 }
 
+function resolveWindowsPowerShellCommand(): string {
+	return process.env.UNDERSTUDY_GUI_WINDOWS_POWERSHELL?.trim() || "powershell.exe";
+}
+
+async function runWindowsPowerShell(params: {
+	script: string;
+	env: Record<string, string | undefined>;
+	failureMessage: string;
+	signal?: AbortSignal;
+	timeoutMs?: number;
+}): Promise<string> {
+	try {
+		const result = await execFileAsync(
+			resolveWindowsPowerShellCommand(),
+			[
+				"-NoProfile",
+				"-NonInteractive",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				params.script,
+			],
+			{
+				env: {
+					...process.env,
+					...params.env,
+				},
+				timeout: params.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+				signal: params.signal,
+				maxBuffer: 8 * 1024 * 1024,
+				encoding: "utf-8",
+			},
+		);
+		return result.stdout.trim();
+	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
+		const record = error as {
+			message?: string;
+			stderr?: string;
+			stdout?: string;
+		};
+		const details = [record.stderr, record.stdout]
+			.map((value) => (typeof value === "string" ? value.trim() : ""))
+			.filter(Boolean)
+			.join(" ");
+		const message = [record.message ?? String(error), details].filter(Boolean).join(" ").trim();
+		throw new GuiRuntimeError(`${params.failureMessage} ${message}`.trim());
+	}
+}
+
 async function performPointClick(
 	appName: string | undefined,
 	point: { x: number; y: number },
-	options: { activateApp?: boolean } = {},
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
 ): Promise<GuiNativeActionResult> {
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "click",
+				UNDERSTUDY_GUI_X: String(point.x),
+				UNDERSTUDY_GUI_Y: String(point.y),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
 	const actionKind = await runNativeHelper({
 		command: "event",
 		env: {
@@ -1272,6 +1405,7 @@ async function performPointClick(
 			UNDERSTUDY_GUI_X: String(point.x),
 			UNDERSTUDY_GUI_Y: String(point.y),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while sending native input events.",
@@ -1282,8 +1416,25 @@ async function performPointClick(
 async function performRightClick(
 	appName: string | undefined,
 	point: { x: number; y: number },
-	options: { activateApp?: boolean } = {},
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
 ): Promise<GuiNativeActionResult> {
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "right_click",
+				UNDERSTUDY_GUI_X: String(point.x),
+				UNDERSTUDY_GUI_Y: String(point.y),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
 	const actionKind = await runNativeHelper({
 		command: "event",
 		env: {
@@ -1293,6 +1444,7 @@ async function performRightClick(
 			UNDERSTUDY_GUI_X: String(point.x),
 			UNDERSTUDY_GUI_Y: String(point.y),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while sending native input events.",
@@ -1303,8 +1455,25 @@ async function performRightClick(
 async function performDoubleClick(
 	appName: string | undefined,
 	point: { x: number; y: number },
-	options: { activateApp?: boolean } = {},
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
 ): Promise<GuiNativeActionResult> {
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "double_click",
+				UNDERSTUDY_GUI_X: String(point.x),
+				UNDERSTUDY_GUI_Y: String(point.y),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
 	const actionKind = await runNativeHelper({
 		command: "event",
 		env: {
@@ -1314,6 +1483,7 @@ async function performDoubleClick(
 			UNDERSTUDY_GUI_X: String(point.x),
 			UNDERSTUDY_GUI_Y: String(point.y),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while sending native input events.",
@@ -1325,8 +1495,26 @@ async function performHover(
 	appName: string | undefined,
 	point: { x: number; y: number },
 	settleMs: number,
-	options: { activateApp?: boolean } = {},
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
 ): Promise<GuiNativeActionResult> {
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "hover",
+				UNDERSTUDY_GUI_X: String(point.x),
+				UNDERSTUDY_GUI_Y: String(point.y),
+				UNDERSTUDY_GUI_SETTLE_MS: String(settleMs),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
 	const actionKind = await runNativeHelper({
 		command: "event",
 		env: {
@@ -1337,6 +1525,7 @@ async function performHover(
 			UNDERSTUDY_GUI_Y: String(point.y),
 			UNDERSTUDY_GUI_SETTLE_MS: String(settleMs),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while sending native input events.",
@@ -1344,12 +1533,55 @@ async function performHover(
 	return { actionKind };
 }
 
+async function performMoveCursor(
+	appName: string | undefined,
+	point: { x: number; y: number },
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
+): Promise<GuiNativeActionResult> {
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "move",
+				UNDERSTUDY_GUI_X: String(point.x),
+				UNDERSTUDY_GUI_Y: String(point.y),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
+	return { actionKind: "cg_move" };
+}
+
 async function performClickAndHold(
 	appName: string | undefined,
 	point: { x: number; y: number },
 	holdDurationMs: number,
-	options: { activateApp?: boolean } = {},
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
 ): Promise<GuiNativeActionResult> {
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "click_and_hold",
+				UNDERSTUDY_GUI_X: String(point.x),
+				UNDERSTUDY_GUI_Y: String(point.y),
+				UNDERSTUDY_GUI_HOLD_DURATION_MS: String(holdDurationMs),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
 	const actionKind = await runNativeHelper({
 		command: "event",
 		env: {
@@ -1360,6 +1592,7 @@ async function performClickAndHold(
 			UNDERSTUDY_GUI_Y: String(point.y),
 			UNDERSTUDY_GUI_HOLD_DURATION_MS: String(holdDurationMs),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while sending native input events.",
@@ -1372,8 +1605,29 @@ async function performDrag(
 	from: { x: number; y: number },
 	to: { x: number; y: number },
 	durationMs: number,
-	options: { activateApp?: boolean } = {},
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
 ): Promise<GuiNativeActionResult> {
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "drag",
+				UNDERSTUDY_GUI_FROM_X: String(from.x),
+				UNDERSTUDY_GUI_FROM_Y: String(from.y),
+				UNDERSTUDY_GUI_TO_X: String(to.x),
+				UNDERSTUDY_GUI_TO_Y: String(to.y),
+				UNDERSTUDY_GUI_DURATION_MS: String(durationMs),
+				UNDERSTUDY_GUI_STEPS: String(DEFAULT_DRAG_STEPS),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
 	const actionKind = await runNativeHelper({
 		command: "event",
 		env: {
@@ -1387,6 +1641,7 @@ async function performDrag(
 			UNDERSTUDY_GUI_DURATION_MS: String(durationMs),
 			UNDERSTUDY_GUI_STEPS: String(DEFAULT_DRAG_STEPS),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while sending native input events.",
@@ -1473,7 +1728,7 @@ async function performScroll(
 		direction?: GuiScrollParams["direction"];
 		plan: ResolvedGuiScrollPlan;
 	},
-	options: { activateApp?: boolean } = {},
+	options: { activateApp?: boolean; signal?: AbortSignal; platform?: NodeJS.Platform } = {},
 ): Promise<GuiNativeActionResult> {
 	const direction = params.direction ?? "down";
 	const amount = params.plan.amount;
@@ -1485,6 +1740,26 @@ async function performScroll(
 		direction === "up" ? amount :
 			direction === "down" ? -amount :
 				0;
+	if (options.platform === "win32") {
+		const actionKind = await runWindowsPowerShell({
+			script: WINDOWS_POINTER_EVENT_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_APP: appName?.trim(),
+				UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+				UNDERSTUDY_GUI_ACTIVATE_TARGET: appName?.trim(),
+				UNDERSTUDY_GUI_EVENT_MODE: "scroll",
+				UNDERSTUDY_GUI_X: point ? String(point.x) : undefined,
+				UNDERSTUDY_GUI_Y: point ? String(point.y) : undefined,
+				UNDERSTUDY_GUI_SCROLL_UNIT: params.plan.unit,
+				UNDERSTUDY_GUI_SCROLL_X: String(deltaX),
+				UNDERSTUDY_GUI_SCROLL_Y: String(deltaY),
+			},
+			signal: options.signal,
+			failureMessage:
+				"Windows GUI event dispatch failed. Ensure PowerShell input dispatch is available.",
+		});
+		return { actionKind };
+	}
 	const actionKind = await runNativeHelper({
 		command: "event",
 		env: {
@@ -1497,106 +1772,10 @@ async function performScroll(
 			UNDERSTUDY_GUI_SCROLL_X: String(deltaX),
 			UNDERSTUDY_GUI_SCROLL_Y: String(deltaY),
 		},
+		signal: options.signal,
 		failureMessage:
 			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
 		timeoutHint: "The GUI helper timed out while sending native input events.",
-	});
-	return { actionKind };
-}
-
-async function performType(params: GuiTypeParams, text: string): Promise<GuiNativeActionResult> {
-	const windowSelection = await resolveScriptWindowSelection({
-		appName: params.app,
-		windowTitle: params.windowTitle,
-		windowSelector: params.windowSelector,
-	});
-	const actionKind = await runAppleScript(TYPE_SCRIPT, {
-		UNDERSTUDY_GUI_APP: params.app?.trim(),
-		...buildScriptWindowSelectionEnv(windowSelection),
-		UNDERSTUDY_GUI_REPLACE: params.replace === false ? "0" : "1",
-		UNDERSTUDY_GUI_SUBMIT: params.submit ? "1" : "0",
-	}, [text]);
-	return { actionKind };
-}
-
-async function performNativeType(params: GuiTypeParams, text: string): Promise<GuiNativeActionResult> {
-	const typeStrategy = params.typeStrategy;
-	const needsClearRepeat = typeStrategy && params.replace !== false;
-	const actionKind = await runNativeHelper({
-		command: "event",
-		env: {
-			UNDERSTUDY_GUI_APP: params.app?.trim(),
-			UNDERSTUDY_GUI_EVENT_MODE: "type_text",
-			UNDERSTUDY_GUI_TEXT: text,
-			UNDERSTUDY_GUI_REPLACE: params.replace === false ? "0" : "1",
-			UNDERSTUDY_GUI_SUBMIT: params.submit ? "1" : "0",
-			UNDERSTUDY_GUI_TYPE_STRATEGY: typeStrategy,
-			UNDERSTUDY_GUI_CLEAR_REPEAT: needsClearRepeat
-				? String(DEFAULT_NATIVE_TYPE_CLEAR_REPEAT)
-				: undefined,
-		},
-		failureMessage:
-			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
-		timeoutHint: "The GUI helper timed out while sending native input events.",
-	});
-	return { actionKind };
-}
-
-async function performSystemEventsType(
-	params: GuiTypeParams,
-	text: string,
-	strategy: "system_events_paste" | "system_events_keystroke" | "system_events_keystroke_chars",
-): Promise<GuiNativeActionResult> {
-	const windowSelection = await resolveScriptWindowSelection({
-		appName: params.app,
-		windowTitle: params.windowTitle,
-		windowSelector: params.windowSelector,
-	});
-	const actionKind = await runAppleScript(TYPE_SCRIPT, {
-		UNDERSTUDY_GUI_APP: params.app?.trim(),
-		...buildScriptWindowSelectionEnv(windowSelection),
-		UNDERSTUDY_GUI_REPLACE: params.replace === false ? "0" : "1",
-		UNDERSTUDY_GUI_SUBMIT: params.submit ? "1" : "0",
-		UNDERSTUDY_GUI_TEXT: text,
-		UNDERSTUDY_GUI_SYSTEM_EVENTS_TYPE_STRATEGY:
-			strategy === "system_events_keystroke"
-				? "keystroke"
-				: strategy === "system_events_keystroke_chars"
-					? "keystroke_chars"
-					: "paste",
-		UNDERSTUDY_GUI_CLEAR_REPEAT:
-			params.replace === false ? undefined : String(DEFAULT_NATIVE_TYPE_CLEAR_REPEAT),
-		UNDERSTUDY_GUI_PASTE_PRE_DELAY_MS: String(DEFAULT_SYSTEM_EVENTS_PASTE_PRE_DELAY_MS),
-		UNDERSTUDY_GUI_PASTE_POST_DELAY_MS: String(DEFAULT_SYSTEM_EVENTS_PASTE_POST_DELAY_MS),
-		UNDERSTUDY_GUI_KEYSTROKE_CHAR_DELAY_MS:
-			strategy === "system_events_keystroke_chars"
-				? String(DEFAULT_SYSTEM_EVENTS_KEYSTROKE_CHAR_DELAY_MS)
-				: undefined,
-	});
-	return { actionKind };
-}
-
-async function performHotkey(
-	params: GuiKeyParams,
-	repeat: number = 1,
-): Promise<GuiNativeActionResult> {
-	const windowSelection = await resolveScriptWindowSelection({
-		appName: params.app,
-		windowTitle: params.windowTitle,
-		windowSelector: params.windowSelector,
-	});
-	const normalizedKey = normalizeHotkeyKeyName(params.key);
-	const keyCode = COMMON_KEY_CODES[normalizedKey];
-	const actionKind = await runAppleScript(HOTKEY_SCRIPT, {
-		UNDERSTUDY_GUI_APP: params.app?.trim(),
-		...buildScriptWindowSelectionEnv(windowSelection),
-		UNDERSTUDY_GUI_KEY: keyCode ? "" : params.key,
-		UNDERSTUDY_GUI_KEY_CODE: keyCode ? String(keyCode) : "",
-		UNDERSTUDY_GUI_MODIFIERS: (params.modifiers ?? [])
-			.map((modifier) => modifier.trim().toLowerCase())
-			.filter(Boolean)
-			.join(","),
-		UNDERSTUDY_GUI_REPEAT: String(Math.max(1, repeat)),
 	});
 	return { actionKind };
 }
@@ -1604,11 +1783,17 @@ async function performHotkey(
 async function captureScreenshotArtifact(params: {
 	appName?: string;
 	captureMode?: GuiCaptureMode;
+	preferDisplayCapture?: boolean;
 	activateApp?: boolean;
 	windowTitle?: string;
 	windowSelector?: GuiWindowSelector;
 	includeCursor?: boolean;
+	platform?: NodeJS.Platform;
+	signal?: AbortSignal;
 } = {}): Promise<GuiScreenshotArtifact> {
+	if (params.platform === "win32") {
+		return await captureWindowsScreenshotArtifact(params);
+	}
 	const windowSelection = resolveWindowSelection({
 		windowTitle: params.windowTitle,
 		windowSelector: params.windowSelector,
@@ -1616,26 +1801,47 @@ async function captureScreenshotArtifact(params: {
 	const context = await resolveCaptureContext(params.appName, {
 		activateApp: params.activateApp,
 		windowSelector: windowSelection,
+		platform: params.platform,
+		signal: params.signal,
 	});
 	if (windowSelection && params.captureMode !== "display" && !context.windowBounds) {
 		throw createRequestedWindowNotFoundError(params.appName, windowSelection);
 	}
+	const hostSelfExcludeAdjusted = shouldAdjustImplicitDisplayCaptureForHostSelfExclude({
+		context,
+		preferDisplayCapture: params.preferDisplayCapture,
+		explicitCaptureMode: params.captureMode,
+	});
+	const effectiveCaptureMode = hostSelfExcludeAdjusted
+		? undefined
+		: (params.captureMode ?? (params.preferDisplayCapture ? "display" : undefined));
 	const capture = resolveCaptureMode({
 		context,
-		captureMode: params.captureMode,
+		captureMode: effectiveCaptureMode,
 		includeCursor: params.includeCursor,
 	});
+	const captureRect = normalizeRect(capture.captureRect);
 	const tempDir = await mkdtemp(join(tmpdir(), "understudy-gui-screenshot-"));
 	const filePath = join(tempDir, "gui-screenshot.png");
 	try {
-		await execFileAsync("screencapture", [...capture.screencaptureArgs, filePath], {
-			timeout: DEFAULT_TIMEOUT_MS,
-			maxBuffer: 8 * 1024 * 1024,
-		});
-		let bytes: Buffer = Buffer.from(await readFile(filePath));
-		let imageSize = parsePngDimensions(bytes);
-		const captureRect = normalizeRect(capture.captureRect);
-		const scaleX = imageSize?.width && captureRect.width > 0
+			await execFileAsync("screencapture", [...capture.screencaptureArgs, filePath], {
+				timeout: DEFAULT_TIMEOUT_MS,
+				signal: params.signal,
+				maxBuffer: 8 * 1024 * 1024,
+			});
+			const hostSelfExcludeRedactionCount =
+				capture.mode === "display" && context.hostSelfExcludeApplied && context.hostFrontmostExcluded
+					? await redactHostWindowsFromDisplayCapture({
+						appName: params.appName,
+						filePath,
+						captureRect,
+						platform: params.platform,
+						signal: params.signal,
+					})
+					: 0;
+			let bytes: Buffer = Buffer.from(await readFile(filePath));
+			let imageSize = parsePngDimensions(bytes);
+			const scaleX = imageSize?.width && captureRect.width > 0
 			? imageSize.width / captureRect.width
 			: 1;
 		const scaleY = imageSize?.height && captureRect.height > 0
@@ -1647,6 +1853,7 @@ async function captureScreenshotArtifact(params: {
 			mimeType: "image/png",
 			filename: "gui-screenshot.png",
 			metadata: {
+				captureMethod: "screencapture",
 				mode: capture.mode,
 				captureRect,
 				display: context.display,
@@ -1655,18 +1862,27 @@ async function captureScreenshotArtifact(params: {
 				scaleX: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
 				scaleY: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1,
 				appName: params.appName,
-				windowTitle: capture.mode === "window" ? context.windowTitle : undefined,
-				windowCount: capture.mode === "window" ? context.windowCount : undefined,
-				windowCaptureStrategy:
-					capture.mode === "window" ? context.windowCaptureStrategy : undefined,
-				cursor: context.cursor,
-				cursorVisible: Boolean(params.includeCursor),
-			},
+					windowTitle: capture.mode === "window" ? context.windowTitle : undefined,
+					windowCount: capture.mode === "window" ? context.windowCount : undefined,
+					windowCaptureStrategy:
+						capture.mode === "window" ? context.windowCaptureStrategy : undefined,
+					cursor: context.cursor,
+					cursorVisible: Boolean(params.includeCursor),
+					hostSelfExcludeApplied: context.hostSelfExcludeApplied,
+					hostFrontmostExcluded: context.hostFrontmostExcluded,
+					hostSelfExcludeAdjusted,
+					hostFrontmostAppName: context.hostFrontmostAppName,
+					hostFrontmostBundleId: context.hostFrontmostBundleId,
+					hostSelfExcludeRedactionCount,
+				},
 			cleanup: async () => {
 				await rm(tempDir, { recursive: true, force: true }).catch(() => {});
 			},
 		};
 	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
 		await rm(tempDir, { recursive: true, force: true }).catch(() => {});
 		const record = error as {
 			message?: string;
@@ -1684,6 +1900,420 @@ async function captureScreenshotArtifact(params: {
 	}
 }
 
+function resolveWindowsCaptureActivationTarget(params: {
+	appName?: string;
+	windowTitle?: string;
+	windowSelector?: GuiWindowSelector;
+}): string | undefined {
+	const selector = params.windowSelector;
+	return normalizeOptionalString(
+		params.windowTitle
+		?? selector?.title
+		?? selector?.titleContains
+		?? params.appName,
+	);
+}
+
+const WINDOWS_CAPTURE_CONTEXT_SCRIPT = String.raw`
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -TypeDefinition @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+
+public static class UnderstudyWindowsApi {
+	[StructLayout(LayoutKind.Sequential)]
+	public struct RECT {
+		public int Left;
+		public int Top;
+		public int Right;
+		public int Bottom;
+	}
+
+	[DllImport("user32.dll")]
+	public static extern IntPtr GetForegroundWindow();
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+	[DllImport("user32.dll")]
+	public static extern int GetWindowTextLength(IntPtr hWnd);
+
+	[DllImport("user32.dll")]
+	public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+}
+"@
+$activateTarget = $env:UNDERSTUDY_GUI_ACTIVATE_TARGET
+if ($activateTarget -and $env:UNDERSTUDY_GUI_ACTIVATE_APP -ne '0') {
+	$wshell = New-Object -ComObject WScript.Shell
+	try {
+		$null = $wshell.AppActivate($activateTarget)
+		Start-Sleep -Milliseconds 150
+	} catch {}
+}
+$bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+$cursor = [System.Windows.Forms.Cursor]::Position
+$result = @{
+	appName = $env:UNDERSTUDY_GUI_APP
+	display = @{
+		index = 1
+		bounds = @{
+			x = [int]$bounds.Left
+			y = [int]$bounds.Top
+			width = [int]$bounds.Width
+			height = [int]$bounds.Height
+		}
+	}
+	cursor = @{
+		x = [int]$cursor.X
+		y = [int]$cursor.Y
+	}
+}
+if ($env:UNDERSTUDY_GUI_CAPTURE_WINDOW -eq '1') {
+	$handle = [UnderstudyWindowsApi]::GetForegroundWindow()
+	if ($handle -eq [IntPtr]::Zero) {
+		throw "Could not resolve a foreground window for capture."
+	}
+	$titleLength = [UnderstudyWindowsApi]::GetWindowTextLength($handle)
+	$titleBuilder = New-Object System.Text.StringBuilder ([Math]::Max($titleLength + 1, 256))
+	$null = [UnderstudyWindowsApi]::GetWindowText($handle, $titleBuilder, $titleBuilder.Capacity)
+	$title = $titleBuilder.ToString()
+	$rect = New-Object 'UnderstudyWindowsApi+RECT'
+	if (-not [UnderstudyWindowsApi]::GetWindowRect($handle, [ref]$rect)) {
+		throw "Could not resolve foreground window bounds."
+	}
+	$width = [Math]::Max(0, $rect.Right - $rect.Left)
+	$height = [Math]::Max(0, $rect.Bottom - $rect.Top)
+	if ($width -le 0 -or $height -le 0) {
+		throw "Foreground window bounds were empty."
+	}
+	$requestedTitle = $env:UNDERSTUDY_GUI_WINDOW_TITLE
+	if ($requestedTitle -and -not $title.Equals($requestedTitle, [System.StringComparison]::OrdinalIgnoreCase)) {
+		throw "Foreground window title did not match the requested title."
+	}
+	$requestedTitleContains = $env:UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS
+	if ($requestedTitleContains -and $title.IndexOf($requestedTitleContains, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+		throw "Foreground window title did not contain the requested text."
+	}
+	$result.windowTitle = $title
+	$result.windowBounds = @{
+		x = [int]$rect.Left
+		y = [int]$rect.Top
+		width = [int]$width
+		height = [int]$height
+	}
+	$result.windowCount = 1
+	$result.windowCaptureStrategy = 'main_window'
+}
+$result | ConvertTo-Json -Compress
+`;
+
+const WINDOWS_SCREENSHOT_SAVE_SCRIPT = String.raw`
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
+$left = [int]$env:UNDERSTUDY_GUI_CAPTURE_LEFT
+$top = [int]$env:UNDERSTUDY_GUI_CAPTURE_TOP
+$width = [int]$env:UNDERSTUDY_GUI_CAPTURE_WIDTH
+$height = [int]$env:UNDERSTUDY_GUI_CAPTURE_HEIGHT
+if ($width -le 0 -or $height -le 0) {
+	throw "Capture bounds were empty."
+}
+$bitmap = New-Object System.Drawing.Bitmap $width, $height
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+try {
+	$graphics.CopyFromScreen($left, $top, 0, 0, $bitmap.Size)
+	$bitmap.Save($env:UNDERSTUDY_GUI_OUTPUT_PATH, [System.Drawing.Imaging.ImageFormat]::Png)
+} finally {
+	$graphics.Dispose()
+	$bitmap.Dispose()
+}
+Write-Output "powershell_copyfromscreen"
+`;
+
+const WINDOWS_POINTER_EVENT_SCRIPT = String.raw`
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class UnderstudyWindowsMouse {
+	[DllImport("user32.dll")]
+	public static extern bool SetCursorPos(int x, int y);
+
+	[DllImport("user32.dll")]
+	public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+}
+"@
+
+$MOUSEEVENTF_LEFTDOWN = 0x0002
+$MOUSEEVENTF_LEFTUP = 0x0004
+$MOUSEEVENTF_RIGHTDOWN = 0x0008
+$MOUSEEVENTF_RIGHTUP = 0x0010
+$MOUSEEVENTF_WHEEL = 0x0800
+$MOUSEEVENTF_HWHEEL = 0x01000
+
+function Move-Cursor([int]$x, [int]$y) {
+	$null = [UnderstudyWindowsMouse]::SetCursorPos($x, $y)
+}
+
+function Left-Click {
+	[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+	Start-Sleep -Milliseconds 25
+	[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+}
+
+function Right-Click {
+	[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+	Start-Sleep -Milliseconds 25
+	[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_RIGHTUP, 0, 0, 0, [UIntPtr]::Zero)
+}
+
+function Activate-TargetIfNeeded {
+	$activateTarget = $env:UNDERSTUDY_GUI_ACTIVATE_TARGET
+	if (-not $activateTarget -or $env:UNDERSTUDY_GUI_ACTIVATE_APP -eq '0') {
+		return
+	}
+	$wshell = New-Object -ComObject WScript.Shell
+	if (-not $wshell.AppActivate($activateTarget)) {
+		throw "Could not activate a window matching '$activateTarget'."
+	}
+	Start-Sleep -Milliseconds 120
+}
+
+Activate-TargetIfNeeded
+$mode = $env:UNDERSTUDY_GUI_EVENT_MODE
+switch ($mode) {
+	'move' {
+		Move-Cursor([int]$env:UNDERSTUDY_GUI_X, [int]$env:UNDERSTUDY_GUI_Y)
+		Write-Output 'powershell_move'
+	}
+	'hover' {
+		Move-Cursor([int]$env:UNDERSTUDY_GUI_X, [int]$env:UNDERSTUDY_GUI_Y)
+		$settleMs = [Math]::Max(0, [int]$env:UNDERSTUDY_GUI_SETTLE_MS)
+		if ($settleMs -gt 0) {
+			Start-Sleep -Milliseconds $settleMs
+		}
+		Write-Output 'powershell_hover'
+	}
+	'click' {
+		Move-Cursor([int]$env:UNDERSTUDY_GUI_X, [int]$env:UNDERSTUDY_GUI_Y)
+		Left-Click
+		Write-Output 'powershell_click'
+	}
+	'double_click' {
+		Move-Cursor([int]$env:UNDERSTUDY_GUI_X, [int]$env:UNDERSTUDY_GUI_Y)
+		Left-Click
+		Start-Sleep -Milliseconds 40
+		Left-Click
+		Write-Output 'powershell_double_click'
+	}
+	'right_click' {
+		Move-Cursor([int]$env:UNDERSTUDY_GUI_X, [int]$env:UNDERSTUDY_GUI_Y)
+		Right-Click
+		Write-Output 'powershell_right_click'
+	}
+	'click_and_hold' {
+		Move-Cursor([int]$env:UNDERSTUDY_GUI_X, [int]$env:UNDERSTUDY_GUI_Y)
+		[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+		$holdMs = [Math]::Max(0, [int]$env:UNDERSTUDY_GUI_HOLD_DURATION_MS)
+		if ($holdMs -gt 0) {
+			Start-Sleep -Milliseconds $holdMs
+		}
+		[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+		Write-Output 'powershell_click_and_hold'
+	}
+	'drag' {
+		$fromX = [int]$env:UNDERSTUDY_GUI_FROM_X
+		$fromY = [int]$env:UNDERSTUDY_GUI_FROM_Y
+		$toX = [int]$env:UNDERSTUDY_GUI_TO_X
+		$toY = [int]$env:UNDERSTUDY_GUI_TO_Y
+		$steps = [Math]::Max(1, [int]$env:UNDERSTUDY_GUI_STEPS)
+		$durationMs = [Math]::Max(0, [int]$env:UNDERSTUDY_GUI_DURATION_MS)
+		$stepDelayMs = if ($steps -gt 0) { [Math]::Max(0, [Math]::Round($durationMs / $steps)) } else { 0 }
+		Move-Cursor($fromX, $fromY)
+		Start-Sleep -Milliseconds 30
+		[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+		for ($step = 1; $step -le $steps; $step++) {
+			$currentX = [Math]::Round($fromX + (($toX - $fromX) * $step / $steps))
+			$currentY = [Math]::Round($fromY + (($toY - $fromY) * $step / $steps))
+			Move-Cursor([int]$currentX, [int]$currentY)
+			if ($stepDelayMs -gt 0) {
+				Start-Sleep -Milliseconds $stepDelayMs
+			}
+		}
+		[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+		Write-Output 'powershell_drag'
+	}
+	'scroll' {
+		if ($env:UNDERSTUDY_GUI_X -and $env:UNDERSTUDY_GUI_Y) {
+			Move-Cursor([int]$env:UNDERSTUDY_GUI_X, [int]$env:UNDERSTUDY_GUI_Y)
+			Start-Sleep -Milliseconds 30
+		}
+		$scrollX = [int]$env:UNDERSTUDY_GUI_SCROLL_X
+		$scrollY = [int]$env:UNDERSTUDY_GUI_SCROLL_Y
+		$wheelStep = 120
+		$verticalSteps = [Math]::Max(1, [Math]::Round([Math]::Abs($scrollY) / $wheelStep))
+		$horizontalSteps = [Math]::Max(1, [Math]::Round([Math]::Abs($scrollX) / $wheelStep))
+		if ($scrollY -ne 0) {
+			$verticalDelta = [int]([Math]::Sign($scrollY) * $wheelStep)
+			for ($step = 0; $step -lt $verticalSteps; $step++) {
+				[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_WHEEL, 0, 0, [uint32]$verticalDelta, [UIntPtr]::Zero)
+				Start-Sleep -Milliseconds 20
+			}
+		}
+		if ($scrollX -ne 0) {
+			$horizontalDelta = [int]([Math]::Sign($scrollX) * $wheelStep)
+			for ($step = 0; $step -lt $horizontalSteps; $step++) {
+				[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_HWHEEL, 0, 0, [uint32]$horizontalDelta, [UIntPtr]::Zero)
+				Start-Sleep -Milliseconds 20
+			}
+		}
+		Write-Output 'powershell_scroll'
+	}
+	'cleanup' {
+		[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+		[UnderstudyWindowsMouse]::mouse_event($MOUSEEVENTF_RIGHTUP, 0, 0, 0, [UIntPtr]::Zero)
+		Write-Output 'powershell_cleanup'
+	}
+	default {
+		throw "Unsupported Windows GUI event mode '$mode'."
+	}
+}
+`;
+
+async function resolveWindowsCaptureContext(params: {
+	appName?: string;
+	activateApp?: boolean;
+	windowSelector?: GuiWindowSelector;
+	signal?: AbortSignal;
+	captureWindow?: boolean;
+}): Promise<GuiCaptureContext> {
+	const windowSelection = resolveWindowSelection({
+		windowSelector: params.windowSelector,
+	});
+	if (windowSelection?.index !== undefined) {
+		throw new GuiRuntimeError(
+			"Windows GUI window index selection is not implemented yet.",
+		);
+	}
+	const raw = await runWindowsPowerShell({
+		script: WINDOWS_CAPTURE_CONTEXT_SCRIPT,
+		env: {
+			UNDERSTUDY_GUI_APP: params.appName?.trim(),
+			UNDERSTUDY_GUI_ACTIVATE_APP: params.activateApp === false ? "0" : "1",
+			UNDERSTUDY_GUI_ACTIVATE_TARGET: resolveWindowsCaptureActivationTarget({
+				appName: params.appName,
+				windowSelector: windowSelection,
+			}),
+			UNDERSTUDY_GUI_CAPTURE_WINDOW: params.captureWindow ? "1" : "0",
+			...buildWindowSelectionEnv(windowSelection),
+		},
+		signal: params.signal,
+		failureMessage:
+			"Windows GUI capture helper failed. Ensure PowerShell desktop capture is available.",
+	});
+	return parseCaptureContext(raw);
+}
+
+async function captureWindowsScreenshotArtifact(params: {
+	appName?: string;
+	captureMode?: GuiCaptureMode;
+	preferDisplayCapture?: boolean;
+	activateApp?: boolean;
+	windowTitle?: string;
+	windowSelector?: GuiWindowSelector;
+	includeCursor?: boolean;
+	signal?: AbortSignal;
+}): Promise<GuiScreenshotArtifact> {
+	const tempDir = await mkdtemp(join(tmpdir(), "understudy-gui-screenshot-"));
+	const filePath = join(tempDir, "gui-screenshot.png");
+	try {
+		const windowSelection = resolveWindowSelection({
+			windowTitle: params.windowTitle,
+			windowSelector: params.windowSelector,
+		});
+		const captureWindow =
+			params.captureMode === "window" ||
+			(params.captureMode !== "display" &&
+				(params.appName?.trim() || windowSelection));
+		const context = await resolveWindowsCaptureContext({
+			appName: params.appName,
+			activateApp: params.activateApp,
+			windowSelector: windowSelection,
+			signal: params.signal,
+			captureWindow: Boolean(captureWindow),
+		});
+		const captureRect = captureWindow && context.windowBounds
+			? normalizeRect(context.windowBounds)
+			: normalizeRect(context.display.bounds);
+		await runWindowsPowerShell({
+			script: WINDOWS_SCREENSHOT_SAVE_SCRIPT,
+			env: {
+				UNDERSTUDY_GUI_OUTPUT_PATH: filePath,
+				UNDERSTUDY_GUI_CAPTURE_LEFT: String(captureRect.x),
+				UNDERSTUDY_GUI_CAPTURE_TOP: String(captureRect.y),
+				UNDERSTUDY_GUI_CAPTURE_WIDTH: String(captureRect.width),
+				UNDERSTUDY_GUI_CAPTURE_HEIGHT: String(captureRect.height),
+			},
+			signal: params.signal,
+			failureMessage:
+				"Windows screenshot capture failed. Ensure PowerShell desktop capture is available.",
+		});
+		let bytes: Buffer = Buffer.from(await readFile(filePath));
+		const imageSize = parsePngDimensions(bytes);
+		const scaleX = imageSize?.width && captureRect.width > 0
+			? imageSize.width / captureRect.width
+			: 1;
+		const scaleY = imageSize?.height && captureRect.height > 0
+			? imageSize.height / captureRect.height
+			: 1;
+		return {
+			bytes,
+			filePath,
+			mimeType: "image/png",
+			filename: "gui-screenshot.png",
+			metadata: {
+				captureMethod: "powershell_copyfromscreen",
+				mode: captureWindow && context.windowBounds ? "window" : "display",
+				captureRect,
+				display: context.display,
+				imageWidth: imageSize?.width,
+				imageHeight: imageSize?.height,
+				scaleX: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
+				scaleY: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1,
+				appName: params.appName,
+				windowTitle: captureWindow ? context.windowTitle : undefined,
+				windowCount: captureWindow ? context.windowCount : undefined,
+				windowCaptureStrategy: captureWindow ? context.windowCaptureStrategy : undefined,
+				cursor: context.cursor,
+				cursorVisible: false,
+			},
+			cleanup: async () => {
+				await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+			},
+		};
+	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
+		await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		const record = error as {
+			message?: string;
+			stderr?: string;
+			stdout?: string;
+		};
+		const details = [record.stderr, record.stdout]
+			.map((value) => (typeof value === "string" ? value.trim() : ""))
+			.filter(Boolean)
+			.join(" ");
+		const message = [record.message ?? String(error), details].filter(Boolean).join(" ").trim();
+		throw new GuiRuntimeError(
+			`Windows screenshot capture failed. Ensure PowerShell desktop capture is available. ${message}`.trim(),
+		);
+	}
+}
+
 function screenshotArtifactToImage(
 	artifact: Pick<GuiScreenshotArtifact, "bytes" | "mimeType" | "filename">,
 ): { data: string; mimeType: string; filename: string } {
@@ -1697,23 +2327,176 @@ function screenshotArtifactToImage(
 export interface ComputerUseGuiRuntimeOptions {
 	groundingProvider?: GuiGroundingProvider;
 	environmentReadiness?: GuiEnvironmentReadinessSnapshot;
+	platform?: NodeJS.Platform;
+	physicalResourceLock?: PhysicalResourceLock | null;
+	sessionId?: string;
+	emergencyStopProvider?: GuiEmergencyStopProvider | null;
 }
 
 export class ComputerUseGuiRuntime {
 	private lastGroundingResolutionError: string | undefined;
+	private readonly runtimeSessionId: string;
+	private readonly defaultPhysicalResourceLock: PhysicalResourceLock | null;
+	private readonly defaultEmergencyStopProvider: GuiEmergencyStopProvider | null;
 
-	constructor(private readonly options: ComputerUseGuiRuntimeOptions = {}) {}
+	constructor(private readonly options: ComputerUseGuiRuntimeOptions = {}) {
+		this.runtimeSessionId = options.sessionId?.trim() || randomUUID();
+		this.defaultPhysicalResourceLock = options.physicalResourceLock === undefined
+			? (process.env.UNDERSTUDY_GUI_DISABLE_PHYSICAL_RESOURCE_LOCK === "1"
+				? null
+				: new FilePhysicalResourceLock())
+			: options.physicalResourceLock;
+		this.defaultEmergencyStopProvider = options.emergencyStopProvider === undefined
+			? (process.env.UNDERSTUDY_GUI_DISABLE_EMERGENCY_STOP === "1" ||
+				(this.options.platform ?? process.platform) !== "darwin"
+				? null
+				: createNativeEmergencyStopProvider())
+			: options.emergencyStopProvider;
+	}
+
+	private runtimePlatform(): NodeJS.Platform {
+		return this.options.platform ?? process.platform;
+	}
+
+	private runtimeBackend() {
+		return resolveGuiPlatformBackend(this.runtimePlatform());
+	}
+
+	private runtimePhysicalResourceLock(): PhysicalResourceLock | null {
+		return this.defaultPhysicalResourceLock;
+	}
+
+	private runtimeEmergencyStopProvider(): GuiEmergencyStopProvider | null {
+		return this.defaultEmergencyStopProvider;
+	}
+
+	private formatPhysicalResourceLockHolder(holder: PhysicalResourceLockHolder | undefined): string {
+		if (!holder) {
+			return "another GUI session";
+		}
+		const parts = [
+			holder.toolName ? `tool ${holder.toolName}` : undefined,
+			holder.pid ? `pid ${holder.pid}` : undefined,
+			holder.acquiredAt
+				? `acquired ${new Date(holder.acquiredAt).toISOString()}`
+				: undefined,
+		].filter(Boolean);
+		return parts.length > 0 ? `${parts.join(", ")}` : "another GUI session";
+	}
+
+	private async withGuiActionSession(
+		toolName: GuiToolName,
+		options: {
+			signal?: AbortSignal;
+			acquireLock?: boolean;
+		},
+		run: (session: GuiActionSession) => Promise<GuiActionResult>,
+	): Promise<GuiActionResult> {
+		const session = new GuiActionSession(toolName, options.signal);
+		try {
+				if (options.acquireLock !== false) {
+					const lock = this.runtimePhysicalResourceLock();
+					if (lock) {
+					const acquisition = await lock.acquire({
+						sessionId: this.runtimeSessionId,
+						pid: process.pid,
+						acquiredAt: Date.now(),
+						toolName,
+					});
+					if (acquisition.state === "blocked") {
+						return unsupportedResult(
+							`GUI physical resources are currently locked by ${this.formatPhysicalResourceLockHolder(acquisition.holder)}.`,
+						);
+					}
+						session.registerCleanup("physical_resource_lock", async () => {
+							await lock.release({
+								sessionId: this.runtimeSessionId,
+								pid: process.pid,
+							}).catch(() => {});
+						});
+					}
+					session.registerCleanup("input_state_cleanup", async () => {
+						await performBestEffortInputCleanup(this.runtimePlatform());
+					}, 1_000);
+				}
+			const emergencyStopProvider = this.runtimeEmergencyStopProvider();
+			if (emergencyStopProvider) {
+				const handle = await emergencyStopProvider.start({
+					toolName,
+					signal: session.signal,
+					onEmergencyStop: () => {
+						session.handleEmergencyStop();
+					},
+				});
+				if (handle) {
+					session.registerCleanup("emergency_stop_monitor", async () => {
+						await handle.stop();
+					}, 1_000);
+				}
+			}
+			session.throwIfAborted();
+			return await run(session);
+		} finally {
+			await session.cleanup();
+		}
+	}
+
+	private runtimeInputDependencies(signal?: AbortSignal): GuiPlatformInputDependencies {
+		return {
+			signal,
+			resolveCaptureContext: async (appName, options = {}) =>
+				await resolveCaptureContext(appName, {
+					...options,
+					platform: this.runtimePlatform(),
+					signal: options.signal ?? signal,
+				}),
+			createRequestedWindowNotFoundError,
+			runAppleScript: async (params) =>
+				await runAppleScript(
+					params.script,
+					params.env,
+					params.args,
+					params.timeoutMs,
+					params.signal ?? signal,
+				),
+			runNativeHelper: async (params) =>
+				await runNativeHelper({
+					...params,
+					signal: params.signal ?? signal,
+				}),
+		};
+	}
 
 	hasGroundingProvider(): boolean {
 		return Boolean(this.options.groundingProvider);
 	}
 
-	describeCapabilities(platform: NodeJS.Platform = process.platform): GuiRuntimeCapabilitySnapshot {
+	describeCapabilities(platform?: NodeJS.Platform): GuiRuntimeCapabilitySnapshot {
 		return resolveGuiRuntimeCapabilities({
-			platform,
+			platform: platform ?? this.runtimePlatform(),
 			groundingAvailable: this.hasGroundingProvider(),
 			environmentReadiness: this.options.environmentReadiness,
 		});
+	}
+
+	private toolCapability(toolName: GuiToolName): GuiToolCapability {
+		return this.describeCapabilities().toolAvailability[toolName];
+	}
+
+	private unsupportedToolResult(
+		toolName: GuiToolName,
+		options: {
+			target?: string;
+		} = {},
+	): GuiActionResult | undefined {
+		const capability = this.toolCapability(toolName);
+		if (!capability.enabled) {
+			return unsupportedResult(capability.reason ?? this.runtimeBackend().unsupportedMessage);
+		}
+		if (capability.targetlessOnly && options.target?.trim()) {
+			return unsupportedResult(capability.reason ?? this.runtimeBackend().unsupportedMessage);
+		}
+		return undefined;
 	}
 
 	private requireGroundingProvider(): GuiGroundingProvider {
@@ -1775,8 +2558,10 @@ export class ComputerUseGuiRuntime {
 		relatedLocationHint?: string;
 		relatedPoint?: GuiPoint;
 		relatedBox?: GuiRect;
+		session?: GuiActionSession;
 	}): Promise<GroundedGuiTarget | undefined> {
 		this.lastGroundingResolutionError = undefined;
+		params.session?.throwIfAborted();
 		const normalizedTarget = params.target?.trim();
 		if (!normalizedTarget) {
 			return undefined;
@@ -1795,6 +2580,7 @@ export class ComputerUseGuiRuntime {
 			relatedLocationHint: params.relatedLocationHint,
 			relatedPoint: params.relatedPoint,
 			relatedBox: params.relatedBox,
+			session: params.session,
 		});
 	}
 
@@ -1839,13 +2625,16 @@ export class ComputerUseGuiRuntime {
 		relatedLocationHint?: string;
 		relatedPoint?: GuiPoint;
 		relatedBox?: GuiRect;
+		session?: GuiActionSession;
 	}): Promise<GroundedGuiTarget | undefined> {
+		params.session?.throwIfAborted();
 		const provider = this.requireGroundingProvider();
 		const groundingMode: GuiGroundingMode | undefined = params.groundingMode
 			? normalizeGuiGroundingMode(params.groundingMode)
 			: defaultGroundingModeForAction(params.action);
 		const grounded = await provider.ground({
 			imagePath: params.artifact.filePath,
+			signal: params.session?.signal,
 			logicalImageWidth: params.artifact.metadata.captureRect.width,
 			logicalImageHeight: params.artifact.metadata.captureRect.height,
 			imageScaleX: params.artifact.metadata.scaleX,
@@ -1866,6 +2655,7 @@ export class ComputerUseGuiRuntime {
 			relatedBox: params.relatedBox,
 			previousFailures: [],
 		});
+		params.session?.throwIfAborted();
 		if (!grounded) {
 			return undefined;
 		}
@@ -1931,6 +2721,7 @@ export class ComputerUseGuiRuntime {
 		timeoutMs: number;
 		intervalMs?: number;
 		activateApp?: boolean;
+		session: GuiActionSession;
 	}): Promise<GuiTargetProbe> {
 		const deadline = Date.now() + params.timeoutMs;
 		const intervalMs = params.intervalMs ?? DEFAULT_WAIT_INTERVAL_MS;
@@ -1941,6 +2732,7 @@ export class ComputerUseGuiRuntime {
 		let lastImage: GuiActionResult["image"] | undefined;
 
 		while (attempts === 0 || Date.now() < deadline) {
+			params.session.throwIfAborted();
 			attempts += 1;
 			// When no explicit captureMode is specified, retry with display capture after the first
 			// miss. This helps detect targets that appear outside the original window bounds (e.g.
@@ -1953,10 +2745,13 @@ export class ComputerUseGuiRuntime {
 				captureMode: attemptCaptureMode,
 				activateApp: params.activateApp,
 				windowSelector: params.windowSelector,
+				platform: this.runtimePlatform(),
+				signal: params.session.signal,
 			});
 			try {
 				lastCapture = artifact.metadata;
 				lastImage = screenshotArtifactToImage(artifact);
+				params.session.throwIfAborted();
 				if (Date.now() >= deadline) {
 					lastGrounded = undefined;
 					break;
@@ -1969,6 +2764,7 @@ export class ComputerUseGuiRuntime {
 					scope: params.scope,
 					app: params.appName,
 					action: "wait",
+					session: params.session,
 				});
 			} finally {
 				await artifact.cleanup();
@@ -1993,7 +2789,7 @@ export class ComputerUseGuiRuntime {
 			if (remainingIntervalMs <= 0) {
 				break;
 			}
-			await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, remainingIntervalMs)));
+			await params.session.sleep(Math.min(intervalMs, remainingIntervalMs));
 		}
 
 			return {
@@ -2010,8 +2806,10 @@ export class ComputerUseGuiRuntime {
 		captureMode?: GuiCaptureMode;
 		windowSelector?: GuiWindowSelector;
 		settleMs?: number;
+		session?: GuiActionSession;
 	}): Promise<{ image?: GuiActionResult["image"]; details?: Record<string, unknown> }> {
 		try {
+			params.session?.throwIfAborted();
 			const settleMs = Math.max(
 				0,
 				Math.round(
@@ -2021,13 +2819,19 @@ export class ComputerUseGuiRuntime {
 				),
 			);
 			if (settleMs > 0) {
-				await new Promise((resolve) => setTimeout(resolve, settleMs));
+				if (params.session) {
+					await params.session.sleep(settleMs);
+				} else {
+					await new Promise((resolve) => setTimeout(resolve, settleMs));
+				}
 			}
 			const artifact = await captureScreenshotArtifact({
 				appName: params.appName,
 				captureMode: params.captureMode,
 				activateApp: false,
 				windowSelector: params.windowSelector,
+				platform: this.runtimePlatform(),
+				signal: params.session?.signal,
 			});
 			try {
 				return {
@@ -2041,11 +2845,15 @@ export class ComputerUseGuiRuntime {
 				await artifact.cleanup();
 			}
 		} catch {
+			if (params.session?.signal.aborted) {
+				params.session.throwIfAborted();
+			}
 			return {};
 		}
 	}
 
 	private async executeGroundedPointAction(
+		session: GuiActionSession,
 		params: GroundedPointActionRequest,
 	): Promise<GuiActionResult> {
 		const windowSelection = resolveWindowSelection({
@@ -2056,6 +2864,8 @@ export class ComputerUseGuiRuntime {
 			appName: params.appName,
 			captureMode: params.captureMode,
 			windowSelector: windowSelection,
+			platform: this.runtimePlatform(),
+			signal: session.signal,
 		});
 		try {
 			const targetDescription = describeGuiTarget({
@@ -2070,6 +2880,7 @@ export class ComputerUseGuiRuntime {
 				scope: params.scope,
 				app: params.appName,
 				action: params.action,
+				session,
 			});
 			if (!grounded) {
 				return buildGuiResult({
@@ -2087,11 +2898,13 @@ export class ComputerUseGuiRuntime {
 				});
 			}
 
+			session.throwIfAborted();
 			const action = await params.execute(grounded.point);
 			const evidence = await this.captureEvidenceImage({
 				appName: params.appName,
 				captureMode: params.captureMode,
 				windowSelector: windowSelection,
+				session,
 			});
 			return buildGuiResult({
 				text: params.successText({
@@ -2118,346 +2931,280 @@ export class ComputerUseGuiRuntime {
 		}
 	}
 
-	async observe(params: GuiObserveParams = {}): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
-		}
-
-		const appName = normalizeOptionalString(params.app);
-		const windowSelection = resolveWindowSelection({
-			windowTitle: params.windowTitle,
-			windowSelector: params.windowSelector,
-		});
-		const captureMode = params.captureMode ?? (!appName && !params.target?.trim() ? "display" : undefined);
-		const artifact = await captureScreenshotArtifact({
-			appName,
-			captureMode,
-			windowSelector: windowSelection,
-			includeCursor: !params.target?.trim(),
-		});
-		try {
-			const image = params.returnImage === false ? undefined : screenshotArtifactToImage(artifact);
-			const observation = createScreenshotObservation(appName, artifact.metadata.windowTitle);
-			if (!params.target?.trim()) {
-				return buildGuiResult({
-					text: [
-							appName
-								? `Captured a visual GUI snapshot for ${appName}.`
-								: "Captured the current desktop state for visual GUI inspection.",
-							"Use the attached screenshot to inspect the scene or call vision_read for a second focused read.",
-						].join("\n"),
-					observation,
-					status: "observed",
-					summary: "Visual GUI snapshot captured.",
-					details: {
-						...buildCaptureDetails(artifact.metadata),
-						grounding_method: "screenshot",
-						confidence: 1,
-						app: appName,
-					},
-					image,
-				});
-			}
-
-			const grounded = await this.resolveGuiTarget({
-				artifact,
+		async observe(params: GuiObserveParams = {}, signal?: AbortSignal): Promise<GuiActionResult> {
+			const unsupported = this.unsupportedToolResult("gui_observe", {
 				target: params.target,
-				groundingMode: params.groundingMode,
-				locationHint: params.locationHint,
-				scope: params.scope,
-				app: appName,
-				action: "observe",
 			});
-			if (!grounded) {
-				return buildGuiResult({
-					text: `Could not visually ground "${params.target}" in the current screenshot.`,
-					observation,
-					status: "not_found",
-					summary: "No confident visual GUI target was found.",
-					details: {
-						error: "No confident visual GUI target was found.",
-						...buildCaptureDetails(artifact.metadata),
-						grounding_method: "grounding",
-						confidence: 0,
-						app: appName,
-					},
-					image,
+		if (unsupported) {
+			return unsupported;
+		}
+
+			return await this.withGuiActionSession("gui_observe", { signal, acquireLock: false }, async (session) => {
+				const appName = normalizeOptionalString(params.app);
+				const windowSelection = resolveWindowSelection({
+					windowTitle: params.windowTitle,
+					windowSelector: params.windowSelector,
 				});
-			}
-
-			return buildGuiResult({
-				text: [
-					`Resolved "${params.target}" visually${appName ? ` in ${appName}` : ""}.`,
-					`Confidence: ${grounded.grounded.confidence.toFixed(2)}`,
-					`Reason: ${grounded.grounded.reason}`,
-				].join("\n"),
-				observation,
-				resolution: grounded.resolution,
-				status: "resolved",
-				summary: "Resolved a GUI target from the screenshot grounding route.",
-				details: {
-					...buildCaptureDetails(artifact.metadata),
-					...this.groundingDetails(grounded),
-					app: appName,
-				},
-				image,
-			});
-		} finally {
-			await artifact.cleanup();
-		}
-	}
-
-	async click(params: GuiClickParams): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
-		}
-
-		const appName = normalizeOptionalString(params.app);
-		const intent = resolveClickActionIntent(params);
-
-		const actionLabels: Record<PointActionIntent, {
-			notFound: (desc: string) => string;
-			success: (params: { targetDescription: string; actionKind: string; appName?: string }) => string;
-			summary: string;
-		}> = {
-			click: {
-				notFound: (desc) => `Could not visually resolve a clickable GUI target matching ${desc}.`,
-				success: ({ targetDescription, actionKind, appName: a }) =>
-					`Clicked ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
-				summary: "GUI click was sent.",
-			},
-			right_click: {
-				notFound: (desc) => `Could not visually resolve a GUI target to right click matching ${desc}.`,
-				success: ({ targetDescription, actionKind, appName: a }) =>
-					`Right-clicked ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
-				summary: "GUI right click was sent.",
-			},
-			double_click: {
-				notFound: (desc) => `Could not visually resolve a GUI target to double click matching ${desc}.`,
-				success: ({ targetDescription, actionKind, appName: a }) =>
-					`Double-clicked ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
-				summary: "GUI double click was sent.",
-			},
-			hover: {
-				notFound: (desc) => `Could not visually resolve a GUI target to hover matching ${desc}.`,
-				success: ({ targetDescription, actionKind, appName: a }) =>
-					`Hovered ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
-				summary: "GUI hover was sent.",
-			},
-			click_and_hold: {
-				notFound: (desc) => `Could not visually resolve a GUI target to click and hold matching ${desc}.`,
-				success: ({ targetDescription, actionKind, appName: a }) =>
-					`Clicked and held ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
-				summary: "GUI click and hold was sent.",
-			},
-		};
-
-		const labels = actionLabels[intent];
-		const settleMs = Math.max(0, Math.round(params.settleMs ?? DEFAULT_HOVER_SETTLE_MS));
-		const holdMs = Math.max(100, Math.round(params.holdMs ?? DEFAULT_CLICK_AND_HOLD_MS));
-
-		const executeForIntent = async (point: GuiPoint): Promise<GuiNativeActionResult> => {
-			switch (intent) {
-				case "right_click":
-					return performRightClick(appName, point, { activateApp: false });
-				case "double_click":
-					return performDoubleClick(appName, point, { activateApp: false });
-				case "hover":
-					return performHover(appName, point, settleMs, { activateApp: false });
-				case "click_and_hold":
-					return performClickAndHold(appName, point, holdMs, { activateApp: false });
-				default:
-					return performPointClick(appName, point, { activateApp: false });
-			}
-		};
-
-		const extraDetails: Record<string, unknown> = {};
-		if (intent === "hover") extraDetails.settle_ms = settleMs;
-		if (intent === "click_and_hold") extraDetails.hold_duration_ms = holdMs;
-
-		return await this.executeGroundedPointAction({
-			appName,
-			target: params.target,
-			scope: params.scope,
-			groundingMode: params.groundingMode,
-			locationHint: params.locationHint,
-			captureMode: params.captureMode,
-			windowTitle: params.windowTitle,
-			windowSelector: params.windowSelector,
-			action: intent,
-			targetFallback: "the requested GUI target",
-			notFoundText: labels.notFound,
-			successText: labels.success,
-			summary: labels.summary,
-			execute: executeForIntent,
-			extraDetails: Object.keys(extraDetails).length > 0 ? extraDetails : undefined,
-		});
-	}
-
-	async drag(params: GuiDragParams): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
-		}
-
-		const appName = normalizeOptionalString(params.app);
-		const fromScope = params.fromScope;
-		const toScope = params.toScope;
-		const windowSelection = resolveWindowSelection({
-			windowTitle: params.windowTitle,
-			windowSelector: params.windowSelector,
-		});
-		const artifact = await captureScreenshotArtifact({
-			appName,
-			captureMode: params.captureMode,
-			windowSelector: windowSelection,
-		});
-		try {
-			const sourceDescription = describeGuiTarget({
-				target: params.fromTarget,
-				fallback: "the drag source",
-			});
-			const destinationDescription = describeGuiTarget({
-				target: params.toTarget,
-				fallback: "the drag destination",
-			});
-			const source = await this.resolveGuiTarget({
-				artifact,
-				target: params.fromTarget,
-				groundingMode: params.groundingMode,
-				locationHint: params.fromLocationHint,
-				scope: fromScope,
-				app: appName,
-				action: "drag_source",
-				relatedTarget: params.toTarget,
-				relatedScope: toScope,
-				relatedAction: "drag_destination",
-				relatedLocationHint: params.toLocationHint,
-			});
-			if (!source) {
-				return buildGuiResult({
-					text: `Could not visually resolve a drag source matching ${sourceDescription}.`,
-					status: "not_found",
-					summary: "No confident visual drag source was found.",
-					details: {
-						error: "No confident visual drag source was found.",
-						...buildCaptureDetails(artifact.metadata),
-						...this.targetResolutionDetails(undefined),
-						confidence: 0,
-						app: appName,
-					},
-					image: screenshotArtifactToImage(artifact),
-				});
-			}
-
-			const destination = await this.resolveGuiTarget({
-				artifact,
-				target: params.toTarget,
-				groundingMode: params.groundingMode,
-				locationHint: params.toLocationHint,
-				scope: toScope,
-				app: appName,
-				action: "drag_destination",
-				relatedTarget: params.fromTarget,
-				relatedScope: fromScope,
-				relatedAction: "drag_source",
-				relatedLocationHint: params.fromLocationHint,
-				relatedPoint: source.point,
-				relatedBox: source.displayBox,
-			});
-			if (!destination) {
-				return buildGuiResult({
-					text: `Could not visually resolve a drag destination matching ${destinationDescription}.`,
-					status: "not_found",
-					summary: "No confident visual drag destination was found.",
-					details: {
-						error: "No confident visual drag destination was found.",
-						...buildCaptureDetails(artifact.metadata),
-						...this.targetResolutionDetails(undefined),
-						confidence: 0,
-						app: appName,
-					},
-					image: screenshotArtifactToImage(artifact),
-				});
-			}
-
-			const action = await performDrag(
-				appName,
-				source.point,
-				destination.point,
-				Math.max(100, params.durationMs ?? DEFAULT_DRAG_DURATION_MS),
-				{ activateApp: true },
-			);
-			const evidence = await this.captureEvidenceImage({
-				appName,
-				captureMode: params.captureMode,
-				windowSelector: windowSelection,
-			});
-			return buildGuiResult({
-				text: `Dragged from ${sourceDescription} to ${destinationDescription} via ${action.actionKind}.`,
-				resolution: source.resolution,
-				status: "action_sent",
-				summary: "GUI drag was sent.",
-				details: {
-					action_kind: action.actionKind,
-					...this.targetResolutionDetails(source),
-					destination_target_resolution: {
-						...this.targetResolutionDetails(destination),
-						reason: destination.grounded.reason,
-					},
-					...evidence.details,
-					confidence: Math.min(source.grounded.confidence, destination.grounded.confidence),
-					app: appName,
-					executed_from_point: source.point,
-					executed_to_point: destination.point,
-					pre_action_capture: buildCaptureDetails(source.artifact),
-				},
-				image: evidence.image,
-			});
-		} finally {
-			await artifact.cleanup();
-		}
-	}
-
-	async scroll(params: GuiScrollParams = {}): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
-		}
-
-		const appName = normalizeOptionalString(params.app);
-		const scope = params.scope;
-		const windowSelection = resolveWindowSelection({
-			windowTitle: params.windowTitle,
-			windowSelector: params.windowSelector,
-		});
-		const targetDescription = describeGuiTarget({
-			target: params.target,
-			fallback: "the current surface",
-		});
-		let context: GuiCaptureContext | undefined;
-		let grounded: GroundedGuiTarget | undefined;
-		if (params.target?.trim()) {
+				if (
+					this.runtimePlatform() === "win32" &&
+					hasUnsupportedWindowsWindowSelection(windowSelection)
+				) {
+					return unsupportedResult(
+						"Windows GUI observation does not support window index selection yet. Omit `windowSelector.index`.",
+					);
+				}
 				const artifact = await captureScreenshotArtifact({
 					appName,
 					captureMode: params.captureMode,
-					windowSelector: windowSelection,
+				preferDisplayCapture: !params.captureMode && !appName && !params.target?.trim(),
+				windowSelector: windowSelection,
+				includeCursor: !params.target?.trim(),
+				platform: this.runtimePlatform(),
+				signal: session.signal,
 			});
 			try {
-						grounded = await this.resolveGuiTarget({
-							artifact,
-							target: params.target,
-							groundingMode: params.groundingMode,
-							locationHint: params.locationHint,
-							scope,
+				const image = params.returnImage === false ? undefined : screenshotArtifactToImage(artifact);
+				const observation = createScreenshotObservation(
+					appName,
+					artifact.metadata.windowTitle,
+					this.runtimePlatform(),
+				);
+				if (!params.target?.trim()) {
+					return buildGuiResult({
+						text: [
+								appName
+									? `Captured a visual GUI snapshot for ${appName}.`
+									: "Captured the current desktop state for visual GUI inspection.",
+								"Use the attached screenshot to inspect the scene or call vision_read for a second focused read.",
+							].join("\n"),
+						observation,
+						status: "observed",
+						summary: "Visual GUI snapshot captured.",
+						details: {
+							...buildCaptureDetails(artifact.metadata),
+							grounding_method: "screenshot",
+							confidence: 1,
 							app: appName,
-							action: "scroll",
-						});
+						},
+						image,
+					});
+				}
+
+				const grounded = await this.resolveGuiTarget({
+					artifact,
+					target: params.target,
+					groundingMode: params.groundingMode,
+					locationHint: params.locationHint,
+					scope: params.scope,
+					app: appName,
+					action: "observe",
+					session,
+				});
 				if (!grounded) {
 					return buildGuiResult({
-						text: `Could not visually resolve a GUI target to scroll matching ${targetDescription}.`,
+						text: `Could not visually ground "${params.target}" in the current screenshot.`,
+						observation,
 						status: "not_found",
 						summary: "No confident visual GUI target was found.",
 						details: {
 							error: "No confident visual GUI target was found.",
+							...buildCaptureDetails(artifact.metadata),
+							grounding_method: "grounding",
+							confidence: 0,
+							app: appName,
+						},
+						image,
+					});
+				}
+
+				return buildGuiResult({
+					text: [
+						`Resolved "${params.target}" visually${appName ? ` in ${appName}` : ""}.`,
+						`Confidence: ${grounded.grounded.confidence.toFixed(2)}`,
+						`Reason: ${grounded.grounded.reason}`,
+					].join("\n"),
+					observation,
+					resolution: grounded.resolution,
+					status: "resolved",
+					summary: "Resolved a GUI target from the screenshot grounding route.",
+					details: {
+						...buildCaptureDetails(artifact.metadata),
+						...this.groundingDetails(grounded),
+						app: appName,
+					},
+					image,
+				});
+			} finally {
+				await artifact.cleanup();
+			}
+		});
+	}
+
+	async click(params: GuiClickParams, signal?: AbortSignal): Promise<GuiActionResult> {
+		const unsupported = this.unsupportedToolResult("gui_click", {
+			target: params.target,
+		});
+		if (unsupported) {
+			return unsupported;
+		}
+
+		return await this.withGuiActionSession("gui_click", { signal }, async (session) => {
+			const appName = normalizeOptionalString(params.app);
+			const intent = resolveClickActionIntent(params);
+
+			const actionLabels: Record<PointActionIntent, {
+				notFound: (desc: string) => string;
+				success: (params: { targetDescription: string; actionKind: string; appName?: string }) => string;
+				summary: string;
+			}> = {
+				click: {
+					notFound: (desc) => `Could not visually resolve a clickable GUI target matching ${desc}.`,
+					success: ({ targetDescription, actionKind, appName: a }) =>
+						`Clicked ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
+					summary: "GUI click was sent.",
+				},
+				right_click: {
+					notFound: (desc) => `Could not visually resolve a GUI target to right click matching ${desc}.`,
+					success: ({ targetDescription, actionKind, appName: a }) =>
+						`Right-clicked ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
+					summary: "GUI right click was sent.",
+				},
+				double_click: {
+					notFound: (desc) => `Could not visually resolve a GUI target to double click matching ${desc}.`,
+					success: ({ targetDescription, actionKind, appName: a }) =>
+						`Double-clicked ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
+					summary: "GUI double click was sent.",
+				},
+				hover: {
+					notFound: (desc) => `Could not visually resolve a GUI target to hover matching ${desc}.`,
+					success: ({ targetDescription, actionKind, appName: a }) =>
+						`Hovered ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
+					summary: "GUI hover was sent.",
+				},
+				click_and_hold: {
+					notFound: (desc) => `Could not visually resolve a GUI target to click and hold matching ${desc}.`,
+					success: ({ targetDescription, actionKind, appName: a }) =>
+						`Clicked and held ${targetDescription} via ${actionKind}${a ? ` in ${a}` : ""}.`,
+					summary: "GUI click and hold was sent.",
+				},
+			};
+
+			const labels = actionLabels[intent];
+			const settleMs = Math.max(0, Math.round(params.settleMs ?? DEFAULT_HOVER_SETTLE_MS));
+			const holdMs = Math.max(100, Math.round(params.holdMs ?? DEFAULT_CLICK_AND_HOLD_MS));
+
+			const executeForIntent = async (point: GuiPoint): Promise<GuiNativeActionResult> => {
+				switch (intent) {
+					case "right_click":
+						return performRightClick(appName, point, {
+							activateApp: false,
+							platform: this.runtimePlatform(),
+							signal: session.signal,
+						});
+					case "double_click":
+						return performDoubleClick(appName, point, {
+							activateApp: false,
+							platform: this.runtimePlatform(),
+							signal: session.signal,
+						});
+					case "hover":
+						return performHover(appName, point, settleMs, {
+							activateApp: false,
+							platform: this.runtimePlatform(),
+							signal: session.signal,
+						});
+					case "click_and_hold":
+						return performClickAndHold(appName, point, holdMs, {
+							activateApp: false,
+							platform: this.runtimePlatform(),
+							signal: session.signal,
+						});
+					default:
+						return performPointClick(appName, point, {
+							activateApp: false,
+							platform: this.runtimePlatform(),
+							signal: session.signal,
+						});
+				}
+			};
+
+			const extraDetails: Record<string, unknown> = {};
+			if (intent === "hover") extraDetails.settle_ms = settleMs;
+			if (intent === "click_and_hold") extraDetails.hold_duration_ms = holdMs;
+
+			return await this.executeGroundedPointAction(session, {
+				appName,
+				target: params.target,
+				scope: params.scope,
+				groundingMode: params.groundingMode,
+				locationHint: params.locationHint,
+				captureMode: params.captureMode,
+				windowTitle: params.windowTitle,
+				windowSelector: params.windowSelector,
+				action: intent,
+				targetFallback: "the requested GUI target",
+				notFoundText: labels.notFound,
+				successText: labels.success,
+				summary: labels.summary,
+				execute: executeForIntent,
+				extraDetails: Object.keys(extraDetails).length > 0 ? extraDetails : undefined,
+			});
+		});
+	}
+
+	async drag(params: GuiDragParams, signal?: AbortSignal): Promise<GuiActionResult> {
+		const unsupported = this.unsupportedToolResult("gui_drag", {
+			target: `${params.fromTarget ?? ""}${params.toTarget ?? ""}`.trim() || "drag",
+		});
+		if (unsupported) {
+			return unsupported;
+		}
+
+		return await this.withGuiActionSession("gui_drag", { signal }, async (session) => {
+			const appName = normalizeOptionalString(params.app);
+			const fromScope = params.fromScope;
+			const toScope = params.toScope;
+			const windowSelection = resolveWindowSelection({
+				windowTitle: params.windowTitle,
+				windowSelector: params.windowSelector,
+			});
+			const artifact = await captureScreenshotArtifact({
+				appName,
+				captureMode: params.captureMode,
+				windowSelector: windowSelection,
+				platform: this.runtimePlatform(),
+				signal: session.signal,
+			});
+			try {
+				const sourceDescription = describeGuiTarget({
+					target: params.fromTarget,
+					fallback: "the drag source",
+				});
+				const destinationDescription = describeGuiTarget({
+					target: params.toTarget,
+					fallback: "the drag destination",
+				});
+				const source = await this.resolveGuiTarget({
+					artifact,
+					target: params.fromTarget,
+					groundingMode: params.groundingMode,
+					locationHint: params.fromLocationHint,
+					scope: fromScope,
+					app: appName,
+					action: "drag_source",
+					relatedTarget: params.toTarget,
+					relatedScope: toScope,
+					relatedAction: "drag_destination",
+					relatedLocationHint: params.toLocationHint,
+					session,
+				});
+				if (!source) {
+					return buildGuiResult({
+						text: `Could not visually resolve a drag source matching ${sourceDescription}.`,
+						status: "not_found",
+						summary: "No confident visual drag source was found.",
+						details: {
+							error: "No confident visual drag source was found.",
 							...buildCaptureDetails(artifact.metadata),
 							...this.targetResolutionDetails(undefined),
 							confidence: 0,
@@ -2466,14 +3213,148 @@ export class ComputerUseGuiRuntime {
 						image: screenshotArtifactToImage(artifact),
 					});
 				}
+
+				const destination = await this.resolveGuiTarget({
+					artifact,
+					target: params.toTarget,
+					groundingMode: params.groundingMode,
+					locationHint: params.toLocationHint,
+					scope: toScope,
+					app: appName,
+					action: "drag_destination",
+					relatedTarget: params.fromTarget,
+					relatedScope: fromScope,
+					relatedAction: "drag_source",
+					relatedLocationHint: params.fromLocationHint,
+					relatedPoint: source.point,
+					relatedBox: source.displayBox,
+					session,
+				});
+				if (!destination) {
+					return buildGuiResult({
+						text: `Could not visually resolve a drag destination matching ${destinationDescription}.`,
+						status: "not_found",
+						summary: "No confident visual drag destination was found.",
+						details: {
+							error: "No confident visual drag destination was found.",
+							...buildCaptureDetails(artifact.metadata),
+							...this.targetResolutionDetails(undefined),
+							confidence: 0,
+							app: appName,
+						},
+						image: screenshotArtifactToImage(artifact),
+					});
+				}
+
+				const action = await performDrag(
+					appName,
+					source.point,
+					destination.point,
+					Math.max(100, params.durationMs ?? DEFAULT_DRAG_DURATION_MS),
+					{
+						activateApp: true,
+						platform: this.runtimePlatform(),
+						signal: session.signal,
+					},
+				);
+				const evidence = await this.captureEvidenceImage({
+					appName,
+					captureMode: params.captureMode,
+					windowSelector: windowSelection,
+					session,
+				});
+				return buildGuiResult({
+					text: `Dragged from ${sourceDescription} to ${destinationDescription} via ${action.actionKind}.`,
+					resolution: source.resolution,
+					status: "action_sent",
+					summary: "GUI drag was sent.",
+					details: {
+						action_kind: action.actionKind,
+						...this.targetResolutionDetails(source),
+						destination_target_resolution: {
+							...this.targetResolutionDetails(destination),
+							reason: destination.grounded.reason,
+						},
+						...evidence.details,
+						confidence: Math.min(source.grounded.confidence, destination.grounded.confidence),
+						app: appName,
+						executed_from_point: source.point,
+						executed_to_point: destination.point,
+						pre_action_capture: buildCaptureDetails(source.artifact),
+					},
+					image: evidence.image,
+				});
 			} finally {
 				await artifact.cleanup();
 			}
-		} else {
-			context = await resolveCaptureContext(appName, {
-				windowSelector: windowSelection,
-			});
+		});
+	}
+
+	async scroll(params: GuiScrollParams = {}, signal?: AbortSignal): Promise<GuiActionResult> {
+		const unsupported = this.unsupportedToolResult("gui_scroll", {
+			target: params.target,
+		});
+		if (unsupported) {
+			return unsupported;
 		}
+
+		return await this.withGuiActionSession("gui_scroll", { signal }, async (session) => {
+			const appName = normalizeOptionalString(params.app);
+			const scope = params.scope;
+			const windowSelection = resolveWindowSelection({
+				windowTitle: params.windowTitle,
+				windowSelector: params.windowSelector,
+			});
+			const targetDescription = describeGuiTarget({
+				target: params.target,
+				fallback: "the current surface",
+			});
+			let context: GuiCaptureContext | undefined;
+			let grounded: GroundedGuiTarget | undefined;
+			if (params.target?.trim()) {
+				const artifact = await captureScreenshotArtifact({
+					appName,
+					captureMode: params.captureMode,
+					windowSelector: windowSelection,
+					platform: this.runtimePlatform(),
+					signal: session.signal,
+				});
+				try {
+					grounded = await this.resolveGuiTarget({
+						artifact,
+						target: params.target,
+						groundingMode: params.groundingMode,
+						locationHint: params.locationHint,
+						scope,
+						app: appName,
+						action: "scroll",
+						session,
+					});
+					if (!grounded) {
+						return buildGuiResult({
+							text: `Could not visually resolve a GUI target to scroll matching ${targetDescription}.`,
+							status: "not_found",
+							summary: "No confident visual GUI target was found.",
+							details: {
+								error: "No confident visual GUI target was found.",
+								...buildCaptureDetails(artifact.metadata),
+								...this.targetResolutionDetails(undefined),
+								confidence: 0,
+								app: appName,
+							},
+							image: screenshotArtifactToImage(artifact),
+						});
+					}
+				} finally {
+					await artifact.cleanup();
+				}
+			} else {
+				context = await resolveCaptureContext(appName, {
+					windowSelector: windowSelection,
+					platform: this.runtimePlatform(),
+					signal: session.signal,
+				});
+			}
 
 			const scrollPlan = resolveScrollPlan(params, {
 				grounded,
@@ -2484,12 +3365,15 @@ export class ComputerUseGuiRuntime {
 				plan: scrollPlan,
 			}, {
 				activateApp: !grounded,
+				platform: this.runtimePlatform(),
+				signal: session.signal,
 			});
 			const direction = params.direction ?? "down";
 			const evidence = await this.captureEvidenceImage({
 				appName,
 				captureMode: params.captureMode,
 				windowSelector: windowSelection,
+				session,
 			});
 			return buildGuiResult({
 				text: grounded
@@ -2515,93 +3399,134 @@ export class ComputerUseGuiRuntime {
 				},
 				image: evidence.image,
 			});
+		});
 	}
 
-	async type(params: GuiTypeParams): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
+	async type(params: GuiTypeParams, signal?: AbortSignal): Promise<GuiActionResult> {
+		const unsupported = this.unsupportedToolResult("gui_type", {
+			target: params.target,
+		});
+		if (unsupported) {
+			return unsupported;
 		}
 
-		const appName = normalizeOptionalString(params.app);
-		const input = await resolveGuiTypeInput(params);
-		const scope = params.scope;
-		const windowSelection = resolveWindowSelection({
-			windowTitle: params.windowTitle,
-			windowSelector: params.windowSelector,
-		});
-		const targetDescription = describeGuiTarget({
-			target: params.target,
-			fallback: "the input target",
-		});
-		let grounded: GroundedGuiTarget | undefined;
-		if (params.target?.trim()) {
+		const inputAdapter = this.runtimeBackend().input;
+		if (!inputAdapter) {
+			return unsupportedResult(this.runtimeBackend().unsupportedMessage);
+		}
+
+		return await this.withGuiActionSession("gui_type", { signal }, async (session) => {
+			const appName = normalizeOptionalString(params.app);
+			const input = await resolveGuiTypeInput(params, session.signal);
+			if (typeTouchesClipboard(params)) {
+				const clipboardText = await readClipboardText(this.runtimePlatform(), session.signal);
+				if (clipboardText !== undefined) {
+					session.registerCleanup("clipboard_restore", async () => {
+						await restoreClipboardText(clipboardText, this.runtimePlatform());
+					}, 2_000);
+				}
+			}
+			const scope = params.scope;
+			const windowSelection = resolveWindowSelection({
+				windowTitle: params.windowTitle,
+				windowSelector: params.windowSelector,
+			});
+			const targetDescription = describeGuiTarget({
+				target: params.target,
+				fallback: "the input target",
+			});
+			let grounded: GroundedGuiTarget | undefined;
+			let executedPoint: GuiPoint | undefined;
+			if (params.target?.trim()) {
 				const artifact = await captureScreenshotArtifact({
 					appName,
 					captureMode: params.captureMode,
 					windowSelector: windowSelection,
-			});
-			try {
-						grounded = await this.resolveGuiTarget({
-							artifact,
-							target: params.target,
-							groundingMode: params.groundingMode,
-							locationHint: params.locationHint,
-							scope,
-							app: appName,
-							action: "type",
-						});
-				if (!grounded) {
-					return buildGuiResult({
-						text: `Could not visually resolve an input target matching ${targetDescription}.`,
-						status: "not_found",
-						summary: "No confident visual input target was found.",
-						details: {
-							error: "No confident visual input target was found.",
-							...buildCaptureDetails(artifact.metadata),
-							...this.targetResolutionDetails(undefined),
-							confidence: 0,
-							app: appName,
-						},
-						image: screenshotArtifactToImage(artifact),
+					platform: this.runtimePlatform(),
+					signal: session.signal,
+				});
+				try {
+					grounded = await this.resolveGuiTarget({
+						artifact,
+						target: params.target,
+						groundingMode: params.groundingMode,
+						locationHint: params.locationHint,
+						scope,
+						app: appName,
+						action: "type",
+						session,
 					});
+					if (!grounded) {
+						return buildGuiResult({
+							text: `Could not visually resolve an input target matching ${targetDescription}.`,
+							status: "not_found",
+							summary: "No confident visual input target was found.",
+							details: {
+								error: "No confident visual input target was found.",
+								...buildCaptureDetails(artifact.metadata),
+								...this.targetResolutionDetails(undefined),
+								confidence: 0,
+								app: appName,
+							},
+							image: screenshotArtifactToImage(artifact),
+						});
+					}
+				} finally {
+					await artifact.cleanup();
 				}
-			} finally {
-				await artifact.cleanup();
+				executedPoint = grounded.displayBox
+					? rectCenterPoint(grounded.displayBox)
+					: grounded.point;
+				await performPointClick(appName, executedPoint, {
+					activateApp: true,
+					platform: this.runtimePlatform(),
+					signal: session.signal,
+				});
+				await session.sleep(DEFAULT_TYPE_FOCUS_SETTLE_MS);
 			}
-			await performPointClick(appName, grounded.point, {
-				activateApp: true,
-			});
-			await new Promise((resolve) => setTimeout(resolve, DEFAULT_TYPE_FOCUS_SETTLE_MS));
-		}
 
-		let action: GuiNativeActionResult;
-		if (
-			params.typeStrategy === "system_events_paste" ||
-			params.typeStrategy === "system_events_keystroke" ||
-			params.typeStrategy === "system_events_keystroke_chars"
-		) {
-			action = await performSystemEventsType(
-				{ ...params, app: appName },
-				input.text,
-				params.typeStrategy,
-			);
-		} else if (params.typeStrategy) {
-			action = await performNativeType({ ...params, app: appName }, input.text);
-		} else {
-			try {
-				action = await performType({ ...params, app: appName }, input.text);
-			} catch (error) {
-				if (!(error instanceof GuiRuntimeError)) {
-					throw error;
+			let action: GuiNativeActionResult;
+			if (
+				params.typeStrategy === "system_events_paste" ||
+				params.typeStrategy === "system_events_keystroke" ||
+				params.typeStrategy === "system_events_keystroke_chars"
+			) {
+				action = await inputAdapter.performSystemEventsType(
+					{ ...params, app: appName },
+					input.text,
+					params.typeStrategy,
+					this.runtimeInputDependencies(session.signal),
+				);
+			} else if (params.typeStrategy) {
+				action = await inputAdapter.performNativeType(
+					{ ...params, app: appName },
+					input.text,
+					this.runtimeInputDependencies(session.signal),
+				);
+			} else {
+				try {
+					action = await inputAdapter.performType(
+						{ ...params, app: appName },
+						input.text,
+						this.runtimeInputDependencies(session.signal),
+					);
+				} catch (error) {
+					if (!(error instanceof GuiRuntimeError)) {
+						throw error;
+					}
+					action = await inputAdapter.performNativeType(
+						{ ...params, app: appName },
+						input.text,
+						this.runtimeInputDependencies(session.signal),
+					);
 				}
-				action = await performNativeType({ ...params, app: appName }, input.text);
 			}
-		}
 			const evidence = await this.captureEvidenceImage({
 				appName,
 				captureMode: params.captureMode,
 				windowSelector: windowSelection,
 				settleMs: 500,
+				session,
 			});
 			return buildGuiResult({
 				text: grounded
@@ -2616,128 +3541,165 @@ export class ComputerUseGuiRuntime {
 					...evidence.details,
 					app: appName,
 					input_source: input.source,
-					executed_point: grounded?.point,
+					executed_point: executedPoint,
 					...(grounded ? { pre_action_capture: buildCaptureDetails(grounded.artifact) } : {}),
 				},
 				image: evidence.image,
 			});
+		});
 	}
 
-	async key(params: GuiKeyParams): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
+	async key(params: GuiKeyParams, signal?: AbortSignal): Promise<GuiActionResult> {
+		const unsupported = this.unsupportedToolResult("gui_key");
+		if (unsupported) {
+			return unsupported;
 		}
 
-		const repeat = Math.max(1, Math.min(50, Math.round(params.repeat ?? 1)));
-		const appName = normalizeOptionalString(params.app);
-		const windowSelection = resolveWindowSelection({
-			windowTitle: params.windowTitle,
-			windowSelector: params.windowSelector,
-		});
-		const action = await performHotkey({ ...params, app: appName }, repeat);
-		const keySequence = [...(params.modifiers ?? []), params.key].join("+");
-		const evidence = await this.captureEvidenceImage({
-			appName,
-			captureMode: params.captureMode,
-			windowSelector: windowSelection,
-			settleMs: 500,
-		});
-		return buildGuiResult({
-			text: repeat === 1
-				? `Pressed key ${keySequence} via ${action.actionKind}.`
-				: `Pressed key ${keySequence} ${repeat} times via ${action.actionKind}.`,
-			status: "action_sent",
-			summary: "GUI key was sent.",
-			details: {
-				action_kind: action.actionKind,
-				...evidence.details,
+		const inputAdapter = this.runtimeBackend().input;
+		if (!inputAdapter) {
+			return unsupportedResult(this.runtimeBackend().unsupportedMessage);
+		}
+
+		return await this.withGuiActionSession("gui_key", { signal }, async (session) => {
+			const repeat = Math.max(1, Math.min(50, Math.round(params.repeat ?? 1)));
+			const appName = normalizeOptionalString(params.app);
+			const windowSelection = resolveWindowSelection({
+				windowTitle: params.windowTitle,
+				windowSelector: params.windowSelector,
+			});
+			if (params.key.trim().toLowerCase() === "escape" || params.key.trim().toLowerCase() === "esc") {
+				session.notifyExpectedEscape();
+			}
+			const action = await inputAdapter.performHotkey(
+				{ ...params, app: appName },
 				repeat,
-				grounding_method: "targetless",
-				confidence: 1,
-				app: appName,
-			},
-			image: evidence.image,
-		});
-	}
-
-	async move(params: GuiMoveParams): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
-		}
-
-		const appName = normalizeOptionalString(params.app);
-		const point = { x: Math.round(params.x), y: Math.round(params.y) };
-		await performHover(appName, point, 0, { activateApp: Boolean(appName) });
-		const reportedActionKind = "cg_move";
-		return buildGuiResult({
-			text: `Moved cursor to (${point.x}, ${point.y}) via ${reportedActionKind}.`,
-			status: "action_sent",
-			summary: "GUI cursor move was sent.",
-			details: {
-				action_kind: reportedActionKind,
-				grounding_method: "absolute_coordinates",
-				confidence: 1,
-				app: appName,
-				executed_point: point,
-			},
-		});
-	}
-
-	async wait(params: GuiWaitParams): Promise<GuiActionResult> {
-		if (!isGuiPlatformSupported()) {
-			return unsupportedResult(GUI_UNSUPPORTED_MESSAGE);
-		}
-
-		const state = params.state ?? "appear";
-		const timeoutMs = params.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
-		const appName = normalizeOptionalString(params.app);
-		const windowSelection = resolveWindowSelection({
-			windowTitle: params.windowTitle,
-			windowSelector: params.windowSelector,
-		});
-		const probe = await this.probeForTarget({
-			appName,
-			target: params.target,
-			groundingMode: params.groundingMode,
-			locationHint: params.locationHint,
-			scope: params.scope,
-			captureMode: params.captureMode,
-			windowSelector: windowSelection,
-			state,
-			timeoutMs,
-			intervalMs: params.intervalMs,
-		});
-		if (probe.matched) {
-				return buildGuiResult({
-					text: state === "appear"
-						? `GUI target "${params.target}" appeared after ${probe.attempts} visual checks.`
-						: `GUI target "${params.target}" disappeared after ${probe.attempts} visual checks.`,
-					resolution: probe.grounded?.resolution,
-					status: "condition_met",
-					summary: state === "appear" ? "Target appeared." : "Target disappeared.",
-						details: {
-							attempts: probe.attempts,
-							wait_confirmations_required: WAIT_CONFIRMATION_COUNT,
-							...(probe.capture ? buildCaptureDetails(probe.capture) : {}),
-							...(probe.grounded ? this.groundingDetails(probe.grounded) : { grounding_method: "grounding", confidence: 0 }),
-							app: appName,
-					},
-					image: probe.image,
-				});
-		}
-		return buildGuiResult({
-			text: `Timed out waiting for "${params.target}" to ${state === "appear" ? "appear" : "disappear"}.`,
-			resolution: probe.grounded?.resolution,
-			status: "timeout",
-			summary: "GUI wait timed out.",
+				this.runtimeInputDependencies(session.signal),
+			);
+			const keySequence = [...(params.modifiers ?? []), params.key].join("+");
+			const evidence = await this.captureEvidenceImage({
+				appName,
+				captureMode: params.captureMode,
+				windowSelector: windowSelection,
+				settleMs: 500,
+				session,
+			});
+			return buildGuiResult({
+				text: repeat === 1
+					? `Pressed key ${keySequence} via ${action.actionKind}.`
+					: `Pressed key ${keySequence} ${repeat} times via ${action.actionKind}.`,
+				status: "action_sent",
+				summary: "GUI key was sent.",
 				details: {
-					attempts: probe.attempts,
-						wait_confirmations_required: WAIT_CONFIRMATION_COUNT,
-					...(probe.capture ? buildCaptureDetails(probe.capture) : {}),
-					...(probe.grounded ? this.groundingDetails(probe.grounded) : { grounding_method: "grounding", confidence: 0 }),
+					action_kind: action.actionKind,
+					...evidence.details,
+					repeat,
+					grounding_method: "targetless",
+					confidence: 1,
 					app: appName,
-			},
-			image: probe.image,
+				},
+				image: evidence.image,
+			});
+		});
+	}
+
+	async move(params: GuiMoveParams, signal?: AbortSignal): Promise<GuiActionResult> {
+		const unsupported = this.unsupportedToolResult("gui_move");
+		if (unsupported) {
+			return unsupported;
+		}
+
+		return await this.withGuiActionSession("gui_move", { signal }, async (session) => {
+			const appName = normalizeOptionalString(params.app);
+			const point = { x: Math.round(params.x), y: Math.round(params.y) };
+			const action = await performMoveCursor(appName, point, {
+				activateApp: Boolean(appName),
+				platform: this.runtimePlatform(),
+				signal: session.signal,
+			});
+			return buildGuiResult({
+				text: `Moved cursor to (${point.x}, ${point.y}) via ${action.actionKind}.`,
+				status: "action_sent",
+				summary: "GUI cursor move was sent.",
+				details: {
+					action_kind: action.actionKind,
+					grounding_method: "absolute_coordinates",
+					confidence: 1,
+					app: appName,
+					executed_point: point,
+				},
+			});
+		});
+	}
+
+	async wait(params: GuiWaitParams, signal?: AbortSignal): Promise<GuiActionResult> {
+		const unsupported = this.unsupportedToolResult("gui_wait", {
+			target: params.target,
+		});
+		if (unsupported) {
+			return unsupported;
+		}
+
+			return await this.withGuiActionSession("gui_wait", { signal, acquireLock: false }, async (session) => {
+				const state = params.state ?? "appear";
+				const timeoutMs = params.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
+				const appName = normalizeOptionalString(params.app);
+				const windowSelection = resolveWindowSelection({
+					windowTitle: params.windowTitle,
+					windowSelector: params.windowSelector,
+				});
+				if (
+					this.runtimePlatform() === "win32" &&
+					hasUnsupportedWindowsWindowSelection(windowSelection)
+				) {
+					return unsupportedResult(
+						"Windows GUI wait does not support window index selection yet. Omit `windowSelector.index`.",
+					);
+				}
+				const probe = await this.probeForTarget({
+					appName,
+					target: params.target,
+				groundingMode: params.groundingMode,
+				locationHint: params.locationHint,
+				scope: params.scope,
+				captureMode: params.captureMode,
+				windowSelector: windowSelection,
+				state,
+				timeoutMs,
+				intervalMs: params.intervalMs,
+				session,
+			});
+			if (probe.matched) {
+					return buildGuiResult({
+						text: state === "appear"
+							? `GUI target "${params.target}" appeared after ${probe.attempts} visual checks.`
+							: `GUI target "${params.target}" disappeared after ${probe.attempts} visual checks.`,
+						resolution: probe.grounded?.resolution,
+						status: "condition_met",
+						summary: state === "appear" ? "Target appeared." : "Target disappeared.",
+							details: {
+								attempts: probe.attempts,
+								wait_confirmations_required: WAIT_CONFIRMATION_COUNT,
+								...(probe.capture ? buildCaptureDetails(probe.capture) : {}),
+								...(probe.grounded ? this.groundingDetails(probe.grounded) : { grounding_method: "grounding", confidence: 0 }),
+								app: appName,
+						},
+						image: probe.image,
+					});
+			}
+			return buildGuiResult({
+				text: `Timed out waiting for "${params.target}" to ${state === "appear" ? "appear" : "disappear"}.`,
+				resolution: probe.grounded?.resolution,
+				status: "timeout",
+				summary: "GUI wait timed out.",
+					details: {
+						attempts: probe.attempts,
+							wait_confirmations_required: WAIT_CONFIRMATION_COUNT,
+						...(probe.capture ? buildCaptureDetails(probe.capture) : {}),
+						...(probe.grounded ? this.groundingDetails(probe.grounded) : { grounding_method: "grounding", confidence: 0 }),
+						app: appName,
+				},
+				image: probe.image,
+			});
 		});
 	}
 }

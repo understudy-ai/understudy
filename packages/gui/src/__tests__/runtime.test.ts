@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PhysicalResourceLock } from "../physical-resource-lock.js";
 
 const mocks = vi.hoisted(() => ({
 	execFile: vi.fn(),
@@ -17,6 +18,22 @@ const mocks = vi.hoisted(() => ({
 		windowBounds: { x: 100, y: 200, width: 400, height: 300 },
 		windowCount: 1,
 		windowCaptureStrategy: "main_window",
+	} as {
+		appName: string;
+		display: {
+			index: number;
+			bounds: { x: number; y: number; width: number; height: number };
+		};
+		cursor: { x: number; y: number };
+		windowId: number;
+		windowTitle: string;
+		windowBounds: { x: number; y: number; width: number; height: number };
+		windowCount: number;
+		windowCaptureStrategy: string;
+		hostSelfExcludeApplied?: boolean;
+		hostFrontmostExcluded?: boolean;
+		hostFrontmostAppName?: string;
+		hostFrontmostBundleId?: string;
 	},
 	execCalls: [] as Array<{
 		file: string;
@@ -24,6 +41,8 @@ const mocks = vi.hoisted(() => ({
 		env: Record<string, string | undefined>;
 	}>,
 	failAppleScriptType: false,
+	clipboardText: "initial clipboard",
+	redactionCount: 0,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -82,9 +101,15 @@ function groundedTarget(
 
 function createRuntime(
 	ground: ReturnType<typeof vi.fn>,
+	options?: {
+		physicalResourceLock?: PhysicalResourceLock | null;
+		platform?: NodeJS.Platform;
+	},
 ) {
 	return new ComputerUseGuiRuntime({
 		groundingProvider: { ground },
+		physicalResourceLock: options?.physicalResourceLock ?? null,
+		platform: options?.platform,
 	});
 }
 
@@ -111,15 +136,48 @@ function actionKindForMode(mode: string | undefined): string {
 	}
 }
 
+function windowsActionKindForMode(mode: string | undefined): string {
+	switch (mode) {
+		case "click":
+			return "powershell_click";
+		case "right_click":
+			return "powershell_right_click";
+		case "double_click":
+			return "powershell_double_click";
+		case "hover":
+			return "powershell_hover";
+		case "click_and_hold":
+			return "powershell_click_and_hold";
+		case "drag":
+			return "powershell_drag";
+		case "scroll":
+			return "powershell_scroll";
+		case "move":
+			return "powershell_move";
+		case "cleanup":
+			return "powershell_cleanup";
+		default:
+			return "powershell_gui_event";
+	}
+}
+
 describe("ComputerUseGuiRuntime", () => {
 	const originalPlatform = process.platform;
+	const originalHostBundleId = process.env.__CFBundleIdentifier;
+	const originalOriginator = process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE;
+	const originalTermProgram = process.env.TERM_PROGRAM;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.execCalls.length = 0;
 		Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
 		process.env.UNDERSTUDY_GUI_NATIVE_HELPER_PATH = MOCK_NATIVE_HELPER_PATH;
+		process.env.UNDERSTUDY_GUI_DISABLE_PHYSICAL_RESOURCE_LOCK = "1";
+		process.env.UNDERSTUDY_GUI_DISABLE_EMERGENCY_STOP = "1";
 		process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS = "0";
+		process.env.__CFBundleIdentifier = "com.openai.codex";
+		process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE = "Codex Desktop";
+		process.env.TERM_PROGRAM = "Codex";
 		mocks.mkdtemp.mockResolvedValue("/tmp/understudy-gui-test");
 		mocks.readFile.mockResolvedValue(createPngBuffer(800, 600));
 		mocks.rm.mockResolvedValue(undefined);
@@ -137,6 +195,8 @@ describe("ComputerUseGuiRuntime", () => {
 			windowCaptureStrategy: "main_window",
 		};
 		mocks.failAppleScriptType = false;
+		mocks.clipboardText = "initial clipboard";
+		mocks.redactionCount = 0;
 		mocks.execFile.mockImplementation((file: string, args: unknown, options: unknown, callback?: (...cbArgs: unknown[]) => void) => {
 			const cb = (typeof options === "function" ? options : callback) as ((...cbArgs: unknown[]) => void) | undefined;
 			if (!cb) {
@@ -161,13 +221,75 @@ describe("ComputerUseGuiRuntime", () => {
 				cb(null, { stdout: "", stderr: "" });
 				return {} as any;
 			}
-			if (file === "zsh") {
+			if (file === "zsh" || file === "/bin/zsh") {
 				const shellCommand = resolvedArgs[1] ?? "";
 				if (shellCommand === "printf 'secret-from-command\\n'") {
 					cb(null, { stdout: "secret-from-command\n", stderr: "" });
 					return {} as any;
 				}
 				cb(new Error(`Unexpected shell command: ${shellCommand}`));
+				return {} as any;
+			}
+			if (file === "powershell.exe" || file === "pwsh.exe") {
+				const commandText = resolvedArgs[resolvedArgs.length - 1] ?? "";
+				if (commandText.includes("$PSVersionTable.PSVersion.ToString()")) {
+					cb(null, { stdout: "5.1.22621.2506\n", stderr: "" });
+					return {} as any;
+				}
+				if (
+					commandText.includes("ConvertTo-Json") &&
+					env.UNDERSTUDY_GUI_CAPTURE_WINDOW !== undefined
+				) {
+					cb(null, {
+						stdout: JSON.stringify({
+							appName: env.UNDERSTUDY_GUI_APP,
+							display: {
+								index: 1,
+								bounds: { x: 0, y: 0, width: 1440, height: 900 },
+							},
+							cursor: { x: 320, y: 240 },
+							...(env.UNDERSTUDY_GUI_CAPTURE_WINDOW === "1"
+								? {
+									windowTitle: env.UNDERSTUDY_GUI_WINDOW_TITLE ?? "Settings",
+									windowBounds: { x: 100, y: 200, width: 480, height: 360 },
+									windowCount: 1,
+									windowCaptureStrategy: "main_window",
+								}
+								: {}),
+						}),
+						stderr: "",
+					});
+					return {} as any;
+				}
+				if (
+					env.UNDERSTUDY_GUI_OUTPUT_PATH !== undefined &&
+					env.UNDERSTUDY_GUI_CAPTURE_LEFT !== undefined
+				) {
+					cb(null, { stdout: "powershell_copyfromscreen\n", stderr: "" });
+					return {} as any;
+				}
+				if (env.UNDERSTUDY_GUI_SENDKEYS_HOTKEY !== undefined) {
+					cb(null, { stdout: "powershell_hotkey\n", stderr: "" });
+					return {} as any;
+				}
+				if (env.UNDERSTUDY_GUI_TYPE_MODE !== undefined) {
+					const baseAction = env.UNDERSTUDY_GUI_TYPE_MODE === "sendkeys"
+						? "powershell_sendkeys"
+						: "powershell_clipboard_paste";
+					const stdout = env.UNDERSTUDY_GUI_SUBMIT === "1"
+						? `${baseAction}+submit\n`
+						: `${baseAction}\n`;
+					cb(null, { stdout, stderr: "" });
+					return {} as any;
+				}
+				if (env.UNDERSTUDY_GUI_EVENT_MODE !== undefined) {
+					cb(null, {
+						stdout: `${windowsActionKindForMode(env.UNDERSTUDY_GUI_EVENT_MODE)}\n`,
+						stderr: "",
+					});
+					return {} as any;
+				}
+				cb(new Error(`Unexpected PowerShell command: ${commandText}`));
 				return {} as any;
 			}
 			if (file === MOCK_NATIVE_HELPER_PATH) {
@@ -185,7 +307,21 @@ describe("ComputerUseGuiRuntime", () => {
 					});
 					return {} as any;
 				}
-				if (resolvedArgs[0] === "activate") {
+					if (resolvedArgs[0] === "cleanup") {
+						cb(null, {
+							stdout: "cleanup\n",
+							stderr: "",
+						});
+						return {} as any;
+					}
+					if (resolvedArgs[0] === "redact-host-windows") {
+						cb(null, {
+							stdout: JSON.stringify({ redactionCount: mocks.redactionCount }),
+							stderr: "",
+						});
+						return {} as any;
+					}
+					if (resolvedArgs[0] === "activate") {
 					cb(null, {
 						stdout: "activated\n",
 						stderr: "",
@@ -195,6 +331,23 @@ describe("ComputerUseGuiRuntime", () => {
 				return {} as any;
 			}
 			if (file === "osascript") {
+				const scriptText = resolvedArgs[3] ?? "";
+				if (typeof scriptText === "string" && scriptText.includes("return the clipboard as text")) {
+					cb(null, {
+						stdout: `${mocks.clipboardText}\n`,
+						stderr: "",
+					});
+					return {} as any;
+				}
+				if (typeof scriptText === "string" && scriptText.includes("set the clipboard to restoredText")) {
+					const argvIndex = resolvedArgs.indexOf("--");
+					mocks.clipboardText = argvIndex >= 0 ? (resolvedArgs[argvIndex + 1] ?? "") : "";
+					cb(null, {
+						stdout: "clipboard_restored\n",
+						stderr: "",
+					});
+					return {} as any;
+				}
 				const argvIndex = resolvedArgs.indexOf("--");
 				const typedText = argvIndex >= 0 ? resolvedArgs[argvIndex + 1] : undefined;
 				if ((typedText !== undefined || env.UNDERSTUDY_GUI_TEXT !== undefined) && mocks.failAppleScriptType) {
@@ -219,10 +372,27 @@ describe("ComputerUseGuiRuntime", () => {
 
 	afterEach(() => {
 		Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+		delete process.env.UNDERSTUDY_GUI_DISABLE_PHYSICAL_RESOURCE_LOCK;
+		delete process.env.UNDERSTUDY_GUI_DISABLE_EMERGENCY_STOP;
 		delete process.env.UNDERSTUDY_GUI_NATIVE_HELPER_PATH;
 		delete process.env.UNDERSTUDY_GUI_POST_ACTION_CAPTURE_SETTLE_MS;
 		delete process.env.UNDERSTUDY_TEST_GUI_SECRET;
 		delete process.env.UNDERSTUDY_TEST_GUI_SECRET_COMMAND;
+		if (originalHostBundleId === undefined) {
+			delete process.env.__CFBundleIdentifier;
+		} else {
+			process.env.__CFBundleIdentifier = originalHostBundleId;
+		}
+		if (originalOriginator === undefined) {
+			delete process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE;
+		} else {
+			process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE = originalOriginator;
+		}
+		if (originalTermProgram === undefined) {
+			delete process.env.TERM_PROGRAM;
+		} else {
+			process.env.TERM_PROGRAM = originalTermProgram;
+		}
 	});
 
 	it("describes capabilities conservatively when Screen Recording is unavailable", () => {
@@ -314,6 +484,265 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(capabilities.groundingAvailable).toBe(false);
 		expect(capabilities.toolAvailability.gui_move).toMatchObject({
 			enabled: true,
+		});
+	});
+
+	it("uses the injected platform for capability checks and unsupported actions", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		expect(runtime.describeCapabilities()).toMatchObject({
+			platformSupported: true,
+		});
+		expect(runtime.describeCapabilities().toolAvailability).toMatchObject({
+			gui_observe: { enabled: true },
+			gui_wait: { enabled: false },
+			gui_key: { enabled: true },
+			gui_type: {
+				enabled: true,
+				targetlessOnly: true,
+			},
+			gui_scroll: {
+				enabled: true,
+				targetlessOnly: true,
+			},
+			gui_move: { enabled: true },
+			gui_click: { enabled: false },
+		});
+
+		const result = await runtime.click({
+			target: "Send button",
+		});
+
+		expect(result.status.code).toBe("unsupported");
+		expect(result.status.summary).toContain("Visual grounding is not configured");
+		expect(mocks.execCalls).toEqual([]);
+	});
+
+	it("captures Windows gui_observe screenshots through PowerShell", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		const result = await runtime.observe();
+
+		expect(result.status).toEqual({
+			code: "observed",
+			summary: "Visual GUI snapshot captured.",
+		});
+		expect(result.details).toMatchObject({
+			capture_method: "powershell_copyfromscreen",
+			capture_mode: "display",
+			capture_cursor_visible: false,
+			grounding_method: "screenshot",
+		});
+		expect(result.observation?.platform).toBe("win32");
+		const powerShellCall = mocks.execCalls.find((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_OUTPUT_PATH !== undefined,
+		);
+		expect(powerShellCall?.env.UNDERSTUDY_GUI_OUTPUT_PATH).toContain("gui-screenshot.png");
+	});
+
+	it("captures window-scoped gui_observe screenshots on Windows", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		const result = await runtime.observe({
+			captureMode: "window",
+			windowTitle: "Settings",
+		});
+
+		expect(result.status).toEqual({
+			code: "observed",
+			summary: "Visual GUI snapshot captured.",
+		});
+		expect(result.details).toMatchObject({
+			capture_method: "powershell_copyfromscreen",
+			capture_mode: "window",
+			window_title: "Settings",
+		});
+	});
+
+	it("rejects window index selection for gui_observe on Windows", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		const result = await runtime.observe({
+			windowSelector: {
+				titleContains: "Settings",
+				index: 2,
+			},
+		});
+
+		expect(result.status).toEqual({
+			code: "unsupported",
+			summary: "Windows GUI observation does not support window index selection yet. Omit `windowSelector.index`.",
+		});
+		expect(mocks.execCalls).toEqual([]);
+	});
+
+	it("uses the Windows backend for targetless gui_type", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		const result = await runtime.type({
+			value: "hello from windows",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "powershell_clipboard_paste",
+			grounding_method: "targetless",
+		});
+		const powerShellCall = mocks.execCalls.find((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_TYPE_MODE === "clipboard",
+		);
+		expect(powerShellCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_TEXT: "hello from windows",
+			UNDERSTUDY_GUI_REPLACE: "1",
+			UNDERSTUDY_GUI_SUBMIT: "0",
+		});
+	});
+
+	it("uses the Windows backend for gui_key", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		const result = await runtime.key({
+			key: "enter",
+			modifiers: ["ctrl"],
+			repeat: 2,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "powershell_hotkey",
+			repeat: 2,
+			grounding_method: "targetless",
+		});
+		const powerShellCall = mocks.execCalls.find((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_SENDKEYS_HOTKEY !== undefined,
+		);
+		expect(powerShellCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_SENDKEYS_HOTKEY: "^{ENTER}",
+			UNDERSTUDY_GUI_REPEAT: "2",
+		});
+	});
+
+	it("uses the Windows backend for grounded gui_click when grounding is available", async () => {
+		const runtime = createRuntime(
+			vi.fn().mockResolvedValueOnce(groundedTarget("Send button", { x: 48, y: 64 }, 0.93)),
+			{ platform: "win32" },
+		);
+
+		const result = await runtime.click({
+			app: "Mail",
+			target: "Send button",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "powershell_click",
+			grounding_provider: "test-provider",
+			capture_method: "powershell_copyfromscreen",
+		});
+		const powerShellEventCall = mocks.execCalls.find((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+		);
+		expect(powerShellEventCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "Mail",
+			UNDERSTUDY_GUI_X: "128.8",
+			UNDERSTUDY_GUI_Y: "238.4",
+		});
+	});
+
+	it("uses the Windows backend for targeted gui_type when grounding is available", async () => {
+		const runtime = createRuntime(
+			vi.fn().mockResolvedValueOnce(groundedTarget("Search box", { x: 60, y: 80 }, 0.92)),
+			{ platform: "win32" },
+		);
+
+		const result = await runtime.type({
+			app: "Mail",
+			target: "Search box",
+			value: "hello",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "powershell_clipboard_paste",
+			grounding_provider: "test-provider",
+		});
+		expect(mocks.execCalls.some((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+		)).toBe(true);
+		expect(mocks.execCalls.some((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_TYPE_MODE === "clipboard" &&
+			call.env.UNDERSTUDY_GUI_TEXT === "hello",
+		)).toBe(true);
+	});
+
+	it("uses the Windows backend for targetless gui_scroll", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		const result = await runtime.scroll({
+			app: "Mail",
+			direction: "down",
+			distance: "page",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "powershell_scroll",
+			grounding_method: "targetless",
+		});
+		const powerShellCall = mocks.execCalls.find((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "scroll",
+		);
+		expect(powerShellCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "Mail",
+			UNDERSTUDY_GUI_ACTIVATE_APP: "1",
+		});
+	});
+
+	it("uses the Windows backend for gui_move", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+		});
+
+		const result = await runtime.move({
+			app: "Mail",
+			x: 200,
+			y: 180,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "powershell_move",
+			executed_point: { x: 200, y: 180 },
+		});
+		const powerShellCall = mocks.execCalls.find((call) =>
+			call.file === "powershell.exe" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "move",
+		);
+		expect(powerShellCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "Mail",
+			UNDERSTUDY_GUI_X: "200",
+			UNDERSTUDY_GUI_Y: "180",
 		});
 	});
 
@@ -503,6 +932,130 @@ describe("ComputerUseGuiRuntime", () => {
 			UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS: "Inbox",
 			UNDERSTUDY_GUI_WINDOW_INDEX: "2",
 		});
+	});
+
+	it("passes host self-exclude hints to the capture helper by default", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+
+		await runtime.observe();
+
+		const captureCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "capture-context",
+		);
+		expect(captureCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_AUTO_EXCLUDED_BUNDLE_IDS: "com.openai.codex",
+			UNDERSTUDY_GUI_AUTO_EXCLUDED_OWNER_NAMES: expect.stringContaining("Codex"),
+		});
+		expect(captureCall?.env.UNDERSTUDY_GUI_AUTO_EXCLUDED_OWNER_NAMES).toContain("Codex Desktop");
+	});
+
+	it("skips host self-exclude when the requested app is the host app", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+
+		await runtime.observe({
+			app: "Codex Desktop",
+		});
+
+		const captureCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "capture-context",
+		);
+		expect(captureCall?.env.UNDERSTUDY_GUI_AUTO_EXCLUDED_BUNDLE_IDS).toBeUndefined();
+		expect(captureCall?.env.UNDERSTUDY_GUI_AUTO_EXCLUDED_OWNER_NAMES).toBeUndefined();
+	});
+
+	it("downgrades implicit display capture when the host app is frontmost", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			hostSelfExcludeApplied: true,
+			hostFrontmostExcluded: true,
+			hostFrontmostAppName: "Codex Desktop",
+			hostFrontmostBundleId: "com.openai.codex",
+		};
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.observe();
+
+		expect(result.details).toMatchObject({
+			capture_mode: "window",
+			capture_host_self_exclude_applied: true,
+			capture_host_frontmost_excluded: true,
+			capture_host_self_exclude_adjusted: true,
+			capture_host_frontmost_app: "Codex Desktop",
+		});
+		expect(mocks.execCalls.find((call) => call.file === "screencapture")?.args).toEqual([
+			"-x",
+			"-C",
+			"-R",
+			"100,200,400,300",
+			"-t",
+			"png",
+			"/tmp/understudy-gui-test/gui-screenshot.png",
+		]);
+		expect(mocks.execCalls.some((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH && call.args[0] === "redact-host-windows",
+		)).toBe(false);
+	});
+
+	it("skips redaction from display capture when host self-exclude applied but host is not frontmost", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			hostSelfExcludeApplied: true,
+			hostFrontmostExcluded: false,
+			hostFrontmostAppName: "Safari",
+			hostFrontmostBundleId: "com.apple.Safari",
+		};
+		mocks.redactionCount = 0;
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.observe({
+			captureMode: "display",
+		});
+
+		expect(result.details).toMatchObject({
+			capture_mode: "display",
+			capture_host_self_exclude_applied: true,
+			capture_host_frontmost_excluded: false,
+		});
+		expect(result.details?.capture_host_self_exclude_redaction_count).toBe(0);
+		expect(mocks.execCalls.some((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH && call.args[0] === "redact-host-windows",
+		)).toBe(false);
+	});
+
+	it("redacts host windows from explicit display capture when the host app is frontmost", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			hostSelfExcludeApplied: true,
+			hostFrontmostExcluded: true,
+			hostFrontmostAppName: "Codex Desktop",
+			hostFrontmostBundleId: "com.openai.codex",
+		};
+		mocks.redactionCount = 2;
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.observe({
+			captureMode: "display",
+		});
+
+		expect(result.details).toMatchObject({
+			capture_mode: "display",
+			capture_host_self_exclude_applied: true,
+			capture_host_frontmost_excluded: true,
+			capture_host_self_exclude_redaction_count: 2,
+		});
+		expect(mocks.execCalls.find((call) => call.file === "screencapture")?.args).toEqual([
+			"-x",
+			"-C",
+			"-D1",
+			"-t",
+			"png",
+			"/tmp/understudy-gui-test/gui-screenshot.png",
+		]);
+		expect(mocks.execCalls.some((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH && call.args[0] === "redact-host-windows",
+		)).toBe(true);
 	});
 
 	it("resolves GUI observe targets visually", async () => {
@@ -1325,6 +1878,44 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(focusClickCall?.env.UNDERSTUDY_GUI_ACTIVATE_APP).toBe("1");
 	});
 
+	it("focuses the center of a grounded box before typing", async () => {
+		const ground = vi.fn().mockResolvedValueOnce({
+			method: "grounding" as const,
+			provider: "test-provider",
+			confidence: 0.92,
+			reason: "Matched Composer",
+			coordinateSpace: "image_pixels" as const,
+			point: { x: 20, y: 20 },
+			box: {
+				x: 40,
+				y: 20,
+				width: 120,
+				height: 40,
+			},
+		});
+		const runtime = createRuntime(ground);
+
+		const result = await runtime.type({
+			target: "Composer",
+			value: "hello world",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "typed",
+			executed_point: { x: 150, y: 220 },
+		});
+		const focusClickCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "click",
+		);
+		expect(focusClickCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_X: "150",
+			UNDERSTUDY_GUI_Y: "220",
+		});
+	});
+
 	it("passes window selection through to targetless typing", async () => {
 		mocks.captureContextPayload = {
 			...mocks.captureContextPayload,
@@ -1623,7 +2214,7 @@ describe("ComputerUseGuiRuntime", () => {
 			input_source: "secret_command_env",
 		});
 		expect(mocks.execCalls.find((call) =>
-			call.file === "zsh" &&
+			(call.file === "zsh" || call.file === "/bin/zsh") &&
 			call.args[0] === "-lc" &&
 			call.args[1] === "printf 'secret-from-command\\n'",
 		)).toBeTruthy();
@@ -1840,6 +2431,79 @@ describe("ComputerUseGuiRuntime", () => {
 		expect(keyCall?.env.UNDERSTUDY_GUI_WINDOW_INDEX).toBeUndefined();
 	});
 
+	it("aborts gui_wait when the emergency stop monitor fires", async () => {
+		const stop = vi.fn().mockResolvedValue(undefined);
+		const runtime = new ComputerUseGuiRuntime({
+			groundingProvider: { ground: vi.fn().mockResolvedValue(undefined) },
+			physicalResourceLock: null,
+			emergencyStopProvider: {
+				start: vi.fn().mockImplementation(async ({ onEmergencyStop }) => {
+					queueMicrotask(() => {
+						onEmergencyStop();
+					});
+					return { stop };
+				}),
+			},
+		});
+
+		await expect(runtime.wait({
+			target: "Finished badge",
+			timeoutMs: 100,
+			intervalMs: 0,
+		})).rejects.toMatchObject({
+			name: "AbortError",
+			message: "GUI action aborted after Escape was pressed.",
+		});
+		expect(stop).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not abort gui_key when Escape is the intended keypress", async () => {
+		const stop = vi.fn().mockResolvedValue(undefined);
+		const runtime = new ComputerUseGuiRuntime({
+			physicalResourceLock: null,
+			emergencyStopProvider: {
+				start: vi.fn().mockImplementation(async ({ onEmergencyStop }) => {
+					setTimeout(() => {
+						onEmergencyStop();
+					}, 0);
+					return { stop };
+				}),
+			},
+		});
+
+		const result = await runtime.key({
+			key: "Escape",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(stop).toHaveBeenCalledTimes(1);
+	});
+
+	it("runs input cleanup when a GUI key action aborts", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			physicalResourceLock: null,
+			emergencyStopProvider: {
+				start: vi.fn().mockImplementation(async ({ onEmergencyStop }) => {
+					queueMicrotask(() => {
+						onEmergencyStop();
+					});
+					return {
+						stop: vi.fn().mockResolvedValue(undefined),
+					};
+				}),
+			},
+		});
+
+		await expect(runtime.key({
+			key: "Enter",
+		})).rejects.toMatchObject({
+			name: "AbortError",
+		});
+		expect(mocks.execCalls.some((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH && call.args[0] === "cleanup",
+		)).toBe(true);
+	});
+
 	it("reports cursor moves with move-specific telemetry", async () => {
 		const runtime = createRuntime(vi.fn());
 
@@ -1855,6 +2519,33 @@ describe("ComputerUseGuiRuntime", () => {
 			grounding_method: "absolute_coordinates",
 			executed_point: { x: 100, y: 200 },
 		});
+	});
+
+	it("refuses mutating actions when another session holds the physical GUI lock", async () => {
+		const runtime = createRuntime(vi.fn(), {
+			physicalResourceLock: {
+				acquire: vi.fn().mockResolvedValue({
+					state: "blocked",
+					holder: {
+						sessionId: "other-session",
+						pid: 4242,
+						toolName: "gui_click",
+					},
+				}),
+				release: vi.fn().mockResolvedValue(false),
+			},
+		});
+
+		const result = await runtime.move({
+			x: 100,
+			y: 200,
+		});
+
+		expect(result.status).toEqual({
+			code: "unsupported",
+			summary: "GUI physical resources are currently locked by tool gui_click, pid 4242.",
+		});
+		expect(mocks.execCalls).toEqual([]);
 	});
 
 	it("waits for a grounded target to appear", async () => {
@@ -1884,6 +2575,68 @@ describe("ComputerUseGuiRuntime", () => {
 		// wait should not default to "complex" — its validation round is always
 		// suppressed in the provider, so requesting "complex" would be misleading.
 		expect(ground.mock.calls[0]?.[0].groundingMode).toBeUndefined();
+	});
+
+	it("uses window-scoped captures for gui_wait on Windows when grounding is available", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+			groundingProvider: {
+				ground: vi.fn().mockResolvedValue(groundedTarget("Finished badge", { x: 48, y: 64 }, 0.93)),
+			},
+		});
+
+		const result = await runtime.wait({
+			target: "Finished badge",
+			captureMode: "window",
+			windowTitle: "Settings",
+			timeoutMs: 50,
+			intervalMs: 0,
+		});
+
+		expect(result.status.code).toBe("condition_met");
+		expect(result.details).toMatchObject({
+			capture_mode: "window",
+			window_title: "Settings",
+		});
+	});
+
+	it("rejects window index selection for gui_wait on Windows", async () => {
+		const runtime = new ComputerUseGuiRuntime({
+			platform: "win32",
+			groundingProvider: { ground: vi.fn() },
+		});
+
+		const result = await runtime.wait({
+			target: "Finished badge",
+			windowSelector: { titleContains: "Settings", index: 2 },
+		});
+
+		expect(result.status).toEqual({
+			code: "unsupported",
+			summary: "Windows GUI wait does not support window index selection yet. Omit `windowSelector.index`.",
+		});
+		expect(mocks.execCalls).toEqual([]);
+	});
+
+	it("restores the clipboard snapshot after clipboard-based gui_type cleanup", async () => {
+		mocks.clipboardText = "copied before";
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			value: "hello",
+			typeStrategy: "clipboard_paste",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(mocks.clipboardText).toBe("copied before");
+		expect(mocks.execCalls.some((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH && call.args[0] === "cleanup",
+		)).toBe(true);
+		expect(mocks.execCalls.some((call) =>
+			call.file === "osascript" &&
+			typeof call.args[3] === "string" &&
+			call.args[3].includes("set the clipboard to restoredText"),
+		)).toBe(true);
 	});
 
 	it("falls back to display capture for later app-scoped wait probes when window probes keep missing", async () => {
