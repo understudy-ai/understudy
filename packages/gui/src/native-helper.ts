@@ -967,6 +967,10 @@ func handleEvent() throws {
 			usleep(useconds_t(settleMs * 1_000))
 		}
 		print("cg_hover")
+	case "move":
+		let point = CGPoint(x: try requiredDouble("UNDERSTUDY_GUI_X"), y: try requiredDouble("UNDERSTUDY_GUI_Y"))
+		try moveCursor(to: point)
+		print("cg_move")
 	case "click_and_hold":
 		let point = CGPoint(x: try requiredDouble("UNDERSTUDY_GUI_X"), y: try requiredDouble("UNDERSTUDY_GUI_Y"))
 		let holdDurationMs = max(100, optionalInt("UNDERSTUDY_GUI_HOLD_DURATION_MS") ?? 650)

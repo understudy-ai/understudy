@@ -18,6 +18,41 @@ describe("GuiActionSession", () => {
 		expect(cleanupC).toHaveBeenCalledTimes(1);
 	});
 
+	it("runs cleanup steps sequentially in reverse registration order", async () => {
+		const session = new GuiActionSession("gui_click");
+		const order: string[] = [];
+		let releaseLatestCleanup: (() => void) | undefined;
+		const latestCleanup = new Promise<void>((resolve) => {
+			releaseLatestCleanup = resolve;
+		});
+		const cleanupA = vi.fn(async () => {
+			order.push("a");
+		});
+		const cleanupB = vi.fn(async () => {
+			order.push("b");
+		});
+		const cleanupC = vi.fn(async () => {
+			order.push("c");
+			await latestCleanup;
+		});
+
+		session.registerCleanup("cleanup-a", cleanupA);
+		session.registerCleanup("cleanup-b", cleanupB);
+		session.registerCleanup("cleanup-c", cleanupC);
+
+		const pendingCleanup = session.cleanup();
+		await Promise.resolve();
+
+		expect(order).toEqual(["c"]);
+		expect(cleanupB).not.toHaveBeenCalled();
+		expect(cleanupA).not.toHaveBeenCalled();
+
+		releaseLatestCleanup?.();
+		await pendingCleanup;
+
+		expect(order).toEqual(["c", "b", "a"]);
+	});
+
 	it("ignores expected Escape events inside the exemption window", () => {
 		const session = new GuiActionSession("gui_key");
 

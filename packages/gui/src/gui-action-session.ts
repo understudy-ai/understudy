@@ -130,7 +130,7 @@ export class GuiActionSession {
 			this.externalAbortListener = undefined;
 		}
 		const cleanups = this.cleanups.splice(0).reverse();
-		await Promise.allSettled(cleanups.map(async (cleanup) => {
+		for (const cleanup of cleanups) {
 			await Promise.race([
 				Promise.resolve().then(async () => {
 					await cleanup.fn();
@@ -141,6 +141,6 @@ export class GuiActionSession {
 					}, cleanup.timeoutMs ?? 5_000);
 				}),
 			]).catch(() => {});
-		}));
+		}
 	}
 }

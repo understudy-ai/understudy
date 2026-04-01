@@ -393,6 +393,27 @@ function buildHostWindowExclusionEnv(params: {
 	};
 }
 
+async function resolveHostExcludedImplicitAppName(params: {
+	appName?: string;
+	windowSelector?: GuiWindowSelector;
+	platform?: NodeJS.Platform;
+	signal?: AbortSignal;
+}): Promise<string | undefined> {
+	const explicitAppName = normalizeOptionalString(params.appName);
+	if (explicitAppName || params.platform === "win32") {
+		return explicitAppName;
+	}
+	const context = await resolveCaptureContext(undefined, {
+		activateApp: false,
+		windowSelector: params.windowSelector,
+		platform: params.platform,
+		signal: params.signal,
+	});
+	return context.hostSelfExcludeApplied && context.hostFrontmostExcluded
+		? normalizeOptionalString(context.appName)
+		: explicitAppName;
+}
+
 type GuiTypeInputSource = "value" | "secret_env" | "secret_command_env";
 
 function stripSingleTrailingNewline(value: string): string {
@@ -1555,7 +1576,21 @@ async function performMoveCursor(
 		});
 		return { actionKind };
 	}
-	return { actionKind: "cg_move" };
+	const actionKind = await runNativeHelper({
+		command: "event",
+		env: {
+			UNDERSTUDY_GUI_APP: appName?.trim(),
+			UNDERSTUDY_GUI_ACTIVATE_APP: options.activateApp === false ? "0" : "1",
+			UNDERSTUDY_GUI_EVENT_MODE: "move",
+			UNDERSTUDY_GUI_X: String(point.x),
+			UNDERSTUDY_GUI_Y: String(point.y),
+		},
+		signal: options.signal,
+		failureMessage:
+			"macOS native GUI event dispatch failed. Ensure the required macOS GUI control permissions are granted.",
+		timeoutHint: "The GUI helper timed out while sending native input events.",
+	});
+	return { actionKind };
 }
 
 async function performClickAndHold(
@@ -3299,7 +3334,7 @@ export class ComputerUseGuiRuntime {
 		}
 
 		return await this.withGuiActionSession("gui_scroll", { signal }, async (session) => {
-			const appName = normalizeOptionalString(params.app);
+			let appName = normalizeOptionalString(params.app);
 			const scope = params.scope;
 			const windowSelection = resolveWindowSelection({
 				windowTitle: params.windowTitle,
@@ -3354,6 +3389,9 @@ export class ComputerUseGuiRuntime {
 					platform: this.runtimePlatform(),
 					signal: session.signal,
 				});
+				if (!appName && context.hostSelfExcludeApplied && context.hostFrontmostExcluded) {
+					appName = normalizeOptionalString(context.appName);
+				}
 			}
 
 			const scrollPlan = resolveScrollPlan(params, {
@@ -3416,7 +3454,7 @@ export class ComputerUseGuiRuntime {
 		}
 
 		return await this.withGuiActionSession("gui_type", { signal }, async (session) => {
-			const appName = normalizeOptionalString(params.app);
+			let appName = normalizeOptionalString(params.app);
 			const input = await resolveGuiTypeInput(params, session.signal);
 			if (typeTouchesClipboard(params)) {
 				const clipboardText = await readClipboardText(this.runtimePlatform(), session.signal);
@@ -3431,6 +3469,14 @@ export class ComputerUseGuiRuntime {
 				windowTitle: params.windowTitle,
 				windowSelector: params.windowSelector,
 			});
+			if (!params.target?.trim()) {
+				appName = await resolveHostExcludedImplicitAppName({
+					appName,
+					windowSelector: windowSelection,
+					platform: this.runtimePlatform(),
+					signal: session.signal,
+				});
+			}
 			const targetDescription = describeGuiTarget({
 				target: params.target,
 				fallback: "the input target",
@@ -3562,10 +3608,16 @@ export class ComputerUseGuiRuntime {
 
 		return await this.withGuiActionSession("gui_key", { signal }, async (session) => {
 			const repeat = Math.max(1, Math.min(50, Math.round(params.repeat ?? 1)));
-			const appName = normalizeOptionalString(params.app);
+			let appName = normalizeOptionalString(params.app);
 			const windowSelection = resolveWindowSelection({
 				windowTitle: params.windowTitle,
 				windowSelector: params.windowSelector,
+			});
+			appName = await resolveHostExcludedImplicitAppName({
+				appName,
+				windowSelector: windowSelection,
+				platform: this.runtimePlatform(),
+				signal: session.signal,
 			});
 			if (params.key.trim().toLowerCase() === "escape" || params.key.trim().toLowerCase() === "esc") {
 				session.notifyExpectedEscape();

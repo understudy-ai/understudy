@@ -123,6 +123,8 @@ function actionKindForMode(mode: string | undefined): string {
 			return "cg_double_click";
 		case "hover":
 			return "cg_hover";
+		case "move":
+			return "cg_move";
 		case "click_and_hold":
 			return "cg_click_and_hold";
 		case "drag":
@@ -751,6 +753,34 @@ describe("ComputerUseGuiRuntime", () => {
 		});
 	});
 
+	it("uses the native helper for gui_move on macOS", async () => {
+		const runtime = new ComputerUseGuiRuntime();
+
+		const result = await runtime.move({
+			app: "Mail",
+			x: 200,
+			y: 180,
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_move",
+			executed_point: { x: 200, y: 180 },
+			app: "Mail",
+		});
+		const nativeHelperCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "move",
+		);
+		expect(nativeHelperCall?.env).toMatchObject({
+			UNDERSTUDY_GUI_APP: "Mail",
+			UNDERSTUDY_GUI_ACTIVATE_APP: "1",
+			UNDERSTUDY_GUI_X: "200",
+			UNDERSTUDY_GUI_Y: "180",
+		});
+	});
+
 	it("captures screenshots with the cursor visible", async () => {
 		const runtime = new ComputerUseGuiRuntime();
 
@@ -968,6 +998,94 @@ describe("ComputerUseGuiRuntime", () => {
 		);
 		expect(captureCall?.env.UNDERSTUDY_GUI_AUTO_EXCLUDED_BUNDLE_IDS).toBeUndefined();
 		expect(captureCall?.env.UNDERSTUDY_GUI_AUTO_EXCLUDED_OWNER_NAMES).toBeUndefined();
+	});
+
+	it("uses the helper-resolved app for targetless gui_type when host self-exclude redirected capture context", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			appName: "Safari",
+			hostSelfExcludeApplied: true,
+			hostFrontmostExcluded: true,
+			hostFrontmostAppName: "Codex Desktop",
+			hostFrontmostBundleId: "com.openai.codex",
+		};
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.type({
+			value: "hello",
+			typeStrategy: "clipboard_paste",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_type_text",
+			app: "Safari",
+			grounding_method: "targetless",
+		});
+		const nativeTypeCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "type_text",
+		);
+		expect(nativeTypeCall?.env.UNDERSTUDY_GUI_APP).toBe("Safari");
+	});
+
+	it("uses the helper-resolved app for targetless gui_key when host self-exclude redirected capture context", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			appName: "Safari",
+			hostSelfExcludeApplied: true,
+			hostFrontmostExcluded: true,
+			hostFrontmostAppName: "Codex Desktop",
+			hostFrontmostBundleId: "com.openai.codex",
+		};
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.key({
+			key: "enter",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "key_event",
+			app: "Safari",
+			grounding_method: "targetless",
+		});
+		const keyCall = mocks.execCalls.find((call) =>
+			call.file === "osascript" &&
+			call.env.UNDERSTUDY_GUI_KEY_CODE === "36",
+		);
+		expect(keyCall?.env.UNDERSTUDY_GUI_APP).toBe("Safari");
+	});
+
+	it("uses the helper-resolved app for targetless gui_scroll when host self-exclude redirected capture context", async () => {
+		mocks.captureContextPayload = {
+			...mocks.captureContextPayload,
+			appName: "Safari",
+			hostSelfExcludeApplied: true,
+			hostFrontmostExcluded: true,
+			hostFrontmostAppName: "Codex Desktop",
+			hostFrontmostBundleId: "com.openai.codex",
+		};
+		const runtime = createRuntime(vi.fn());
+
+		const result = await runtime.scroll({
+			direction: "down",
+			distance: "page",
+		});
+
+		expect(result.status.code).toBe("action_sent");
+		expect(result.details).toMatchObject({
+			action_kind: "cg_scroll",
+			app: "Safari",
+			grounding_method: "targetless",
+		});
+		const scrollCall = mocks.execCalls.find((call) =>
+			call.file === MOCK_NATIVE_HELPER_PATH &&
+			call.args[0] === "event" &&
+			call.env.UNDERSTUDY_GUI_EVENT_MODE === "scroll",
+		);
+		expect(scrollCall?.env.UNDERSTUDY_GUI_APP).toBe("Safari");
 	});
 
 	it("downgrades implicit display capture when the host app is frontmost", async () => {
