@@ -13,7 +13,7 @@ describe("inspectGuiEnvironmentReadiness", () => {
 					id: "platform",
 					label: "Platform",
 					status: "unsupported",
-					summary: "GUI runtime checks are currently implemented for macOS only.",
+					summary: "GUI runtime checks are not implemented for this platform.",
 					detail: "Current platform: linux",
 				},
 			],

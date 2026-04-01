@@ -29,12 +29,23 @@ describe("runCompletionCommand", () => {
 		expect(output).toContain('complete -c understudy -n "__fish_use_subcommand" -a "completion"');
 	});
 
-	it("rejects unsupported shells", async () => {
-		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+	it("renders PowerShell completion", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
 		await runCompletionCommand({ shell: "powershell" });
 
-		expect(error).toHaveBeenCalledWith("Unsupported shell: powershell. Use --shell bash|zsh|fish");
+		const output = String(log.mock.calls[0]?.[0]);
+		expect(output).toContain("Register-ArgumentCompleter -CommandName understudy");
+		expect(output).toContain("'gateway'");
+		expect(output).toContain("'completion'");
+	});
+
+	it("rejects unsupported shells", async () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await runCompletionCommand({ shell: "tcsh" });
+
+		expect(error).toHaveBeenCalledWith("Unsupported shell: tcsh. Use --shell bash|zsh|fish|powershell|pwsh");
 		expect(process.exitCode).toBe(1);
 	});
 });

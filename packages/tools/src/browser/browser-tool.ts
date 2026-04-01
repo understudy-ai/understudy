@@ -593,7 +593,7 @@ export function createBrowserTool(
 	const truncateText = (value: string | undefined | null, maxChars: number | undefined): string => {
 		const text = typeof value === "string"
 			? value
-			: value == null
+			: value === null || value === undefined
 				? ""
 				: String(value);
 		if (!Number.isFinite(maxChars) || !maxChars || text.length <= maxChars) {

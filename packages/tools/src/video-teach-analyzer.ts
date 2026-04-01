@@ -16,6 +16,7 @@ import {
 	extractTaughtTaskToolArgumentsFromRecord,
 	normalizeWorkspacePlaybookApprovalGate,
 	normalizeTaughtTaskToolArguments,
+	sanitizeForPromptLiteral,
 } from "@understudy/core";
 import type { UnderstudyConfig } from "@understudy/types";
 import { execFile } from "node:child_process";
@@ -49,6 +50,35 @@ const MAX_PROMPT_EPISODES = 18;
 const MODEL_REQUEST_MAX_ATTEMPTS = 3;
 const INVALID_JSON_RETRY_INSTRUCTION =
 	"Your previous response was not valid strict JSON. Return exactly one JSON object, with double-quoted keys and strings, and no markdown fences or commentary.";
+
+function sanitizePromptText(value: string | undefined, maxLength = 320): string | undefined {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+	const sanitized = sanitizeForPromptLiteral(value).trim();
+	if (!sanitized) {
+		return undefined;
+	}
+	if (sanitized.length <= maxLength) {
+		return sanitized;
+	}
+	return `${sanitized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function sanitizePromptJsonValue(value: unknown, maxLength = 320): unknown {
+	if (typeof value === "string") {
+		return sanitizePromptText(value, maxLength) ?? "";
+	}
+	if (Array.isArray(value)) {
+		return value.map((entry) => sanitizePromptJsonValue(entry, maxLength));
+	}
+	if (value && typeof value === "object") {
+		return Object.fromEntries(
+			Object.entries(value).map(([key, entry]) => [key, sanitizePromptJsonValue(entry, maxLength)]),
+		);
+	}
+	return value;
+}
 
 function isNonRetryableModelRequestError(error: Error): boolean {
 	return /\bHTTP (400|401|403|404|413|422)\b/.test(error.message);
@@ -1840,15 +1870,17 @@ function summarizeEventsForPrompt(events: DemonstrationEvent[]): string[] {
 		.map((event) => {
 			const parts = [
 				formatTimestampMs(event.timestampMs),
-				event.type,
-				event.source ? `source=${event.source}` : undefined,
+				sanitizePromptText(event.type, 120),
+				event.source ? `source=${sanitizePromptText(event.source, 120)}` : undefined,
 				event.importance ? `importance=${event.importance}` : undefined,
-				event.app,
-				event.windowTitle,
-				event.target,
-				event.modifiers && event.modifiers.length > 0 ? `mods=${event.modifiers.join("+")}` : undefined,
+				sanitizePromptText(event.app, 160),
+				sanitizePromptText(event.windowTitle, 200),
+				sanitizePromptText(event.target, 200),
+				event.modifiers && event.modifiers.length > 0
+					? `mods=${event.modifiers.map((modifier) => sanitizePromptText(modifier, 40) ?? "").filter(Boolean).join("+")}`
+					: undefined,
 				event.keyCode !== undefined ? `keyCode=${event.keyCode}` : undefined,
-				event.detail,
+				sanitizePromptText(event.detail, 200),
 			].filter(Boolean);
 			return `- ${parts.join(" | ")}`;
 		});
@@ -1896,7 +1928,7 @@ function buildPrompt(params: {
 	capabilitySnapshot?: TeachCapabilitySnapshot;
 }): string {
 	const promptEvents = selectRepresentativePromptEvents(params.evidencePack);
-	const episodeSummary = params.evidencePack.episodes
+	const episodeSummary = sanitizePromptJsonValue(params.evidencePack.episodes
 		.slice(0, MAX_PROMPT_EPISODES)
 		.map((episode) => ({
 			id: episode.id,
@@ -1911,19 +1943,19 @@ function buildPrompt(params: {
 				kind: frame.kind,
 				label: frame.label,
 			})),
-		}));
+		})));
 		return [
 			"You are extracting a reusable Understudy teach draft from a GUI demonstration.",
 			"The canonical artifact is the demonstration video; the attached keyframes are derived evidence slices, not the full task contract.",
 			"Treat the video timeline, episode windows, and keyframe ordering as a single event-guided demonstration record.",
-		`Source: ${params.sourceLabel}`,
-		...(params.objectiveHint ? [`User hint: ${params.objectiveHint}`] : []),
+		`Source: ${sanitizePromptText(params.sourceLabel, 240) ?? "unknown source"}`,
+		...(sanitizePromptText(params.objectiveHint, 320) ? [`User hint: ${sanitizePromptText(params.objectiveHint, 320)}`] : []),
 		`Evidence mode: ${params.evidencePack.analysisMode}`,
 		`Episodes: ${params.evidencePack.episodes.length}`,
 		`Keyframes: ${params.evidencePack.keyframes.length}`,
 		`Imported events: ${params.evidencePack.events.length}`,
 		...(params.evidencePack.durationMs ? [`Approximate duration: ${formatTimestampMs(params.evidencePack.durationMs)}`] : []),
-		`Evidence summary: ${params.evidencePack.summary}`,
+		`Evidence summary: ${sanitizePromptText(params.evidencePack.summary, 320) ?? "n/a"}`,
 		"Episode summary JSON:",
 		JSON.stringify(episodeSummary, null, 2),
 		...(params.capabilitySnapshot
@@ -1994,7 +2026,7 @@ function buildCapabilitySelectionPrompt(params: {
 	analysis: VideoTeachAnalysis;
 	capabilitySnapshot: TeachCapabilitySnapshot;
 }): string {
-	const distilledDraft = {
+	const distilledDraft = sanitizePromptJsonValue({
 		title: params.analysis.title,
 		objective: params.analysis.objective,
 		taskKind: params.analysis.taskKind,
@@ -2004,7 +2036,7 @@ function buildCapabilitySelectionPrompt(params: {
 		executionPolicy: params.analysis.executionPolicy,
 		stepRouteOptions: params.analysis.stepRouteOptions,
 		skillDependencies: params.analysis.skillDependencies,
-	};
+	});
 	return [
 		"You are refining route selection for an Understudy teach draft.",
 		"The semantic workflow is already extracted. Do not rewrite the task itself.",

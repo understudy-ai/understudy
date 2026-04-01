@@ -1,15 +1,8 @@
 import type { GuiEnvironmentReadinessSnapshot } from "./readiness.js";
-import { GUI_UNSUPPORTED_MESSAGE } from "./runtime.js";
+import { GUI_UNSUPPORTED_MESSAGE, isGuiPlatformSupported, resolveGuiPlatformBackend } from "./platform.js";
+import { GUI_TOOL_NAMES, type GuiToolName } from "./tool-names.js";
 
-export type GuiToolName =
-	| "gui_observe"
-	| "gui_click"
-	| "gui_drag"
-	| "gui_scroll"
-	| "gui_type"
-	| "gui_key"
-	| "gui_wait"
-	| "gui_move";
+export type { GuiToolName } from "./tool-names.js";
 
 export interface GuiToolCapability {
 	enabled: boolean;
@@ -27,17 +20,6 @@ export interface GuiRuntimeCapabilitySnapshot {
 	disabledToolNames: GuiToolName[];
 	toolAvailability: Record<GuiToolName, GuiToolCapability>;
 }
-
-const GUI_TOOL_NAMES: GuiToolName[] = [
-	"gui_observe",
-	"gui_click",
-	"gui_drag",
-	"gui_scroll",
-	"gui_type",
-	"gui_key",
-	"gui_wait",
-	"gui_move",
-];
 
 const GUI_TOOLS_ALWAYS_AVAILABLE: GuiToolName[] = [
 	"gui_key",
@@ -104,18 +86,33 @@ export function resolveGuiRuntimeCapabilities(params: {
 	groundingAvailable?: boolean;
 	environmentReadiness?: GuiEnvironmentReadinessSnapshot;
 } = {}): GuiRuntimeCapabilitySnapshot {
-	const platformSupported = (params.platform ?? process.platform) === "darwin";
+	const backend = resolveGuiPlatformBackend(params.platform);
+	const platformSupported = isGuiPlatformSupported(params.platform);
 	const groundingAvailable = params.groundingAvailable === true;
+	const isAvailableStatus = (checkId: string): boolean => {
+		const status = resolveReadinessCheckStatus(params.environmentReadiness, checkId);
+		return status !== "error" && status !== "unsupported";
+	};
 	const nativeHelperAvailable = platformSupported
-		&& resolveReadinessCheckStatus(params.environmentReadiness, "native_helper") !== "error";
+		&& isAvailableStatus("native_helper");
 	const inputAvailable = nativeHelperAvailable
-		&& resolveReadinessCheckStatus(params.environmentReadiness, "accessibility") !== "error";
+		&& isAvailableStatus("accessibility");
 	const screenCaptureAvailable = nativeHelperAvailable
-		&& resolveReadinessCheckStatus(params.environmentReadiness, "screen_recording") !== "error";
+		&& isAvailableStatus("screen_recording");
 	const toolAvailability = Object.fromEntries(
 		GUI_TOOL_NAMES.map((toolName) => {
 			if (!platformSupported) {
 				return [toolName, { enabled: false, reason: GUI_UNSUPPORTED_MESSAGE }];
+			}
+			const platformToolSupport = backend.toolSupport[toolName];
+			if (!platformToolSupport.supported) {
+				return [
+					toolName,
+					{
+						enabled: false,
+						reason: platformToolSupport.reason ?? backend.unsupportedMessage,
+					},
+				];
 			}
 			if (!nativeHelperAvailable) {
 				return [toolName, { enabled: false, reason: GUI_NATIVE_HELPER_REQUIRED_REASON }];
@@ -126,13 +123,23 @@ export function resolveGuiRuntimeCapabilities(params: {
 			if (GUI_TOOLS_REQUIRING_SCREEN_CAPTURE.includes(toolName) && !screenCaptureAvailable) {
 				return [toolName, { enabled: false, reason: GUI_SCREEN_CAPTURE_REQUIRED_REASON }];
 			}
+			if (platformToolSupport.targetlessOnly) {
+				return [
+					toolName,
+					{
+						enabled: true,
+						targetlessOnly: true,
+						reason: platformToolSupport.targetlessOnlyReason ?? GUI_TARGETLESS_ONLY_REASON,
+					},
+				];
+			}
 			if (!screenCaptureAvailable && GUI_TOOLS_TARGETLESS_WITHOUT_GROUNDING.includes(toolName)) {
 				return [
 					toolName,
 					{
 						enabled: true,
 						targetlessOnly: true,
-						reason: GUI_SCREEN_CAPTURE_TARGETLESS_ONLY_REASON,
+						reason: platformToolSupport.targetlessOnlyReason ?? GUI_SCREEN_CAPTURE_TARGETLESS_ONLY_REASON,
 					},
 				];
 			}
@@ -148,7 +155,7 @@ export function resolveGuiRuntimeCapabilities(params: {
 					{
 						enabled: true,
 						targetlessOnly: true,
-						reason: GUI_TARGETLESS_ONLY_REASON,
+						reason: platformToolSupport.targetlessOnlyReason ?? GUI_TARGETLESS_ONLY_REASON,
 					},
 				];
 			}

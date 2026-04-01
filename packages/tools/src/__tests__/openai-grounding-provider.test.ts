@@ -97,6 +97,42 @@ describe("createOpenAIGroundingProvider", () => {
 		});
 	});
 
+	it("auto-validates high-risk click targets even when grounding stays in single mode", async () => {
+		const imagePath = await createTestImage(1600, 900, "openai-high-risk.png");
+		const fetchMock = createSequentialFetch([
+			'{"status":"resolved","found":true,"confidence":0.83,"reason":"matched delete button","click_point":{"x":420,"y":220},"bbox":{"x1":380,"y1":196,"x2":462,"y2":244}}',
+			'{"status":"pass","approved":true,"confidence":0.94,"reason":"exact destructive target"}',
+		]);
+		const simulationImageImpl = createSimulationImageImpl();
+		const provider = createOpenAIGroundingProvider({
+			apiKey: "test-key",
+			model: "gpt-5.4",
+			fetchImpl: fetchMock as unknown as typeof fetch,
+			simulationImageImpl,
+		});
+
+		const grounded = await provider.ground({
+			imagePath,
+			target: "Delete conversation button",
+			action: "click",
+			scope: "confirmation dialog",
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(simulationImageImpl).toHaveBeenCalledTimes(1);
+		expect(extractPromptText((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body))
+			.toContain("This is a high-risk action target.");
+		expect(extractPromptText((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body))
+			.toContain("This candidate is for a high-risk action.");
+		expect(grounded).toMatchObject({
+			point: { x: 420, y: 220 },
+			raw: {
+				selected_attempt: "validated",
+				grounding_selected_round: 1,
+			},
+		});
+	});
+
 	it("skips the validator round for observation-style wait grounding even in complex mode", async () => {
 		const imagePath = await createTestImage(1200, 800, "openai-wait-complex.png");
 		const fetchMock = createSequentialFetch([
@@ -606,6 +642,7 @@ describe("createOpenAIGroundingProvider", () => {
 		const imagePath = await createTestImage(1200, 900, "retry-full.png");
 		const fetchMock = createSequentialFetch([
 			'{"status":"resolved","found":true,"confidence":0.92,"reason":"refined target","coordinate_space":"image_pixels","click_point":{"x":644,"y":518},"bbox":{"x1":598,"y1":488,"x2":692,"y2":548}}',
+			'{"status":"pass","approved":true,"confidence":0.91,"reason":"confirmed send"}',
 		]);
 		const simulationImageImpl = createSimulationImageImpl();
 		const provider = createOpenAIGroundingProvider({
@@ -627,8 +664,8 @@ describe("createOpenAIGroundingProvider", () => {
 				],
 		});
 
-			expect(fetchMock).toHaveBeenCalledTimes(1);
-			expect(simulationImageImpl).not.toHaveBeenCalled();
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			expect(simulationImageImpl).toHaveBeenCalledTimes(1);
 			const predictionPrompt = extractPromptText((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body);
 			expect(predictionPrompt).toContain("Recent failed attempts:");
 			expect(predictionPrompt).toContain("Previous click landed on sidebar chrome.");
@@ -637,12 +674,12 @@ describe("createOpenAIGroundingProvider", () => {
 			reason: "refined target",
 			coordinateSpace: "image_pixels",
 			point: { x: 644, y: 518 },
-			box: { x: 598, y: 488, width: 94, height: 60 },
-			raw: {
-				selected_attempt: "predicted",
-				grounding_selected_round: 1,
-			},
-		});
+				box: { x: 598, y: 488, width: 94, height: 60 },
+				raw: {
+					selected_attempt: "validated",
+					grounding_selected_round: 1,
+				},
+			});
 	});
 
 	it("retries transient grounding request failures up to three attempts", async () => {
@@ -681,6 +718,51 @@ describe("createOpenAIGroundingProvider", () => {
 
 		expect(attempts).toBe(3);
 		expect(grounded?.point).toEqual({ x: 40, y: 24 });
+	});
+
+	it("aborts an in-flight grounding request when the caller aborts", async () => {
+		const imagePath = await createTestImage();
+		let requestSignal: AbortSignal | undefined;
+		let resolveFetchStarted: (() => void) | undefined;
+		const fetchStarted = new Promise<void>((resolve) => {
+			resolveFetchStarted = resolve;
+		});
+		const fetchMock = vi.fn((_input: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+			requestSignal = init?.signal ?? undefined;
+			resolveFetchStarted?.();
+			const abort = () => {
+				reject(requestSignal?.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+			};
+			if (!requestSignal) {
+				reject(new Error("missing request signal"));
+				return;
+			}
+			if (requestSignal.aborted) {
+				abort();
+				return;
+			}
+			requestSignal.addEventListener("abort", abort, { once: true });
+		}));
+		const provider = createOpenAIGroundingProvider({
+			apiKey: "test-key",
+			model: "gpt-5.4",
+			fetchImpl: fetchMock as unknown as typeof fetch,
+		});
+		const controller = new AbortController();
+
+		const pending = provider.ground({
+			imagePath,
+			target: "Publish button",
+			signal: controller.signal,
+		});
+		await fetchStarted;
+		controller.abort(new DOMException("User aborted", "AbortError"));
+
+		await expect(pending).rejects.toMatchObject({
+			name: "AbortError",
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(requestSignal?.aborted).toBe(true);
 	});
 
 	it("suppresses guide overlays after wrong-region validation failures", async () => {

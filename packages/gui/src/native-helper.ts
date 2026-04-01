@@ -66,6 +66,10 @@ struct CaptureContext: Codable {
 	let windowBounds: Rect?
 	let windowCount: Int?
 	let windowCaptureStrategy: String?
+	let hostSelfExcludeApplied: Bool?
+	let hostFrontmostExcluded: Bool?
+	let hostFrontmostAppName: String?
+	let hostFrontmostBundleId: String?
 }
 
 struct WindowMatch {
@@ -82,6 +86,19 @@ struct WindowSelection {
 	let captureStrategy: String
 }
 
+struct RedactionResult: Codable {
+	let redactionCount: Int
+}
+
+struct WindowExclusions {
+	let ownerNames: Set<String>
+	let bundleIds: Set<String>
+
+	var isEmpty: Bool {
+		ownerNames.isEmpty && bundleIds.isEmpty
+	}
+}
+
 func env(_ key: String) -> String {
 	ProcessInfo.processInfo.environment[key] ?? ""
 }
@@ -95,6 +112,62 @@ func normalizedText(_ value: String?) -> String? {
 	guard let value else { return nil }
 	let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 	return normalized.isEmpty ? nil : normalized
+}
+
+func parseDelimitedEnv(_ key: String) -> [String] {
+	env(key)
+		.split(whereSeparator: { $0 == "," || $0.isNewline })
+		.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+		.filter { !$0.isEmpty }
+}
+
+func mergeNormalizedValues(_ values: [String]) -> Set<String> {
+	Set(values.compactMap { normalizedText($0) })
+}
+
+func loadWindowExclusions() -> WindowExclusions {
+	let ownerNames = mergeNormalizedValues(
+		parseDelimitedEnv("UNDERSTUDY_GUI_EXCLUDED_OWNER_NAMES")
+		+ parseDelimitedEnv("UNDERSTUDY_GUI_AUTO_EXCLUDED_OWNER_NAMES")
+	)
+	let bundleIds = mergeNormalizedValues(
+		parseDelimitedEnv("UNDERSTUDY_GUI_EXCLUDED_BUNDLE_IDS")
+		+ parseDelimitedEnv("UNDERSTUDY_GUI_AUTO_EXCLUDED_BUNDLE_IDS")
+	)
+	return WindowExclusions(ownerNames: ownerNames, bundleIds: bundleIds)
+}
+
+func matchesExcludedApplication(_ app: NSRunningApplication?, exclusions: WindowExclusions) -> Bool {
+	guard let app else {
+		return false
+	}
+	if let localizedName = normalizedText(app.localizedName), exclusions.ownerNames.contains(localizedName) {
+		return true
+	}
+	if let bundleId = normalizedText(app.bundleIdentifier), exclusions.bundleIds.contains(bundleId) {
+		return true
+	}
+	return false
+}
+
+func matchesExcludedWindow(_ info: [String: Any], exclusions: WindowExclusions) -> Bool {
+	if exclusions.isEmpty {
+		return false
+	}
+	if let ownerName = normalizedText(info[kCGWindowOwnerName as String] as? String), exclusions.ownerNames.contains(ownerName) {
+		return true
+	}
+	guard
+		let ownerPidValue = info[kCGWindowOwnerPID as String] as? NSNumber,
+		!exclusions.bundleIds.isEmpty
+	else {
+		return false
+	}
+	let ownerPid = pid_t(ownerPidValue.int32Value)
+	guard let app = NSRunningApplication(processIdentifier: ownerPid) else {
+		return false
+	}
+	return exclusions.bundleIds.contains(app.bundleIdentifier?.lowercased() ?? "")
 }
 
 func requiredDouble(_ key: String) throws -> Double {
@@ -123,6 +196,13 @@ func optionalInt(_ key: String) -> Int? {
 
 func optionalDouble(_ key: String) -> Double? {
 	Double(env(key))
+}
+
+func requiredPath(_ key: String) throws -> String {
+	guard let value = trimmedEnv(key) else {
+		throw HelperError.missingEnv(key)
+	}
+	return value
 }
 
 func shouldActivateApp() -> Bool {
@@ -209,10 +289,41 @@ func displayForPoint(_ point: CGPoint, displays: [(index: Int, bounds: CGRect)])
 	return displays.first ?? (index: 1, bounds: CGDisplayBounds(CGMainDisplayID()))
 }
 
+func firstVisibleOwnerName(excluding exclusions: WindowExclusions) -> String? {
+	guard let windowInfo = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+		return nil
+	}
+	for info in windowInfo {
+		let alpha = info[kCGWindowAlpha as String] as? Double ?? 1
+		if alpha <= 0.01 {
+			continue
+		}
+		if matchesExcludedWindow(info, exclusions: exclusions) {
+			continue
+		}
+		guard let rawBounds = info[kCGWindowBounds as String] else {
+			continue
+		}
+		let boundsDict = rawBounds as! CFDictionary
+		guard
+			let bounds = CGRect(dictionaryRepresentation: boundsDict),
+			bounds.width >= 80,
+			bounds.height >= 80
+		else {
+			continue
+		}
+		if let owner = info[kCGWindowOwnerName as String] as? String, !owner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+			return owner
+		}
+	}
+	return nil
+}
+
 func matchingWindows(
 	ownerName: String?,
 	exactTitle: String?,
 	titleContains: String?,
+	exclusions: WindowExclusions,
 ) -> [WindowMatch] {
 	guard let windowInfo = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
 		return []
@@ -225,6 +336,9 @@ func matchingWindows(
 		let layer = info[kCGWindowLayer as String] as? Int ?? 0
 		let owner = info[kCGWindowOwnerName as String] as? String ?? ""
 		if alpha <= 0.01 {
+			continue
+		}
+		if matchesExcludedWindow(info, exclusions: exclusions) {
 			continue
 		}
 		if let ownerName, owner != ownerName {
@@ -297,12 +411,14 @@ func selectedWindow(
 	ownerName: String?,
 	exactTitle: String?,
 	titleContains: String?,
-	index: Int?
+	index: Int?,
+	exclusions: WindowExclusions
 ) -> WindowSelection? {
 	let matches = matchingWindows(
 		ownerName: ownerName,
 		exactTitle: exactTitle,
-		titleContains: titleContains
+		titleContains: titleContains,
+		exclusions: exclusions
 	)
 	guard !matches.isEmpty else {
 		return nil
@@ -353,18 +469,30 @@ func handleCaptureContext() throws {
 	let requestedWindowTitle = trimmedEnv("UNDERSTUDY_GUI_WINDOW_TITLE")
 	let requestedWindowTitleContains = trimmedEnv("UNDERSTUDY_GUI_WINDOW_TITLE_CONTAINS")
 	let requestedWindowIndex = optionalInt("UNDERSTUDY_GUI_WINDOW_INDEX")
+	let exclusions = loadWindowExclusions()
+	let frontmostApp = NSWorkspace.shared.frontmostApplication
+	let hostFrontmostExcluded = matchesExcludedApplication(frontmostApp, exclusions: exclusions)
 	if shouldActivateApp() {
 		try activateApplication(named: requestedApp)
 	}
 	let resolvedApp = resolveRequestedApplication(named: requestedApp)
-	let targetApp = resolvedApp?.localizedName ?? requestedApp ?? NSWorkspace.shared.frontmostApplication?.localizedName
+	let shouldPreferVisibleNonExcludedWindow =
+		requestedApp == nil
+		&& (
+			(resolvedApp?.localizedName).flatMap(normalizedText).map { exclusions.ownerNames.contains($0) } ?? false
+			|| (resolvedApp?.bundleIdentifier).flatMap(normalizedText).map { exclusions.bundleIds.contains($0) } ?? false
+		)
+	let targetApp = shouldPreferVisibleNonExcludedWindow
+		? firstVisibleOwnerName(excluding: exclusions)
+		: (resolvedApp?.localizedName ?? requestedApp ?? NSWorkspace.shared.frontmostApplication?.localizedName)
 	let cursorLocation = CGEvent(source: nil)?.location ?? .zero
 	let displays = activeDisplays()
 	let window = selectedWindow(
 		ownerName: targetApp,
 		exactTitle: requestedWindowTitle,
 		titleContains: requestedWindowTitleContains,
-		index: requestedWindowIndex
+		index: requestedWindowIndex,
+		exclusions: exclusions
 	)
 	let anchorPoint = window.map { CGPoint(x: $0.primary.bounds.midX, y: $0.primary.bounds.midY) } ?? cursorLocation
 	let display = displayForPoint(anchorPoint, displays: displays)
@@ -377,12 +505,137 @@ func handleCaptureContext() throws {
 		windowTitle: window?.primary.title,
 		windowBounds: window.map { rect($0.captureBounds) },
 		windowCount: window?.windowCount,
-		windowCaptureStrategy: window?.captureStrategy
+		windowCaptureStrategy: window?.captureStrategy,
+		hostSelfExcludeApplied: !exclusions.isEmpty,
+		hostFrontmostExcluded: hostFrontmostExcluded,
+		hostFrontmostAppName: frontmostApp?.localizedName,
+		hostFrontmostBundleId: frontmostApp?.bundleIdentifier
 	)
 
 	let encoder = JSONEncoder()
 	encoder.outputFormatting = [.sortedKeys]
 	let data = try encoder.encode(payload)
+	FileHandle.standardOutput.write(data)
+}
+
+func excludedWindowRedactionRects(
+	captureBounds: CGRect,
+	imagePixelWidth: Int,
+	imagePixelHeight: Int,
+	exclusions: WindowExclusions,
+) -> [CGRect] {
+	guard
+		!exclusions.isEmpty,
+		imagePixelWidth > 0,
+		imagePixelHeight > 0,
+		captureBounds.width > 0,
+		captureBounds.height > 0,
+		let windowInfo = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+	else {
+		return []
+	}
+	let scaleX = CGFloat(imagePixelWidth) / captureBounds.width
+	let scaleY = CGFloat(imagePixelHeight) / captureBounds.height
+	let imageBounds = CGRect(x: 0, y: 0, width: imagePixelWidth, height: imagePixelHeight)
+	var rects: [CGRect] = []
+	for info in windowInfo {
+		let alpha = info[kCGWindowAlpha as String] as? Double ?? 1
+		if alpha <= 0.01 {
+			continue
+		}
+		if !matchesExcludedWindow(info, exclusions: exclusions) {
+			continue
+		}
+		guard let rawBounds = info[kCGWindowBounds as String] else {
+			continue
+		}
+		let boundsDict = rawBounds as! CFDictionary
+		guard let bounds = CGRect(dictionaryRepresentation: boundsDict) else {
+			continue
+		}
+		let intersection = bounds.intersection(captureBounds)
+		if intersection.isNull || intersection.width <= 0 || intersection.height <= 0 {
+			continue
+		}
+		let rect = CGRect(
+			x: (intersection.origin.x - captureBounds.origin.x) * scaleX,
+			y: (intersection.origin.y - captureBounds.origin.y) * scaleY,
+			width: intersection.width * scaleX,
+			height: intersection.height * scaleY
+		).integral.intersection(imageBounds)
+		if rect.isNull || rect.width <= 0 || rect.height <= 0 {
+			continue
+		}
+		rects.append(rect)
+	}
+	return rects
+}
+
+func redactImageAtPath(_ path: String, redactions: [CGRect]) throws {
+	guard !redactions.isEmpty else {
+		return
+	}
+	let fileURL = URL(fileURLWithPath: path)
+	let data = try Data(contentsOf: fileURL)
+	guard
+		let bitmap = NSBitmapImageRep(data: data),
+		let sourceImage = NSImage(data: data)
+	else {
+		throw HelperError.eventCreationFailed("redaction_image_load")
+	}
+	let imageSize = NSSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
+	let canvas = NSImage(size: imageSize)
+	canvas.lockFocusFlipped(true)
+	sourceImage.draw(
+		in: NSRect(origin: .zero, size: imageSize),
+		from: NSRect(origin: .zero, size: sourceImage.size),
+		operation: .copy,
+		fraction: 1
+	)
+	NSColor(calibratedWhite: 0.08, alpha: 1).setFill()
+	for rect in redactions {
+		NSBezierPath(rect: rect).fill()
+	}
+	canvas.unlockFocus()
+	guard
+		let tiffRepresentation = canvas.tiffRepresentation,
+		let outputBitmap = NSBitmapImageRep(data: tiffRepresentation),
+		let pngData = outputBitmap.representation(using: .png, properties: [:])
+	else {
+		throw HelperError.eventCreationFailed("redaction_image_encode")
+	}
+	try pngData.write(to: fileURL)
+}
+
+func handleRedactHostWindows() throws {
+	let imagePath = try requiredPath("UNDERSTUDY_GUI_IMAGE_PATH")
+	let captureBounds = CGRect(
+		x: try requiredDouble("UNDERSTUDY_GUI_CAPTURE_X"),
+		y: try requiredDouble("UNDERSTUDY_GUI_CAPTURE_Y"),
+		width: try requiredDouble("UNDERSTUDY_GUI_CAPTURE_WIDTH"),
+		height: try requiredDouble("UNDERSTUDY_GUI_CAPTURE_HEIGHT")
+	)
+	let exclusions = loadWindowExclusions()
+	guard !exclusions.isEmpty else {
+		let data = try JSONEncoder().encode(RedactionResult(redactionCount: 0))
+		FileHandle.standardOutput.write(data)
+		return
+	}
+	let fileURL = URL(fileURLWithPath: imagePath)
+	let imageData = try Data(contentsOf: fileURL)
+	guard let bitmap = NSBitmapImageRep(data: imageData) else {
+		throw HelperError.eventCreationFailed("redaction_bitmap_load")
+	}
+	let redactions = excludedWindowRedactionRects(
+		captureBounds: captureBounds,
+		imagePixelWidth: bitmap.pixelsWide,
+		imagePixelHeight: bitmap.pixelsHigh,
+		exclusions: exclusions
+	)
+	try redactImageAtPath(imagePath, redactions: redactions)
+	let encoder = JSONEncoder()
+	encoder.outputFormatting = [.sortedKeys]
+	let data = try encoder.encode(RedactionResult(redactionCount: redactions.count))
 	FileHandle.standardOutput.write(data)
 }
 
@@ -569,17 +822,22 @@ func typePhysicalKeyText(_ text: String) throws {
 func pasteText(_ text: String) throws {
 	let pasteboard = NSPasteboard.general
 	let previousString = pasteboard.string(forType: .string)
+	defer {
+		pasteboard.clearContents()
+		if let previousString {
+			_ = pasteboard.setString(previousString, forType: .string)
+		}
+	}
 	pasteboard.clearContents()
 	guard pasteboard.setString(text, forType: .string) else {
 		throw HelperError.eventCreationFailed("pasteboard_set")
 	}
+	guard pasteboard.string(forType: .string) == text else {
+		throw HelperError.eventCreationFailed("pasteboard_verify")
+	}
 	usleep(100_000)
 	try pressKeyCode(9, flags: .maskCommand)
 	usleep(150_000)
-	pasteboard.clearContents()
-	if let previousString {
-		_ = pasteboard.setString(previousString, forType: .string)
-	}
 }
 
 func rightDown(at point: CGPoint, clickState: Int64 = 1) throws {
@@ -599,6 +857,12 @@ func drag(from start: CGPoint, to end: CGPoint, steps: Int, durationMs: Int) thr
 	let sleepMicros = useconds_t(max(10_000, (durationMs * 1_000) / stepCount))
 	try moveCursor(to: start)
 	try leftDown(at: start)
+	var mouseIsDown = true
+	defer {
+		if mouseIsDown {
+			try? leftUp(at: end)
+		}
+	}
 	usleep(50_000)
 	for index in 1...stepCount {
 		let progress = Double(index) / Double(stepCount)
@@ -610,6 +874,59 @@ func drag(from start: CGPoint, to end: CGPoint, steps: Int, durationMs: Int) thr
 		usleep(sleepMicros)
 	}
 	try leftUp(at: end)
+	mouseIsDown = false
+}
+
+func releaseAllModifiers() throws {
+	for keyCode in [shiftKeyCode, controlKeyCode, optionKeyCode, commandKeyCode] {
+		try postKeyboardEvent(keyCode: keyCode, keyDown: false, flags: [])
+		usleep(10_000)
+	}
+}
+
+func releaseMouseButtons() {
+	let point = CGEvent(source: nil)?.location ?? .zero
+	try? leftUp(at: point)
+	try? rightUp(at: point)
+}
+
+func handleCleanup() throws {
+	if env("UNDERSTUDY_GUI_RELEASE_MOUSE") != "0" {
+		releaseMouseButtons()
+	}
+	if env("UNDERSTUDY_GUI_RELEASE_MODIFIERS") != "0" {
+		try releaseAllModifiers()
+	}
+	print("cleanup")
+}
+
+func monitorEscape() throws {
+	let eventMask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+	guard let eventTap = CGEvent.tapCreate(
+		tap: .cgSessionEventTap,
+		place: .headInsertEventTap,
+		options: .listenOnly,
+		eventsOfInterest: eventMask,
+		callback: { _, type, event, _ in
+			if type == .keyDown && event.getIntegerValueField(.keyboardEventKeycode) == 53 {
+				if let data = "escape\n".data(using: .utf8) {
+					FileHandle.standardOutput.write(data)
+				}
+				fflush(stdout)
+				CFRunLoopStop(CFRunLoopGetMain())
+			}
+			return Unmanaged.passUnretained(event)
+		},
+		userInfo: nil
+	) else {
+		throw HelperError.eventCreationFailed("escape_monitor")
+	}
+	guard let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0) else {
+		throw HelperError.eventCreationFailed("escape_monitor_runloop")
+	}
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+	CGEvent.tapEnable(tap: eventTap, enable: true)
+	CFRunLoopRun()
 }
 
 func handleEvent() throws {
@@ -650,6 +967,10 @@ func handleEvent() throws {
 			usleep(useconds_t(settleMs * 1_000))
 		}
 		print("cg_hover")
+	case "move":
+		let point = CGPoint(x: try requiredDouble("UNDERSTUDY_GUI_X"), y: try requiredDouble("UNDERSTUDY_GUI_Y"))
+		try moveCursor(to: point)
+		print("cg_move")
 	case "click_and_hold":
 		let point = CGPoint(x: try requiredDouble("UNDERSTUDY_GUI_X"), y: try requiredDouble("UNDERSTUDY_GUI_Y"))
 		let holdDurationMs = max(100, optionalInt("UNDERSTUDY_GUI_HOLD_DURATION_MS") ?? 650)
@@ -726,6 +1047,12 @@ do {
 		try handleCaptureContext()
 	case "event":
 		try handleEvent()
+	case "cleanup":
+		try handleCleanup()
+	case "redact-host-windows":
+		try handleRedactHostWindows()
+	case "monitor-escape":
+		try monitorEscape()
 	default:
 		throw HelperError.invalidCommand(command)
 	}

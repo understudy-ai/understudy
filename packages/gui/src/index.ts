@@ -1,19 +1,28 @@
 export {
 	ComputerUseGuiRuntime,
 	GuiRuntimeError,
-	isGuiPlatformSupported,
 } from "./runtime.js";
 export type {
 	ComputerUseGuiRuntimeOptions,
 } from "./runtime.js";
 export {
+	GUI_UNSUPPORTED_MESSAGE,
+	isGuiPlatformSupported,
+	resolveGuiPlatformBackend,
+} from "./platform.js";
+export type {
+	GuiPlatformBackend,
+} from "./platform.js";
+export {
 	resolveGuiRuntimeCapabilities,
 } from "./capabilities.js";
 export type {
 	GuiToolCapability,
-	GuiToolName,
 	GuiRuntimeCapabilitySnapshot,
 } from "./capabilities.js";
+export type {
+	GuiToolName,
+} from "./tool-names.js";
 export {
 	createMacosDemonstrationRecorder,
 } from "./demonstration-recorder.js";
@@ -23,6 +32,14 @@ export {
 export {
 	normalizeGuiGroundingMode,
 } from "./types.js";
+export {
+	FilePhysicalResourceLock,
+} from "./physical-resource-lock.js";
+export {
+	GuiActionAbortError,
+	GuiActionSession,
+	sleepWithSignal,
+} from "./gui-action-session.js";
 export type {
 	GuiActionResult,
 	GuiActionStatus,
@@ -54,6 +71,18 @@ export type {
 	GuiWindowSelector,
 } from "./types.js";
 export type {
+	GuiReadinessDeps,
 	GuiEnvironmentReadinessCheck,
 	GuiEnvironmentReadinessSnapshot,
 } from "./readiness.js";
+export type {
+	PhysicalResourceLock,
+	PhysicalResourceLockAcquireResult,
+	PhysicalResourceLockHolder,
+	PhysicalResourceLockRequest,
+} from "./physical-resource-lock.js";
+export type {
+	GuiActionSessionCleanup,
+	GuiEmergencyStopHandle,
+	GuiEmergencyStopProvider,
+} from "./gui-action-session.js";

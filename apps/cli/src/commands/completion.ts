@@ -47,15 +47,32 @@ compdef _understudy understudy`);
 			}
 			break;
 		}
+		case "powershell":
+		case "pwsh": {
+			console.log(`# Understudy PowerShell completion
+# Save to your PowerShell profile and reload the shell.
+Register-ArgumentCompleter -CommandName understudy -ScriptBlock {
+    param($commandName, $wordToComplete, $cursorPosition)
+    ${COMMANDS.map((cmd) => `'${cmd}'`).join(", ")} |
+        Where-Object { $_ -like "$wordToComplete*" } |
+        ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+}`);
+			break;
+		}
 		default:
-			console.error(`Unsupported shell: ${shell}. Use --shell bash|zsh|fish`);
+			console.error(`Unsupported shell: ${shell}. Use --shell bash|zsh|fish|powershell|pwsh`);
 			process.exitCode = 1;
 	}
 }
 
 function detectShell(): string {
-	const shell = process.env.SHELL ?? "";
+	const shell = (process.env.SHELL ?? process.env.ComSpec ?? "").toLowerCase();
+	if (shell.includes("pwsh")) return "pwsh";
+	if (shell.includes("powershell")) return "powershell";
 	if (shell.includes("zsh")) return "zsh";
 	if (shell.includes("fish")) return "fish";
+	if (process.platform === "win32") return "powershell";
 	return "bash";
 }
