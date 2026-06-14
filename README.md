@@ -372,7 +372,13 @@ understudy agent --message "..."  # Script/CI single-turn call (requires gateway
 
 ## Platform Support
 
-Understudy is currently developed and tested on **macOS**. Core features (CLI, gateway, browser, channels) are cross-platform by design, but native GUI automation and teach-by-demonstration require macOS today. Linux and Windows GUI backends are planned — contributions welcome.
+Understudy is developed and validated primarily on **macOS**, and the core surfaces (CLI, gateway, browser, channels) are cross-platform by design.
+
+- **macOS:** full GUI runtime, screenshot grounding, and teach-by-demonstration support
+- **Windows:** PowerShell-backed GUI MVP for `gui_observe`, `gui_wait`, `gui_key`, `gui_type`, `gui_click`, `gui_drag`, `gui_scroll`, and `gui_move`
+- **Linux:** GUI backend still planned
+
+The Windows backend currently focuses on screenshot capture and input dispatch; demonstration recording and window-index targeting are not implemented there yet.
 
 ## Supported Models
 
@@ -515,7 +521,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
 We're looking for contributors in these areas:
 
-- **GUI backends** — Linux (AT-SPI) and Windows (UIA) native GUI support
+- **GUI backends** — Linux (AT-SPI) support and deeper Windows validation/hardening
 - **Skills** — new skill modules for popular apps and workflows
 - **Route discovery** — automatic API detection and upgrade logic (Layer 4)
 - **Teach improvements** — better evidence pack analysis and validation

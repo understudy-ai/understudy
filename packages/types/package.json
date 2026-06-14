@@ -13,9 +13,9 @@
 		}
 	},
 	"scripts": {
-		"build": "rm -rf dist && tsc -p tsconfig.build.json",
+		"build": "node ../../scripts/clean-dir.mjs dist && tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
-		"clean": "rm -rf dist"
+		"clean": "node ../../scripts/clean-dir.mjs dist"
 	},
 	"dependencies": {
 		"@sinclair/typebox": "^0.34.48"

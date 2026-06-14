@@ -91,6 +91,7 @@ export interface GuiGroundingFailure {
 
 export interface GuiGroundingRequest {
 	imagePath: string;
+	signal?: AbortSignal;
 	logicalImageWidth?: number;
 	logicalImageHeight?: number;
 	imageScaleX?: number;

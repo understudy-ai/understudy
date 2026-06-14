@@ -16,11 +16,14 @@ import {
 } from "../exec-sessions.js";
 
 describe("createProcessTool", () => {
+	const originalPlatform = process.platform;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
+		Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
 		clearExecSessionsForTest();
 	});
 
@@ -56,6 +59,24 @@ describe("createProcessTool", () => {
 
 		expect((result.content[0] as any).text).toContain("Error listing processes: ps unavailable");
 		expect(result.details).toEqual({ error: true });
+	});
+
+	it("lists processes via tasklist output on Windows", async () => {
+		Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+		mocks.execSync.mockReturnValue(
+			'"node.exe","123","Console","1","12,000 K"\n"pnpm.exe","456","Console","1","8,000 K"\n',
+		);
+		const tool = createProcessTool();
+		const result = await tool.execute("id", { action: "list" });
+		const text = (result.content[0] as any).text;
+
+		expect(mocks.execSync).toHaveBeenCalledWith("tasklist /fo csv /nh", {
+			encoding: "utf-8",
+			timeout: 5000,
+		});
+		expect(text).toContain("Image Name");
+		expect(text).toContain("node.exe");
+		expect(result.details).toEqual({ count: 2 });
 	});
 
 	it("lists running exec sessions even before they are backgrounded", async () => {
@@ -120,6 +141,24 @@ describe("createProcessTool", () => {
 		});
 		expect(text).toContain("321");
 		expect(text).toContain("node worker.js");
+		expect(result.details).toEqual({ pid: 321 });
+	});
+
+	it("gets deterministic process info from tasklist on Windows", async () => {
+		Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+		mocks.execSync.mockReturnValue(
+			'"node.exe","321","Console","1","10,240 K"\n',
+		);
+		const tool = createProcessTool();
+		const result = await tool.execute("id", { action: "info", pid: 321 });
+		const text = (result.content[0] as any).text;
+
+		expect(mocks.execSync).toHaveBeenCalledWith('tasklist /fi "PID eq 321" /fo csv /nh', {
+			encoding: "utf-8",
+			timeout: 5000,
+		});
+		expect(text).toContain("node.exe");
+		expect(text).toContain("PID: 321");
 		expect(result.details).toEqual({ pid: 321 });
 	});
 

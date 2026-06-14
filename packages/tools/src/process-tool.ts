@@ -160,6 +160,16 @@ function resolveSignal(signal?: string): NodeJS.Signals {
 	return (signal?.trim() || "SIGTERM") as NodeJS.Signals;
 }
 
+function parseCsvLine(line: string): string[] {
+	const values: string[] = [];
+	const matcher = /"((?:[^"]|"")*)"(?:,|$)/g;
+	let match: RegExpExecArray | null;
+	while ((match = matcher.exec(line)) !== null) {
+		values.push(match[1].replace(/""/g, "\""));
+	}
+	return values;
+}
+
 function isRunningSession(
 	session: SessionLike | undefined,
 ): session is ExecSessionRecord {
@@ -181,6 +191,25 @@ function resolveSession(sessionId: string | undefined): {
 
 function listHostProcesses(): AgentToolResult<unknown> {
 	try {
+		if (process.platform === "win32") {
+			const output = execSync("tasklist /fo csv /nh", {
+				encoding: "utf-8",
+				timeout: 5000,
+			});
+			const processes = output
+				.trim()
+				.split(/\r?\n/)
+				.filter(Boolean)
+				.slice(0, 20)
+				.map((line) => {
+					const [imageName = "", pid = "", sessionName = "", sessionNumber = "", memUsage = ""] = parseCsvLine(line);
+					return [imageName, pid, sessionName, sessionNumber, memUsage].join("\t");
+				});
+			return textResult(
+				["Image Name\tPID\tSession Name\tSession#\tMem Usage", ...processes].join("\n"),
+				{ count: processes.length },
+			);
+		}
 		const output = execSync("ps aux --sort=-%cpu 2>/dev/null || ps aux", {
 			encoding: "utf-8",
 			timeout: 5000,
@@ -245,6 +274,27 @@ function processInfo(pid: number | undefined): AgentToolResult<unknown> {
 		});
 	}
 	try {
+		if (process.platform === "win32") {
+			const output = execSync(`tasklist /fi "PID eq ${pid}" /fo csv /nh`, {
+				encoding: "utf-8",
+				timeout: 5000,
+			}).trim();
+			const line = output.split(/\r?\n/).find((value) => value.trim().startsWith("\""));
+			if (!line) {
+				throw new Error("not found");
+			}
+			const [imageName = "", resolvedPid = "", sessionName = "", sessionNumber = "", memUsage = ""] = parseCsvLine(line);
+			return textResult(
+				[
+					`Image Name: ${imageName}`,
+					`PID: ${resolvedPid}`,
+					`Session Name: ${sessionName}`,
+					`Session#: ${sessionNumber}`,
+					`Mem Usage: ${memUsage}`,
+				].join("\n"),
+				{ pid },
+			);
+		}
 		const output = execSync(`ps -p ${pid} -o pid,ppid,user,%cpu,%mem,stat,start,command`, {
 			encoding: "utf-8",
 			timeout: 5000,

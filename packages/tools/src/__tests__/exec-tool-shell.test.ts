@@ -32,12 +32,15 @@ function createMockChildProcess() {
 }
 
 describe("createExecTool shell invocation", () => {
+	const originalPlatform = process.platform;
+
 	beforeEach(() => {
 		vi.resetModules();
 		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
+		Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
 		clearExecSessionsForTest();
 	});
 
@@ -54,6 +57,26 @@ describe("createExecTool shell invocation", () => {
 		expect(mocks.spawn).toHaveBeenCalledWith(
 			expect.any(String),
 			["-c", "echo ready"],
+			expect.objectContaining({
+				stdio: ["pipe", "pipe", "pipe"],
+			}),
+		);
+	});
+
+	it("uses cmd.exe style shell invocation on Windows", async () => {
+		Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+		mocks.spawn.mockImplementation(() => createMockChildProcess() as any);
+		const { createExecTool } = await import("../exec-tool.js");
+		const tool = createExecTool();
+
+		await tool.execute("id", {
+			command: "echo ready",
+			yieldMs: 1_000,
+		});
+
+		expect(mocks.spawn).toHaveBeenCalledWith(
+			expect.any(String),
+			["/d", "/s", "/c", "echo ready"],
 			expect.objectContaining({
 				stdio: ["pipe", "pipe", "pipe"],
 			}),

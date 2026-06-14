@@ -83,6 +83,7 @@ async function createRealOpenAIGroundedRuntime(): Promise<ComputerUseGuiRuntime>
 	}
 	return new ComputerUseGuiRuntime({
 		groundingProvider: resolved.groundingProvider,
+		physicalResourceLock: null,
 	});
 }
 
@@ -1822,6 +1823,7 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 		await prepareBrowserPageForGui(page);
 		browserRuntime = new ComputerUseGuiRuntime({
 			groundingProvider: createPlaywrightDomGroundingProvider(() => browserSurfaces),
+			physicalResourceLock: null,
 		});
 	}, REAL_GUI_SETUP_TIMEOUT_MS);
 
@@ -2145,7 +2147,7 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 
 			const clickResult = await runtime.click({
 				app: browserAppName,
-				target: "Twin action",
+				target: 'the right button labeled "Twin action"',
 				scope: "Workspace panel",
 				locationHint: "right side of the workspace panel",
 			});
@@ -2178,8 +2180,8 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 
 			const typeResult = await runtime.type({
 				app: browserAppName,
-				target: 'input field with placeholder "Type here"',
-				scope: 'the row with the input field and Hover chip',
+				target: 'the empty text box that says "Type here"',
+				scope: "Workspace panel",
 				groundingMode: "complex",
 				locationHint: "left side of the row",
 				value: "real grounding flow",
@@ -2190,8 +2192,8 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 
 			const dragResult = await runtime.drag({
 				app: browserAppName,
-				fromTarget: "Puzzle slider thumb",
-				toTarget: "Puzzle completion marker",
+				fromTarget: "the slider handle with the › symbol",
+				toTarget: "the circular marker at the far right end of the slider track",
 				fromScope: "Workspace panel",
 				toScope: "Workspace panel",
 				fromLocationHint: "left side of the slider track",
@@ -2216,7 +2218,7 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 
 			const result = await runtime.click({
 				app: browserAppName,
-				target: "Popup action button",
+				target: 'the button labeled "Popup action"',
 				scope: "Popup panel",
 				captureMode: "display",
 			});
@@ -2587,7 +2589,9 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 				normalizeFinderPath(fixtureDir),
 			);
 
-			const runtime = new ComputerUseGuiRuntime();
+			const runtime = new ComputerUseGuiRuntime({
+				physicalResourceLock: null,
+			});
 			const openResult = await runtime.key({
 				app: "Finder",
 				key: "down",
@@ -2635,6 +2639,7 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 						};
 					},
 				},
+				physicalResourceLock: null,
 			});
 			const closeResult = await groundedFinderRuntime.click({
 				app: "Finder",
@@ -2653,9 +2658,11 @@ const TEST_PAGE_HTML = String.raw`<!doctype html>
 	it("drives native TextEdit hotkey, typing, keypress, and screenshot flows", async () => {
 		await closeTextEditWithoutSaving();
 		await launchTextEdit();
-		const runtime = new ComputerUseGuiRuntime();
-			try {
-				const newDoc = await runtime.key({
+		const runtime = new ComputerUseGuiRuntime({
+			physicalResourceLock: null,
+		});
+		try {
+			const newDoc = await runtime.key({
 					app: "TextEdit",
 					key: "n",
 					modifiers: ["command"],

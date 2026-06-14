@@ -15,7 +15,7 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
-		"clean": "rm -rf dist",
+		"clean": "node ../../scripts/clean-dir.mjs dist",
 		"test": "vitest --run --config ../../vitest.package.config.ts"
 	},
 	"dependencies": {

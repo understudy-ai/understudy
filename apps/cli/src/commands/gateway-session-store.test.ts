@@ -128,17 +128,20 @@ describe("gateway session store", () => {
 			activeSessionBindings: new Map(),
 		});
 
-		const raw = JSON.parse(await readFile(storePath, "utf8")) as {
-			runs?: Array<Record<string, unknown>>;
-		};
-		const run = raw.runs?.[0];
-		expect(run).toBeDefined();
-		expect((run?.response as string).length).toBeLessThan(17_000);
-		expect(run?.images).toEqual([
-			{
-				type: "image",
-				mimeType: "image/png",
-				data: "[image payload omitted]",
+			const raw = JSON.parse(await readFile(storePath, "utf8")) as {
+				runs?: Array<Record<string, unknown>>;
+			};
+			const run = raw.runs?.[0];
+			expect(run).toBeDefined();
+			if (!run) {
+				throw new Error("Expected a persisted run");
+			}
+			expect((run.response as string).length).toBeLessThan(17_000);
+			expect(run.images).toEqual([
+				{
+					type: "image",
+					mimeType: "image/png",
+					data: "[image payload omitted]",
 			},
 		]);
 		expect(run?.meta).toMatchObject({
@@ -152,9 +155,9 @@ describe("gateway session store", () => {
 				],
 				nested: {
 					imageData: "[image payload omitted]",
+					},
 				},
-			},
+			});
+			expect(((run.meta as any).latestToolResult.nested.text as string).length).toBeLessThan(17_000);
 		});
-		expect(((run?.meta as any).latestToolResult.nested.text as string).length).toBeLessThan(17_000);
 	});
-});

@@ -5,6 +5,7 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import { sanitizeForPromptLiteral } from "@understudy/core";
 import {
 	readCache,
 	writeCache,
@@ -23,6 +24,14 @@ const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const SEARCH_PROVIDERS = ["brave", "gemini"] as const;
 
 type SearchProvider = (typeof SEARCH_PROVIDERS)[number];
+
+function sanitizeSearchPromptLiteral(value: string, maxLength = 500): string {
+	const sanitized = sanitizeForPromptLiteral(value).trim();
+	if (sanitized.length <= maxLength) {
+		return sanitized;
+	}
+	return `${sanitized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
 
 const WebSearchSchema = Type.Object({
 	query: Type.String({
@@ -258,9 +267,11 @@ async function searchGemini(
 	timeoutMs?: number,
 ): Promise<SearchResult[]> {
 	const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+	const sanitizedQuery = sanitizeSearchPromptLiteral(query);
+	const sanitizedCountry = country ? sanitizeSearchPromptLiteral(country, 16) : undefined;
 	const prompt = [
-		`Search the web for: ${query}`,
-		country ? `Prioritize sources relevant to country code ${country}.` : "",
+		`Search the web for: ${sanitizedQuery}`,
+		sanitizedCountry ? `Prioritize sources relevant to country code ${sanitizedCountry}.` : "",
 		"Return concise findings with reliable, citable sources.",
 	]
 		.filter(Boolean)

@@ -26,12 +26,64 @@ import {
 import { loadImageSource } from "./image-shared.js";
 import { loadPhoton } from "./photon.js";
 import { buildDataUrl, extractJsonObject, extractResponseText } from "./response-extract-helpers.js";
-import { asBoolean, asNumber, asRecord, asString } from "@understudy/core";
+import {
+	asBoolean,
+	asNumber,
+	asRecord,
+	asString,
+	sanitizeForPromptLiteral,
+} from "@understudy/core";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_GROUNDING_IMAGE_BYTES = 40 * 1024 * 1024;
 const DEFAULT_MAX_OUTPUT_TOKENS = 300;
 const MODEL_REQUEST_MAX_ATTEMPTS = 3;
+
+function createAbortError(reason?: unknown): Error {
+	if (reason instanceof Error) {
+		return reason;
+	}
+	if (typeof DOMException !== "undefined") {
+		return new DOMException(
+			typeof reason === "string" && reason.trim().length > 0
+				? reason
+				: "The operation was aborted.",
+			"AbortError",
+		);
+	}
+	const error = new Error(
+		typeof reason === "string" && reason.trim().length > 0
+			? reason
+			: "The operation was aborted.",
+	);
+	error.name = "AbortError";
+	return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+	if (signal?.aborted) {
+		throw createAbortError(signal.reason);
+	}
+}
+
+async function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+	if (ms <= 0) {
+		return;
+	}
+	throwIfAborted(signal);
+	await new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			reject(createAbortError(signal?.reason));
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
 
 function isNonRetryableModelRequestError(error: Error): boolean {
 	return /\bHTTP (400|401|403|404|413|422)\b/.test(error.message);
@@ -92,6 +144,7 @@ type GroundingModelRunner = (params: {
 	stage: GroundingModelStage;
 	prompt: string;
 	images: GroundingModelImageInput[];
+	signal?: AbortSignal;
 }) => Promise<string>;
 type PrepareModelFrameImpl = (frame: GroundingFrame, request: GuiGroundingRequest) => Promise<PreparedGroundingModelFrame>;
 type ResponsesApiReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -377,6 +430,23 @@ function formatGroundingFailureKind(kind: GuiGroundingFailureKind | undefined): 
 	return kind?.replace(/_/g, " ");
 }
 
+function sanitizePromptField(value: string | undefined, maxLength = 240): string | undefined {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+	const sanitized = sanitizeForPromptLiteral(value).trim();
+	if (!sanitized) {
+		return undefined;
+	}
+	return sanitized.length > maxLength ? sanitized.slice(0, maxLength) : sanitized;
+}
+
+function sanitizePromptLines(values: string[] | undefined, maxLength = 320): string[] {
+	return (values ?? [])
+		.map((value) => sanitizePromptField(value, maxLength))
+		.filter((value): value is string => Boolean(value));
+}
+
 function buildGroundingRefinementPrompt(params: {
 	target: string;
 	scope?: string;
@@ -617,21 +687,28 @@ export function buildGroundingPrompt(params: {
 	previousFailures?: GuiGroundingFailure[];
 	hasGuideImage?: boolean;
 }): string {
+	const target = sanitizePromptField(params.target, 320) ?? "unknown target";
+	const locationHint = sanitizePromptField(params.locationHint);
+	const scope = sanitizePromptField(params.scope);
+	const app = sanitizePromptField(params.app);
+	const windowTitle = sanitizePromptField(params.windowTitle);
+	const retryNotes = sanitizePromptLines(params.retryNotes, 320);
 	const previousFailureLines = (params.previousFailures ?? [])
 		.slice(0, 2)
 		.map((failure, index) => describeGroundingFailure(failure, index + 1));
 	const relatedContextLines = describeRelatedGroundingContext(params);
 	const groundingMode = normalizeGuiGroundingMode(params.groundingMode);
 	const requiresExplicitPoint = actionRequiresExplicitPoint(params.action);
+	const highRiskRequest = isHighRiskGroundingRequest(params);
 	return [
 		params.systemPrompt ?? "You are a GUI grounding model.",
 		"Ground the single best UI target in this screenshot.",
 		`Action intent: ${formatGroundingActionIntent(params.action)}.`,
-		`Target description: ${params.target}`,
-		...(params.locationHint ? [`Coarse location hint: ${params.locationHint}`] : []),
-		...(params.scope ? [`Scope hint: ${params.scope}`] : []),
-		...(params.app ? [`App hint: ${params.app}`] : []),
-		...(params.windowTitle ? [`Window title hint: ${params.windowTitle}`] : []),
+		`Target description: ${target}`,
+		...(locationHint ? [`Coarse location hint: ${locationHint}`] : []),
+		...(scope ? [`Scope hint: ${scope}`] : []),
+		...(app ? [`App hint: ${app}`] : []),
+		...(windowTitle ? [`Window title hint: ${windowTitle}`] : []),
 		...(params.captureMode ? [`Capture mode: ${params.captureMode}.`] : []),
 		...(params.width && params.height ? [`Image size: ${params.width}x${params.height} pixels.`] : []),
 		`Grounding mode requested by the caller: ${groundingMode}.`,
@@ -641,8 +718,8 @@ export function buildGroundingPrompt(params: {
 		...(previousFailureLines.length > 0
 			? ["Recent failed attempts:", ...previousFailureLines]
 			: []),
-		...(params.retryNotes?.length
-			? ["Retry context:", ...params.retryNotes.map((line) => `- ${line}`)]
+		...(retryNotes.length > 0
+			? ["Retry context:", ...retryNotes.map((line) => `- ${line}`)]
 			: []),
 		...(previousFailureLines.length > 0
 			? [
@@ -650,13 +727,19 @@ export function buildGroundingPrompt(params: {
 				"If a previous failure is classified as wrong_control, wrong_point, state_mismatch, or partial_visibility, use it only as local negative evidence and move to a different visible hit target or safer point.",
 			]
 			: []),
-		...(params.hasGuideImage
-			? [
-				"An additional guide image is provided with the same screenshot plus a red overlay showing the previously rejected candidate.",
-				"Do not repeat the red marked candidate unless the rejection reason is clearly contradicted by stronger visible evidence.",
-			]
-			: []),
-		"You are grounding one target on the provided screenshot, not using a built-in computer-use grid.",
+			...(params.hasGuideImage
+				? [
+					"An additional guide image is provided with the same screenshot plus a red overlay showing the previously rejected candidate.",
+					"Do not repeat the red marked candidate unless the rejection reason is clearly contradicted by stronger visible evidence.",
+				]
+				: []),
+			...(highRiskRequest
+				? [
+					"This is a high-risk action target.",
+					"If the exact target is not clearly visible, return not_found instead of making a risky guess.",
+				]
+				: []),
+			"You are grounding one target on the provided screenshot, not using a built-in computer-use grid.",
 		"Use only visible screenshot evidence. Do not rely on hidden accessibility labels, DOM ids, or implementation names.",
 		'Return screenshot-relative coordinates with coordinate_space set to "image_pixels".',
 		"Choose the exact point a careful operator should use for this action intent.",
@@ -696,20 +779,32 @@ export function buildGroundingValidationPrompt(params: {
 	captureMode?: "display" | "window";
 	round?: number;
 }): string {
+	const target = sanitizePromptField(params.target, 320) ?? "unknown target";
+	const locationHint = sanitizePromptField(params.locationHint);
+	const scope = sanitizePromptField(params.scope);
+	const app = sanitizePromptField(params.app);
+	const windowTitle = sanitizePromptField(params.windowTitle);
 	const action = formatGroundingActionIntent(params.action);
+	const highRiskRequest = isHighRiskGroundingRequest(params);
 	return [
 		"You are a GUI grounding validator.",
 		"You receive the original screenshot and a second image showing the simulated action overlay for the candidate returned by a separate grounding model.",
 		`Action intent: ${action}.`,
-		`Target description: ${params.target}`,
-		...(params.locationHint ? [`Coarse location hint: ${params.locationHint}`] : []),
-		...(params.scope ? [`Scope hint: ${params.scope}`] : []),
-		...(params.app ? [`App hint: ${params.app}`] : []),
-		...(params.windowTitle ? [`Window title hint: ${params.windowTitle}`] : []),
+		`Target description: ${target}`,
+		...(locationHint ? [`Coarse location hint: ${locationHint}`] : []),
+		...(scope ? [`Scope hint: ${scope}`] : []),
+		...(app ? [`App hint: ${app}`] : []),
+		...(windowTitle ? [`Window title hint: ${windowTitle}`] : []),
 		...(params.captureMode ? [`Capture mode: ${params.captureMode}.`] : []),
 		...(params.width && params.height ? [`Image size: ${params.width}x${params.height} pixels.`] : []),
-		...(params.round ? [`Validation round: ${params.round}.`] : []),
-		"The simulated image marks the candidate bbox and click point very explicitly. Judge that exact marked candidate.",
+			...(params.round ? [`Validation round: ${params.round}.`] : []),
+			...(highRiskRequest
+				? [
+					"This candidate is for a high-risk action.",
+					"Reject unless the marked target is an exact, unambiguous match for the requested action.",
+				]
+				: []),
+			"The simulated image marks the candidate bbox and click point very explicitly. Judge that exact marked candidate.",
 		"Rely on visible pixels in the screenshot and simulation overlay, not on any prior rationale.",
 		"Approve only if the simulated action lands on the exact requested target or on a safe actionable/editable surface that unambiguously corresponds to it.",
 		"Reject if the simulated action lands on whitespace, padding, decoration, generic container background, or on a neighboring control whose visible evidence does not match the request.",
@@ -730,7 +825,7 @@ function formatGroundingActionIntent(action: GuiGroundingActionIntent | undefine
 }
 
 function describeGroundingFailure(failure: GuiGroundingFailure, index: number): string {
-	const parts = [`- Attempt ${index}: ${failure.summary.trim()}`];
+	const parts = [`- Attempt ${index}: ${sanitizePromptField(failure.summary, 240) ?? "previous attempt failed"}`];
 	if (failure.failureKind) {
 		parts.push(`failure kind=${failure.failureKind}`);
 	}
@@ -757,10 +852,13 @@ function describeRelatedGroundingContext(params: {
 }): string[] {
 	const lines: string[] = [];
 	const action = params.relatedAction ? formatGroundingActionIntent(params.relatedAction) : "related target";
+	const relatedTarget = sanitizePromptField(params.relatedTarget);
+	const relatedLocationHint = sanitizePromptField(params.relatedLocationHint);
+	const relatedScope = sanitizePromptField(params.relatedScope);
 	const targetParts = [
-		params.relatedTarget ? `target "${params.relatedTarget}"` : undefined,
-		params.relatedLocationHint ? `location "${params.relatedLocationHint}"` : undefined,
-		params.relatedScope ? `scope "${params.relatedScope}"` : undefined,
+		relatedTarget ? `target "${relatedTarget}"` : undefined,
+		relatedLocationHint ? `location "${relatedLocationHint}"` : undefined,
+		relatedScope ? `scope "${relatedScope}"` : undefined,
 	].filter(Boolean);
 	if (targetParts.length > 0) {
 		lines.push(`- The ${action} is ${targetParts.join(", ")}.`);
@@ -859,6 +957,90 @@ function actionRequiresExplicitPoint(action: GuiGroundingActionIntent | undefine
 		default:
 			return false;
 	}
+}
+
+const HIGH_RISK_GROUNDING_PATTERNS = [
+	/\bdelete\b/iu,
+	/\bremove\b/iu,
+	/\btrash\b/iu,
+	/\bdiscard\b/iu,
+	/\berase\b/iu,
+	/\bsend\b/iu,
+	/\bsubmit\b/iu,
+	/\bapprove\b/iu,
+	/\bconfirm\b/iu,
+	/\bpay\b/iu,
+	/\bpurchase\b/iu,
+	/\btransfer\b/iu,
+];
+
+const GENERIC_CONFIRM_ACTION_PATTERNS = [
+	/\bok\b/iu,
+	/\bcontinue\b/iu,
+	/\byes\b/iu,
+	/\bconfirm\b/iu,
+	/\bapprove\b/iu,
+];
+
+const HIGH_RISK_CONTEXT_PATTERNS = [
+	...HIGH_RISK_GROUNDING_PATTERNS,
+	/\bconfirmation\b/iu,
+];
+
+function containsHighRiskGroundingHint(value: string | undefined): boolean {
+	const sanitized = sanitizePromptField(value, 320);
+	if (!sanitized) {
+		return false;
+	}
+	return HIGH_RISK_GROUNDING_PATTERNS.some((pattern) => pattern.test(sanitized));
+}
+
+function containsGenericConfirmAction(value: string | undefined): boolean {
+	const sanitized = sanitizePromptField(value, 320);
+	if (!sanitized) {
+		return false;
+	}
+	return GENERIC_CONFIRM_ACTION_PATTERNS.some((pattern) => pattern.test(sanitized));
+}
+
+function containsHighRiskGroundingContext(value: string | undefined): boolean {
+	const sanitized = sanitizePromptField(value, 320);
+	if (!sanitized) {
+		return false;
+	}
+	return HIGH_RISK_CONTEXT_PATTERNS.some((pattern) => pattern.test(sanitized));
+}
+
+function isHighRiskGroundingRequest(params: {
+	action?: GuiGroundingActionIntent;
+	target?: string;
+	locationHint?: string;
+	scope?: string;
+	windowTitle?: string;
+}): boolean {
+	switch (params.action) {
+		case "observe":
+		case "wait":
+		case "scroll":
+		case "key":
+		case "move":
+			return false;
+		default:
+			break;
+	}
+	if (containsHighRiskGroundingHint(params.target)) {
+		return true;
+	}
+	if (
+		containsGenericConfirmAction(params.target) &&
+		[
+			params.scope,
+			params.windowTitle,
+		].some((value) => containsHighRiskGroundingContext(value))
+	) {
+		return true;
+	}
+	return false;
 }
 
 function extractBooleanField(text: string, field: string): boolean | undefined {
@@ -1367,6 +1549,9 @@ function shouldValidateResolvedCandidate(params: {
 	if (params.request.groundingMode === "complex") {
 		return { required: true, reason: "complex grounding was explicitly requested" };
 	}
+	if (isHighRiskGroundingRequest(params.request)) {
+		return { required: true, reason: "high-risk target/action requires simulated validation" };
+	}
 	return {
 		required: false,
 		reason: "single-round grounding requested by caller",
@@ -1383,9 +1568,11 @@ export function createModelLoopGroundingProvider(
 
 	return {
 		async ground(params: GuiGroundingRequest): Promise<GuiGroundingResult | undefined> {
+			throwIfAborted(params.signal);
 			const totalStart = performance.now();
 			const loadStart = performance.now();
 			const loaded = await loadImageSource(params.imagePath, DEFAULT_MAX_GROUNDING_IMAGE_BYTES);
+			throwIfAborted(params.signal);
 			const timingTrace: {
 				loadImageMs: number;
 				totalMs?: number;
@@ -1456,6 +1643,7 @@ export function createModelLoopGroundingProvider(
 			};
 			try {
 				for (let round = 1; round <= maxRounds; round += 1) {
+					throwIfAborted(params.signal);
 					const roundTiming: GroundingRoundTiming = {
 						round,
 						validationTriggered: false,
@@ -1495,6 +1683,7 @@ export function createModelLoopGroundingProvider(
 					const predictStart = performance.now();
 					const predictionText = await options.invokeModel({
 						stage: "predict",
+						signal: params.signal,
 						prompt: buildGroundingPrompt({
 							target: params.target,
 							scope: params.scope,
@@ -1524,6 +1713,7 @@ export function createModelLoopGroundingProvider(
 								: []),
 						],
 					});
+					throwIfAborted(params.signal);
 					roundTiming.predictModelMs = Math.round(performance.now() - predictStart);
 						const decision = parseGroundingDecision({
 							payload: extractJsonObjectGrounding(predictionText),
@@ -1574,6 +1764,7 @@ export function createModelLoopGroundingProvider(
 							const refinementModelStart = performance.now();
 							const refinementText = await options.invokeModel({
 								stage: "predict",
+								signal: params.signal,
 								prompt: buildGroundingRefinementPrompt({
 									target: params.target,
 									scope: params.scope,
@@ -1589,6 +1780,7 @@ export function createModelLoopGroundingProvider(
 								}),
 								images: [{ bytes: refinementFrame.frame.bytes, mimeType: refinementFrame.frame.mimeType }],
 							});
+							throwIfAborted(params.signal);
 							roundTiming.refinementModelMs = Math.round(performance.now() - refinementModelStart);
 							const refinementDecision = parseGroundingDecision({
 								payload: extractJsonObjectGrounding(refinementText),
@@ -1655,6 +1847,7 @@ export function createModelLoopGroundingProvider(
 					const validateStart = performance.now();
 					const validationText = await options.invokeModel({
 						stage: "validate",
+						signal: params.signal,
 						prompt: buildGroundingValidationPrompt({
 							target: params.target,
 							action: params.action,
@@ -1672,6 +1865,7 @@ export function createModelLoopGroundingProvider(
 							{ bytes: simulationLoaded.bytes, mimeType: simulationLoaded.probe.mimeType },
 						],
 					});
+					throwIfAborted(params.signal);
 					roundTiming.validateModelMs = Math.round(performance.now() - validateStart);
 					const validation = parseGroundingValidationResponseText(validationText);
 					if (validation?.approved) {
@@ -1726,8 +1920,13 @@ export function createResponsesApiGroundingProvider(
 	const invokeModel: GroundingModelRunner = async (params) => {
 		let lastError: Error | undefined;
 		for (let attempt = 1; attempt <= MODEL_REQUEST_MAX_ATTEMPTS; attempt += 1) {
+			throwIfAborted(params.signal);
 			const controller = new AbortController();
-			const requestTimeout = setTimeout(() => controller.abort(), timeoutMs);
+			const requestTimeout = setTimeout(() => controller.abort(new Error("grounding request timed out")), timeoutMs);
+			const onAbort = () => {
+				controller.abort(params.signal?.reason);
+			};
+			params.signal?.addEventListener("abort", onAbort, { once: true });
 			try {
 				const response = await fetchImpl(options.baseUrl, {
 					method: "POST",
@@ -1768,6 +1967,7 @@ export function createResponsesApiGroundingProvider(
 					signal: controller.signal,
 				});
 				const payload = await response.json().catch(() => ({}));
+				throwIfAborted(params.signal);
 				if (!response.ok) {
 					const message =
 						asString(asRecord(asRecord(payload)?.error)?.message) ||
@@ -1781,13 +1981,17 @@ export function createResponsesApiGroundingProvider(
 				}
 				return responseText;
 			} catch (error) {
+				if (params.signal?.aborted) {
+					throw createAbortError(params.signal.reason);
+				}
 				lastError = error instanceof Error ? error : new Error(String(error));
 				if (attempt >= MODEL_REQUEST_MAX_ATTEMPTS || isNonRetryableModelRequestError(lastError)) {
 					throw lastError;
 				}
-				await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+				await sleepWithSignal(300 * attempt, params.signal);
 			} finally {
 				clearTimeout(requestTimeout);
+				params.signal?.removeEventListener("abort", onAbort);
 			}
 		}
 		throw lastError ?? new Error(`${options.providerName} grounding request failed: empty response`);
