@@ -6,14 +6,15 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import JSON5 from "json5";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
-const exampleWorkspaceSource = join(repoRoot, "examples", "handwritten-playbook-demo");
 const packageJsonPath = join(repoRoot, "package.json");
 const packageVersion = JSON.parse(await readFile(packageJsonPath, "utf8")).version?.trim() || "unknown";
 const testHome = process.env.TEST_HOME?.trim() || await mkdtemp(join(tmpdir(), "understudy-playbook-e2e-"));
 const requestedWorkspaceDir = process.env.PLAYBOOK_WORKSPACE_DIR?.trim();
+const usingDefaultExampleWorkspace = !requestedWorkspaceDir;
 const workspaceDir = requestedWorkspaceDir || join(testHome, "workspace");
 const requestedPort = Number.parseInt(process.env.TEST_PORT ?? "18836", 10);
 const lockRequestedPort = typeof process.env.TEST_PORT === "string" && process.env.TEST_PORT.trim().length > 0;
@@ -29,6 +30,14 @@ const playbookEnvFile = process.env.PLAYBOOK_ENV_FILE?.trim() || process.env.UND
 const requestedAdvanceOnOutputs = process.env.PLAYBOOK_E2E_ADVANCE_ON_OUTPUTS?.trim();
 const requestedAbortOnOutputReady = process.env.PLAYBOOK_E2E_ABORT_ON_OUTPUT_READY?.trim();
 const traceChildSession = process.env.PLAYBOOK_E2E_TRACE_CHILD === "1";
+const requestedGlobalBrowserRelayReuse = readOptionalBooleanEnv("PLAYBOOK_E2E_REUSE_GLOBAL_BROWSER");
+const demoSelectionMode = process.env.PLAYBOOK_SELECTION_MODE?.trim() || "fixed_target_app_metadata";
+const demoTargetApp = process.env.PLAYBOOK_TARGET_APP?.trim() || "Snapseed";
+const demoTargetAppStoreUrl = process.env.PLAYBOOK_TARGET_APP_STORE_URL?.trim()
+	|| "https://apps.apple.com/us/app/snapseed-photo-editor/id439438619";
+const demoAppStoreRegion = process.env.PLAYBOOK_APP_STORE_REGION?.trim() || "us";
+const demoPublishNow = readOptionalBooleanEnv("PLAYBOOK_PUBLISH_NOW") ?? true;
+const demoPublishVisibility = process.env.PLAYBOOK_PUBLISH_VISIBILITY?.trim() || "unlisted";
 const reportPath = join(testHome, "understudy-playbook-report.md");
 const reportJsonPath = join(testHome, "understudy-playbook-report.json");
 const gatewayLogPath = join(testHome, "gateway.log");
@@ -73,12 +82,27 @@ function readOptionalPositiveIntegerEnv(name) {
 	return parsed;
 }
 
-function parsePlaybookInputs() {
-	if (!rawPlaybookInputsJson) {
+function defaultPlaybookInputs() {
+	if (playbookName === "app-review-pipeline") {
 		return {
-			targetName,
-			analysisFocus,
+			selectionMode: demoSelectionMode,
+			targetApp: demoTargetApp,
+			targetAppStoreUrl: demoTargetAppStoreUrl,
+			appStoreRegion: demoAppStoreRegion,
+			publishNow: demoPublishNow,
+			publishVisibility: demoPublishVisibility,
 		};
+	}
+	return {
+		targetName,
+		analysisFocus,
+	};
+}
+
+function parsePlaybookInputs() {
+	const defaults = defaultPlaybookInputs();
+	if (!rawPlaybookInputsJson) {
+		return defaults;
 	}
 	let parsed;
 	try {
@@ -89,7 +113,10 @@ function parsePlaybookInputs() {
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 		throw new Error("PLAYBOOK_INPUTS_JSON must decode to a JSON object.");
 	}
-	return parsed;
+	return {
+		...defaults,
+		...parsed,
+	};
 }
 
 function resolveSyntheticMode() {
@@ -115,6 +142,21 @@ async function exists(path) {
 	} catch {
 		return false;
 	}
+}
+
+async function resolveExampleWorkspaceSource() {
+	const candidates = [
+		join(repoRoot, "examples", "handwritten-playbook-demo"),
+		join(repoRoot, "packages", "gateway", "src", "__tests__", "fixtures", "handwritten-playbook-demo"),
+	];
+	for (const candidate of candidates) {
+		if (await exists(candidate)) {
+			return candidate;
+		}
+	}
+	throw new Error(
+		`Could not find the handwritten playbook demo workspace. Checked: ${candidates.map((entry) => JSON.stringify(entry)).join(", ")}`,
+	);
 }
 
 function summarize(text, limit = 240) {
@@ -146,8 +188,98 @@ function sanitizeFilePart(value) {
 		.replace(/^-+|-+$/g, "") || "snapshot";
 }
 
+function readBooleanEnv(name) {
+	const raw = process.env[name]?.trim().toLowerCase();
+	if (!raw) {
+		return false;
+	}
+	return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function readOptionalBooleanEnv(name) {
+	const raw = process.env[name]?.trim().toLowerCase();
+	if (!raw) {
+		return undefined;
+	}
+	return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function asTrimmedString(value) {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : "";
+}
+
+function parseLoopbackPort(rawUrl) {
+	try {
+		const parsed = new URL(rawUrl);
+		const port =
+			parsed.port.trim() !== ""
+				? Number(parsed.port)
+				: parsed.protocol === "https:"
+					? 443
+					: 80;
+		if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+			return null;
+		}
+		const host = parsed.hostname.trim().toLowerCase();
+		if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1" && host !== "[::1]") {
+			return null;
+		}
+		return port;
+	} catch {
+		return null;
+	}
+}
+
+async function loadJson5File(path) {
+	try {
+		return JSON5.parse(await readFile(path, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+async function resolveReusableBrowserRelayConfig() {
+	const explicitCdpUrl = asTrimmedString(process.env.PLAYBOOK_E2E_BROWSER_CDP_URL);
+	if (!reuseGlobalBrowserRelay && !explicitCdpUrl) {
+		return null;
+	}
+
+	if (explicitCdpUrl) {
+		return {
+			source: "explicit PLAYBOOK_E2E_BROWSER_CDP_URL",
+			cdpUrl: explicitCdpUrl,
+			authMode: asTrimmedString(process.env.PLAYBOOK_E2E_BROWSER_RELAY_AUTH_MODE) || "none",
+			gatewayToken: asTrimmedString(process.env.PLAYBOOK_E2E_BROWSER_RELAY_GATEWAY_TOKEN) || "",
+		};
+	}
+
+	const browserHome = asTrimmedString(process.env.PLAYBOOK_E2E_BROWSER_HOME)
+		|| asTrimmedString(process.env.UNDERSTUDY_HOME)
+		|| join(homedir(), ".understudy");
+	const configPath = join(browserHome, "config.json5");
+	const config = await loadJson5File(configPath);
+	const cdpUrl = asTrimmedString(config?.browser?.cdpUrl);
+	if (!cdpUrl) {
+		throw new Error(
+			`PLAYBOOK_E2E_REUSE_GLOBAL_BROWSER=1 was requested, but no browser.cdpUrl was found in ${configPath}.`,
+		);
+	}
+	if (!parseLoopbackPort(cdpUrl)) {
+		throw new Error(
+			`PLAYBOOK_E2E_REUSE_GLOBAL_BROWSER=1 requires a loopback browser.cdpUrl, received ${JSON.stringify(cdpUrl)} from ${configPath}.`,
+		);
+	}
+	return {
+		source: configPath,
+		cdpUrl,
+		authMode: asTrimmedString(config?.gateway?.auth?.mode)?.toLowerCase() || "none",
+		gatewayToken: asTrimmedString(config?.gateway?.auth?.token),
+	};
+}
+
 const syntheticMode = resolveSyntheticMode();
 const e2eMode = syntheticMode ? "synthetic" : "live";
+const reuseGlobalBrowserRelay = requestedGlobalBrowserRelayReuse ?? !syntheticMode;
 const advanceOnOutputs = requestedAdvanceOnOutputs
 	? requestedAdvanceOnOutputs !== "0"
 	: syntheticMode;
@@ -162,7 +294,8 @@ const traceHistoryLimit = readPositiveIntegerEnv("PLAYBOOK_E2E_TRACE_HISTORY_LIM
 const traceRunLimit = readPositiveIntegerEnv("PLAYBOOK_E2E_TRACE_RUN_LIMIT", 6);
 const stopAfterStageCount = readOptionalPositiveIntegerEnv("PLAYBOOK_E2E_STOP_AFTER_STAGE_COUNT");
 const playbookInputs = parsePlaybookInputs();
-const usingDefaultExampleWorkspace = !requestedWorkspaceDir;
+const reusableBrowserRelay = await resolveReusableBrowserRelayConfig();
+const exampleWorkspaceSource = usingDefaultExampleWorkspace ? await resolveExampleWorkspaceSource() : null;
 const scenarioLabel = usingDefaultExampleWorkspace
 	? "generic handwritten playbook example"
 	: "custom workspace playbook";
@@ -219,6 +352,7 @@ async function ensureWorkspace() {
 		return;
 	}
 	await mkdir(testHome, { recursive: true });
+	assert(exampleWorkspaceSource, "Expected an example workspace source for the default playbook harness.");
 	await cp(exampleWorkspaceSource, workspaceDir, { recursive: true });
 }
 
@@ -288,6 +422,24 @@ async function listObservedStageArtifacts(rootDir, stage) {
 	return observed;
 }
 
+function getStageSummaryPath(rootDir, stage) {
+	return join(rootDir, "stage-summaries", `${stage.id}.md`);
+}
+
+async function readStageSummaryState(rootDir, stage) {
+	const path = getStageSummaryPath(rootDir, stage);
+	if (!(await exists(path))) {
+		return null;
+	}
+	const raw = await readFile(path, "utf8");
+	const match = raw.match(/status:\s*([a-z_]+)/i);
+	return {
+		path,
+		raw,
+		status: match?.[1]?.trim().toLowerCase() || null,
+	};
+}
+
 async function writeChildTraceSnapshot({
 	rootDir,
 	stage,
@@ -335,7 +487,23 @@ async function waitForStageReady({ runId, sessionId, rootDir, stage }) {
 	let pollCount = 0;
 	while (Date.now() < deadline) {
 		pollCount += 1;
-		if (advanceOnOutputs && await areStageArtifactsReady(rootDir, stage)) {
+		const outputsReady = await areStageArtifactsReady(rootDir, stage);
+		const stageSummaryState = outputsReady ? await readStageSummaryState(rootDir, stage) : null;
+		if (outputsReady && stageSummaryState?.status === "success") {
+			await writeChildTraceSnapshot({
+				rootDir,
+				stage,
+				runId,
+				sessionId,
+				reason: "ready_stage_summary",
+				pollCount,
+			});
+			return {
+				status: "ready_stage_summary",
+				response: `Stage summary marked success at ${stageSummaryState.path}.`,
+			};
+		}
+		if (advanceOnOutputs && outputsReady) {
 			await writeChildTraceSnapshot({
 				rootDir,
 				stage,
@@ -497,8 +665,18 @@ const gateway = spawn(
 			UNDERSTUDY_HOME: testHome,
 			...(playbookEnvFile ? { UNDERSTUDY_ENV_FILE: playbookEnvFile } : {}),
 			UNDERSTUDY_GATEWAY_AUTH_MODE: "none",
-			UNDERSTUDY_BROWSER_CDP_URL: browserRelayUrl,
-			UNDERSTUDY_BROWSER_EXTENSION_RELAY_URL: browserRelayUrl,
+			UNDERSTUDY_BROWSER_CDP_URL: reusableBrowserRelay?.cdpUrl || browserRelayUrl,
+			UNDERSTUDY_BROWSER_EXTENSION_RELAY_URL: reusableBrowserRelay?.cdpUrl || browserRelayUrl,
+			...(reusableBrowserRelay
+				? {
+					UNDERSTUDY_BROWSER_EXTENSION_RELAY_AUTH_MODE: reusableBrowserRelay.authMode || "none",
+					...(reusableBrowserRelay.gatewayToken
+						? {
+							UNDERSTUDY_BROWSER_EXTENSION_RELAY_GATEWAY_TOKEN: reusableBrowserRelay.gatewayToken,
+						}
+						: {}),
+				}
+				: {}),
 			UNDERSTUDY_DEFAULT_PROVIDER: defaultProvider,
 			UNDERSTUDY_DEFAULT_MODEL: defaultModel,
 		},
@@ -604,7 +782,11 @@ try {
 					}).catch(() => null);
 					throw new Error(waitResult.response);
 				}
-				if (waitResult?.status !== "ok" && waitResult?.status !== "ready_outputs") {
+				if (
+					waitResult?.status !== "ok"
+					&& waitResult?.status !== "ready_outputs"
+					&& waitResult?.status !== "ready_stage_summary"
+				) {
 					throw new Error(`Child run for stage ${stage.name} finished with status ${waitResult?.status ?? "unknown"}`);
 				}
 			}
@@ -619,10 +801,10 @@ try {
 				status: "completed",
 				summary: buildCompletionSummary({
 					stage,
-					waitResult,
-					artifacts,
-					synthetic: syntheticMode,
-				}),
+				waitResult,
+				artifacts,
+				synthetic: syntheticMode,
+			}),
 				artifactPaths: artifacts.produced,
 			});
 			stageReports.push({
@@ -634,10 +816,15 @@ try {
 				childRunId: launch?.spawn?.runId ?? null,
 				producedArtifacts: artifacts.produced,
 				synthesizedArtifacts: artifacts.synthesized,
-				completedFromReadyOutputs: waitResult?.status === "ready_outputs",
+				completedFromReadyOutputs:
+					waitResult?.status === "ready_outputs"
+					|| waitResult?.status === "ready_stage_summary",
 				childResponse: waitResult?.response ? summarize(waitResult.response, 320) : null,
-				notes: waitResult?.status === "ready_outputs"
-					? "Advanced after expected outputs were detected."
+				notes:
+					waitResult?.status === "ready_stage_summary"
+						? "Advanced after the stage summary reported success and all expected outputs were present."
+						: waitResult?.status === "ready_outputs"
+							? "Advanced after expected outputs were detected."
 					: waitResult?.response
 						? summarize(waitResult.response, 160)
 						: null,
@@ -715,13 +902,20 @@ const report = [
 	`- Workspace dir: \`${workspaceDir}\``,
 	`- Scenario: ${scenarioLabel}`,
 	`- GUI expectation: ${liveGuiExpectation}`,
-	`- Example source: \`${relative(repoRoot, exampleWorkspaceSource) || "."}\``,
+	`- Example source: \`${exampleWorkspaceSource ? (relative(repoRoot, exampleWorkspaceSource) || ".") : "(custom workspace)" }\``,
 	`- Gateway URL: \`${gatewayUrl}\``,
 	`- Playbook: \`${playbookName}\``,
 	`- Target name: \`${targetName}\``,
 	`- Analysis focus: \`${analysisFocus}\``,
 	`- Playbook inputs: \`${JSON.stringify(playbookInputs)}\``,
 	...(playbookEnvFile ? [`- Env file: \`${playbookEnvFile}\``] : []),
+	...(reusableBrowserRelay
+		? [
+			`- Browser relay reuse: \`true\``,
+			`- Browser relay source: \`${reusableBrowserRelay.source}\``,
+			`- Browser relay URL: \`${reusableBrowserRelay.cdpUrl}\``,
+		]
+		: [`- Browser relay reuse: \`false\``]),
 	`- Synthetic mode: \`${syntheticMode}\``,
 	`- Advance on outputs: \`${advanceOnOutputs}\``,
 	`- Stop after stage count: \`${stopAfterStageCount ?? "full run"}\``,
@@ -751,6 +945,7 @@ await writeFile(reportJsonPath, JSON.stringify({
 	analysisFocus,
 	playbookInputs,
 	playbookEnvFile,
+	reusableBrowserRelay,
 	mode: e2eMode,
 	syntheticMode,
 	advanceOnOutputs,
