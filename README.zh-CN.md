@@ -511,7 +511,7 @@ pnpm check            # 完整校验：build + lint + typecheck + test
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=understudy-ai/understudy&type=Date)](https://star-history.com/#understudy-ai/understudy&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=understudy-ai/understudy&type=Date)](https://star-history.dera.page/#understudy-ai/understudy&Date)
 
 ## 致谢
 
