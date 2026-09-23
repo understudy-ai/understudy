@@ -63,6 +63,8 @@ function createManager() {
 					role: "button",
 					name: "Send",
 					selector: "#send",
+					xpath: "//*[@id=\"send\"]",
+					testId: "[data-testid=\"send\"]",
 					nth: 0,
 					box: { x: 10, y: 20, width: 30, height: 12 },
 				},
@@ -154,7 +156,11 @@ describe("createBrowserTool", () => {
 
 		const snapshot = await tool.execute("id", { action: "snapshot" });
 		expect((snapshot.content[0] as any).text).toContain("[1] button \"Send\"");
-		expect((snapshot.details as any).refs["1"]).toMatchObject({ selector: "#send" });
+		expect((snapshot.details as any).refs["1"]).toMatchObject({
+			selector: "#send",
+			xpath: "//*[@id=\"send\"]",
+			testId: "[data-testid=\"send\"]",
+		});
 
 		const ariaSnapshot = await tool.execute("id", { action: "snapshot", format: "aria" });
 		expect((ariaSnapshot.content[0] as any).text).toContain("ARIA snapshot");
@@ -166,6 +172,30 @@ describe("createBrowserTool", () => {
 		const close = await tool.execute("id", { action: "close" });
 		expect((close.content[0] as any).text).toContain("Browser closed");
 		expect(manager.close).toHaveBeenCalled();
+	});
+
+	it("stores selector candidates for each click target", async () => {
+		const { manager } = createManager();
+		const tool = createBrowserTool(manager as any);
+
+		await tool.execute("id", { action: "snapshot" });
+		const refClick = await tool.execute("id", { action: "click", ref: "1" });
+		expect(refClick.details).toMatchObject({
+			action: "click",
+			targetId: "tab_1",
+			target: "ref 1 (Send)",
+			selectors: {
+				css: "#send",
+				xpath: "//*[@id=\"send\"]",
+				testId: "[data-testid=\"send\"]",
+			},
+		});
+
+		const directClick = await tool.execute("id", { action: "click", selector: "button" });
+		expect(directClick.details).toMatchObject({
+			action: "click",
+			selectors: { css: "button" },
+		});
 	});
 
 	it("does not crash when evaluate resolves to undefined", async () => {

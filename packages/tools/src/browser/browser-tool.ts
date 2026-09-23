@@ -101,6 +101,8 @@ interface BrowserSnapshotRef {
 	value?: string;
 	description?: string;
 	selector: string;
+	xpath?: string;
+	testId?: string;
 	nth: number;
 	box?: { x: number; y: number; width: number; height: number };
 }
@@ -557,7 +559,7 @@ export function createBrowserTool(
 		element?: string;
 		required?: boolean;
 		label?: string;
-	}): { locator: any; description: string } | undefined => {
+	}): { locator: any; description: string; selectors: Record<string, string> } | undefined => {
 		const refValue = params.ref?.trim();
 		if (refValue) {
 			const snapRef = getSnapshotRef(page, refValue);
@@ -565,6 +567,11 @@ export function createBrowserTool(
 				return {
 					locator: resolveLocatorFromSelector(page, snapRef.selector),
 					description: `ref ${refValue}${snapRef.name ? ` (${snapRef.name})` : ""}`,
+					selectors: {
+						css: snapRef.selector,
+						...(snapRef.xpath ? { xpath: snapRef.xpath } : {}),
+						...(snapRef.testId ? { testId: snapRef.testId } : {}),
+					},
 				};
 			}
 			throw new Error(`Unknown snapshot ref: ${refValue}. Take a new snapshot or pass selector explicitly.`);
@@ -575,6 +582,7 @@ export function createBrowserTool(
 			return {
 				locator: resolveLocatorFromSelector(page, selector),
 				description: `selector ${selector}`,
+				selectors: { css: selector },
 			};
 		}
 
@@ -802,6 +810,38 @@ export function createBrowserTool(
 					return `body > ${parts.join(" > ")}`;
 				};
 
+				const xpathPath = (element: BrowserDomElementLike): string => {
+					if (element.id) {
+						return `//*[@id="${element.id.replace(/"/g, '\\"')}"]`;
+					}
+					const parts: string[] = [];
+					let current: BrowserDomElementLike | null | undefined = element;
+					while (current) {
+						const tag = current.tagName.toLowerCase();
+						const parent: BrowserDomElementLike | null | undefined = current.parentElement;
+						if (!parent || tag === "html") {
+							parts.unshift(tag);
+							break;
+						}
+						const siblings = Array.from(parent.children as ArrayLike<BrowserDomElementLike>)
+							.filter((child) => child.tagName === current?.tagName);
+						const index = siblings.indexOf(current) + 1;
+						parts.unshift(siblings.length > 1 ? `${tag}[${Math.max(1, index)}]` : tag);
+						current = parent;
+					}
+					return `/${parts.join("/")}`;
+				};
+
+				const testIdSelector = (element: BrowserDomElementLike): string | undefined => {
+					for (const attr of ["data-testid", "data-test-id", "data-test", "data-cy", "data-qa"]) {
+						const value = element.getAttribute(attr)?.trim();
+						if (value) {
+							return `[${attr}="${value.replace(/"/g, '\\"')}"]`;
+						}
+					}
+					return undefined;
+				};
+
 				const dedup = new Set<BrowserDomElementLike>();
 				const elements = Array.from(root.querySelectorAll(candidateSelector))
 					.filter((element) => visible(element))
@@ -832,6 +872,8 @@ export function createBrowserTool(
 						value: value || undefined,
 						description,
 						selector: cssPath(element),
+						xpath: xpathPath(element),
+						testId: testIdSelector(element),
 						nth,
 						box: {
 							x: Math.max(0, Math.round(rect.left)),
@@ -1256,6 +1298,8 @@ export function createBrowserTool(
 									name: node.name,
 									nth: node.nth,
 									selector: node.selector,
+									xpath: node.xpath,
+									testId: node.testId,
 								},
 							])),
 							stats: snapshot.stats,
@@ -1315,7 +1359,12 @@ export function createBrowserTool(
 							label: "selector or ref",
 						});
 						const verb = await clickLocator(locatorInfo!.locator, params);
-						return textResult(`${capitalize(verb)}: ${locatorInfo!.description}`);
+						return textResult(`${capitalize(verb)}: ${locatorInfo!.description}`, {
+							action: "click",
+							targetId: activeBrowserManager.getTabId(page),
+							target: locatorInfo!.description,
+							selectors: locatorInfo!.selectors,
+						});
 					}
 
 					case "type": {
